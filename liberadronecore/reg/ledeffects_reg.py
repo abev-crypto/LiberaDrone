@@ -4,12 +4,26 @@ import bpy
 from nodeitems_utils import NodeCategory, NodeItem, register_node_categories, unregister_node_categories
 
 from ledeffects.le_nodetree import LD_LedEffectsTree
+from ledeffects.nodes.le_blend import LDLEDBlendNode
+from ledeffects.nodes.le_catcache import LDLEDCatCacheNode
+from ledeffects.nodes.le_collectioninfo import LDLEDCollectionInfoNode
+from ledeffects.nodes.le_effect import LDLEDEffectNode
+from ledeffects.nodes.le_math import LDLEDMathNode
+from ledeffects.nodes.le_meshinfo import LDLEDMeshInfoNode
+from ledeffects.nodes.le_output import LDLEDOutputNode
 from ledeffects.nodes.le_value import LDLEDValueNode
 
 
 classes = (
     LD_LedEffectsTree,
     LDLEDValueNode,
+    LDLEDOutputNode,
+    LDLEDBlendNode,
+    LDLEDMathNode,
+    LDLEDEffectNode,
+    LDLEDCatCacheNode,
+    LDLEDCollectionInfoNode,
+    LDLEDMeshInfoNode,
 )
 
 
@@ -22,13 +36,23 @@ node_categories = [
     NodeCategory(
         identifier="LD_LED_EFFECTS",
         name="LD LED Effects",
-        items=[NodeItem(LDLEDValueNode.bl_idname)],
+        items=[
+            NodeItem(LDLEDValueNode.bl_idname),
+            NodeItem(LDLEDOutputNode.bl_idname),
+            NodeItem(LDLEDBlendNode.bl_idname),
+            NodeItem(LDLEDMathNode.bl_idname),
+            NodeItem(LDLEDEffectNode.bl_idname),
+            NodeItem(LDLEDCatCacheNode.bl_idname),
+            NodeItem(LDLEDCollectionInfoNode.bl_idname),
+            NodeItem(LDLEDMeshInfoNode.bl_idname),
+        ],
         poll=_is_led_tree,
     ),
 ]
 
+
 class LedEffectsRegister(RegisterBase):
-    """Register/unregister overlay related Blender classes."""
+    """Register/unregister LED effect related Blender classes."""
 
     @classmethod
     def register(cls) -> None:
