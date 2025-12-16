@@ -3,15 +3,15 @@ from .base_reg import RegisterBase
 import bpy
 from nodeitems_utils import NodeCategory, NodeItem, register_node_categories, unregister_node_categories
 
-from ledeffects.le_nodetree import LD_LedEffectsTree
-from ledeffects.nodes.le_blend import LDLEDBlendNode
-from ledeffects.nodes.le_catcache import LDLEDCatCacheNode
-from ledeffects.nodes.le_collectioninfo import LDLEDCollectionInfoNode
-from ledeffects.nodes.le_effect import LDLEDEffectNode
-from ledeffects.nodes.le_math import LDLEDMathNode
-from ledeffects.nodes.le_meshinfo import LDLEDMeshInfoNode
-from ledeffects.nodes.le_output import LDLEDOutputNode
-from ledeffects.nodes.le_value import LDLEDValueNode
+from liberadronecore.ledeffects.le_nodetree import LD_LedEffectsTree
+from liberadronecore.ledeffects.nodes.le_blend import LDLEDBlendNode
+from liberadronecore.ledeffects.nodes.le_catcache import LDLEDCatCacheNode
+from liberadronecore.ledeffects.nodes.le_collectioninfo import LDLEDCollectionInfoNode
+from liberadronecore.ledeffects.nodes.le_effect import LDLEDEffectNode
+from liberadronecore.ledeffects.nodes.le_math import LDLEDMathNode
+from liberadronecore.ledeffects.nodes.le_meshinfo import LDLEDMeshInfoNode
+from liberadronecore.ledeffects.nodes.le_output import LDLEDOutputNode
+from liberadronecore.ledeffects.nodes.le_value import LDLEDValueNode
 
 
 classes = (

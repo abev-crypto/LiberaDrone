@@ -10,8 +10,8 @@ bl_info = {
 
 # Import registration modules so RegisterBase collects subclasses
 # before register/unregister are invoked.
-from liberadronecore.reg import checker_reg, ledeffects_reg  # noqa: F401
-from liberadronecore.reg.base_reg import RegisterBase
+from .reg import checker_reg, ledeffects_reg 
+from .reg.base_reg import RegisterBase
 
 
 def register():
