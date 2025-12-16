@@ -1,6 +1,8 @@
 """
 TODO LedEffectsをドローンへ反映するタスク
-
+何らかの方法でフォーメーションマッピングを跨げる仕組みが必要
+フォーメーションマップに従ったCATデコードは正しいが
+フォーメーションを跨げない　正しく跨ぐには、、、
 """
 
 import liberadronecore.util.droneutil as du
