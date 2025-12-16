@@ -1,6 +1,7 @@
 class LD_ActionNode(bpy.types.Node):
     bl_idname = "LD_ActionNode"
     bl_label  = "Action"
+    bl_icon = "ACTION"
 
     # 例えば Skybrush エフェクト名とか時間
     effect_name: bpy.props.StringProperty(name="Effect")
