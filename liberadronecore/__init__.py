@@ -8,8 +8,10 @@ bl_info = {
     "category": "Animation",
 }
 
-from .reg.base_reg import RegisterBase
+import liberadronecore.reg
+import liberadronecore.formation
 
+from liberadronecore.reg.base_reg import RegisterBase
 
 def register():
     RegisterBase.register_all()
@@ -17,7 +19,3 @@ def register():
 
 def unregister():
     RegisterBase.unregister_all()
-
-
-if __name__ == "__main__":
-    register()

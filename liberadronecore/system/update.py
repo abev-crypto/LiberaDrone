@@ -269,11 +269,11 @@ classes = (
 )
 
 
-def register_updater():
+def register():
     for c in classes:
         bpy.utils.register_class(c)
 
 
-def unregister_updater():
+def unregister():
     for c in reversed(classes):
         bpy.utils.unregister_class(c)

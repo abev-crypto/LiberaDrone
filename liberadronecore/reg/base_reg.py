@@ -7,18 +7,14 @@ Subclasses are automatically collected so they can be looped over in main.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import ClassVar
-
 
 class RegisterBase(ABC):
     """Base class that tracks subclasses needing register/unregister."""
 
-    _registry: ClassVar[list[type["RegisterBase"]]] = []
+    _registry = []
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        if cls is RegisterBase:
-            return
         RegisterBase._registry.append(cls)
 
     @classmethod
@@ -29,13 +25,13 @@ class RegisterBase(ABC):
     @classmethod
     def register_all(cls) -> None:
         """Call register on every collected subclass."""
-        for subcls in cls._registry:
+        for subcls in RegisterBase._registry:
             subcls.register()
 
     @classmethod
     def unregister_all(cls) -> None:
         """Call unregister on every collected subclass in reverse order."""
-        for subcls in reversed(cls._registry):
+        for subcls in reversed(RegisterBase._registry):
             subcls.unregister()
 
     @classmethod

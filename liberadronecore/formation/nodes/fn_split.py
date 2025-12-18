@@ -1,8 +1,9 @@
 import bpy
 from bpy.types import NodeTree, Node, NodeSocket, Operator, Panel
 from bpy.props import StringProperty, FloatProperty, BoolProperty, EnumProperty, IntProperty
+from liberadronecore.formation.fn_nodecategory import FN_Node
 
-class FN_SplitNode(Node):
+class FN_SplitNode(Node, FN_Node):
     bl_idname = "FN_SplitNode"
     bl_label = "Split"
     bl_icon = "DECORATE_KEYFRAME"

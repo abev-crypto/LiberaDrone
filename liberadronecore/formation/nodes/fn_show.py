@@ -1,7 +1,7 @@
 import bpy
+from liberadronecore.formation.fn_nodecategory import FN_Node
 
-
-class FN_ShowNode(bpy.types.Node):
+class FN_ShowNode(bpy.types.Node, FN_Node):
     bl_idname = "FN_ShowNode"
     bl_label  = "Show"
     bl_icon = "ACTION"

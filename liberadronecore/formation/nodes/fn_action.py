@@ -1,5 +1,6 @@
 import bpy
-class FN_ActionNode(bpy.types.Node):
+from liberadronecore.formation.fn_nodecategory import FN_Node
+class FN_ActionNode(bpy.types.Node, FN_Node):
     bl_idname = "FN_ActionNode"
     bl_label  = "Action"
     bl_icon = "ACTION"

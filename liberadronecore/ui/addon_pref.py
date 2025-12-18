@@ -32,7 +32,7 @@ class LD_OT_install_deps(bpy.types.Operator):
 class LD_Preferences(bpy.types.AddonPreferences):
     # ★ ここはアドオンのモジュール名（フォルダ名 / __init__.py のパッケージ名）
     bl_idname = __package__ or __name__
-
+    bl_label = "LiberaDrone Preferences"
     gh_owner: bpy.props.StringProperty(name="GitHub Owner", default="")
     gh_repo: bpy.props.StringProperty(name="GitHub Repo", default="")
     gh_branch: bpy.props.StringProperty(name="Branch", default="main")

@@ -1,12 +1,6 @@
-from liberadronecore.formation.fn_nodetree import FN_FormationTree
-from liberadronecore.formation.fn_soket import FN_SocketBool, FN_SocketFlow, FN_SocketFloat, FN_SocketInt
-from liberadronecore.formation.nodes.fn_split import FN_SplitNode
-from liberadronecore.formation.nodes.fn_start import FN_StartNode
-from liberadronecore.formation.nodes.fn_action import FN_ActionNode
-from liberadronecore.formation.nodes.fn_merge import FN_MergeNode
-from liberadronecore.formation.nodes.fn_show import FN_ShowNode
-
+from liberadronecore.reg.autoreg import AutoNode, AutoRegister, Registry
 from nodeitems_utils import NodeCategory, NodeItem, register_node_categories, unregister_node_categories
+import liberadronecore.formation.nodes
 
 class FN_NodeCategory(NodeCategory):
     @classmethod
@@ -14,28 +8,13 @@ class FN_NodeCategory(NodeCategory):
         space = context.space_data
         return (space is not None) and (getattr(space, "tree_type", None) == "FN_FormationTree")
 
+class FN_RegisterBase(Registry[FN_NodeCategory]):
+    pass
 
-FN_NODE_CATEGORIES = [
-    FN_NodeCategory("FN_STORYBOARD_NODES", "FN Storyboard", items=[
-        NodeItem("FN_StartNode"),
-        NodeItem("FN_ActionNode"),
-        NodeItem("FN_WaitNode"),
-        NodeItem("FN_BranchNode"),
-        NodeItem("FN_MergeNode"),
-        NodeItem("FN_ShowNode"),
-    ]),
-]
+class FN_Register(AutoRegister[FN_RegisterBase]):
+    registry = FN_RegisterBase
 
-
-classes = (
-    FN_FormationTree,
-    FN_SocketFlow,
-    FN_SocketBool,
-    FN_SocketFloat,
-    FN_SocketInt,
-    FN_StartNode,
-    FN_ActionNode,
-    FN_SplitNode,
-    FN_MergeNode,
-    FN_ShowNode,
-)
+class FN_Node(AutoNode[FN_RegisterBase]):
+    registry = FN_RegisterBase
+    NODE_CATEGORY_ID: str = "FN_STORYBOARD_NODES"
+    NODE_CATEGORY_LABEL: str = "FN Storyboard"

@@ -1,8 +1,9 @@
 import bpy
 from bpy.types import NodeTree, Node, NodeSocket, Operator, Panel
 from bpy.props import StringProperty, FloatProperty, BoolProperty, EnumProperty, IntProperty
+from liberadronecore.formation.fn_nodecategory import FN_Node
 
-class FN_MergeNode(Node):
+class FN_MergeNode(Node, FN_Node):
     bl_idname = "FN_MergeNode"
     bl_label = "Merge"
     bl_icon = "DECORATE_KEYFRAME"
