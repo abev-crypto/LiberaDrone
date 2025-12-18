@@ -75,13 +75,13 @@ class LD_Preferences(bpy.types.AddonPreferences):
         col.prop(self, "gh_addon_subdir")
 
         row = col.row(align=True)
-        row.operator("addon_updater.check_update", text="Check Update")
+        row.operator("liberadrone.check_update", text="Check Update")
 
         if self.update_available:
             col.alert = True
             col.label(text="Update available!", icon='ERROR')
             col.alert = False
-            col.operator("addon_updater.apply_update", text="Update Now", icon='IMPORT')
+            col.operator("liberadrone.apply_update", text="Update Now", icon='IMPORT')
         else:
             col.label(text="No update detected (or not checked yet).")
 
