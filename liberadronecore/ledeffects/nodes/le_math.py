@@ -7,7 +7,7 @@ class LDLEDMathNode(bpy.types.Node, LDLED_Node):
 
     bl_idname = "LDLEDMathNode"
     bl_label = "LED Math"
-    bl_icon = "MOD_MATH"
+    bl_icon = "MODIFIER"
 
     math_items = [
         ("ADD", "Add", "Add inputs"),

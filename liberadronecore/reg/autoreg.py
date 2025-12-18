@@ -67,7 +67,11 @@ class Registry(RegisterBase, Generic[T]):
         # node categories register
         cls._built_categories = cls.build_node_categories()
         if cls._built_categories:
-            register_node_categories(cls.node_root_id, cls._built_categories)
+            try:
+                register_node_categories(cls.node_root_id, cls._built_categories)
+            except KeyError:
+                unregister_node_categories(cls.node_root_id)
+                register_node_categories(cls.node_root_id, cls._built_categories)
 
     @classmethod
     def unregister(cls):

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "LiberaDrone",
     "author": "Abe",
-    "version": (0, 1, 0),
+    "version": (0, 1, 1),
     "blender": (4, 3, 0),
     "location": "Node Editor > Add menu",
     "description": "Add not enough drone systems to Blender",
