@@ -8,9 +8,6 @@ bl_info = {
     "category": "Animation",
 }
 
-# Import registration modules so RegisterBase collects subclasses
-# before register/unregister are invoked.
-from .reg import checker_reg, ledeffects_reg 
 from .reg.base_reg import RegisterBase
 
 

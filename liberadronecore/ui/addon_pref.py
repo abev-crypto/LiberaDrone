@@ -1,0 +1,136 @@
+import bpy
+import liberadronecore.system.request as request
+
+
+class LD_OT_install_deps(bpy.types.Operator):
+    bl_idname = "liberadrone.install_deps"
+    bl_label = "Install Missing Python Packages"
+    bl_options = {'INTERNAL'}
+
+    def execute(self, context):
+        missing = request.deps_missing()
+        if not missing:
+            self.report({'INFO'}, "All dependencies are already installed.")
+            return {'FINISHED'}
+
+        for pip_name, _import_name in missing:
+            ver = None
+            for p, i, v in request.REQUIRED:
+                if p == pip_name:
+                    ver = v
+                    break
+            try:
+                request.pip_install(pip_name, ver)
+            except Exception as e:
+                self.report({'ERROR'}, f"Failed: {pip_name} ({e})")
+                return {'CANCELLED'}
+
+        self.report({'INFO'}, "Installed. Restart Blender or Reload Scripts.")
+        return {'FINISHED'}
+
+
+class LD_Preferences(bpy.types.AddonPreferences):
+    # ★ ここはアドオンのモジュール名（フォルダ名 / __init__.py のパッケージ名）
+    bl_idname = __package__ or __name__
+
+    gh_owner: bpy.props.StringProperty(name="GitHub Owner", default="")
+    gh_repo: bpy.props.StringProperty(name="GitHub Repo", default="")
+    gh_branch: bpy.props.StringProperty(name="Branch", default="main")
+    gh_addon_subdir: bpy.props.StringProperty(
+        name="Addon Subdir (in repo)",
+        default="",
+        description="リポジトリ直下なら空。例: src/my_addon",
+    )
+
+    update_available: bpy.props.BoolProperty(name="Update Available", default=False)
+    last_local_version: bpy.props.StringProperty(name="Local Version", default="")
+    last_remote_version: bpy.props.StringProperty(name="Remote Version", default="")
+
+    def draw(self, context):
+        layout = self.layout
+        missing = request.deps_missing()
+
+        layout.label(text="Python Dependencies", icon='SCRIPT')
+
+        if missing:
+            box = layout.box()
+            box.label(text="Missing packages:", icon='ERROR')
+            for pip_name, import_name in missing:
+                box.label(text=f"- {pip_name}  (import: {import_name})")
+
+            layout.operator("liberadrone.install_deps", icon='IMPORT')
+            layout.separator()
+            layout.label(text="After installation:", icon='INFO')
+            layout.label(text="Restart Blender or use 'Reload Scripts'.")
+        else:
+            layout.label(text="All dependencies are installed ✅", icon='CHECKMARK')
+
+
+        col = layout.column(align=True)
+        col.label(text="GitHub main updater")
+
+        col.prop(self, "gh_owner")
+        col.prop(self, "gh_repo")
+        col.prop(self, "gh_branch")
+        col.prop(self, "gh_addon_subdir")
+
+        row = col.row(align=True)
+        row.operator("addon_updater.check_update", text="Check Update")
+
+        if self.update_available:
+            col.alert = True
+            col.label(text="Update available!", icon='ERROR')
+            col.alert = False
+            col.operator("addon_updater.apply_update", text="Update Now", icon='IMPORT')
+        else:
+            col.label(text="No update detected (or not checked yet).")
+
+        col.separator()
+        col.label(text=f"Local:  {self.last_local_version}")
+        col.label(text=f"Remote: {self.last_remote_version}")
+
+
+# ---- (例) 本体機能：依存OKの時だけ登録したいならここに入れる ----
+class LD_OT_dummy(bpy.types.Operator):
+    bl_idname = "liberadrone.dummy"
+    bl_label = "Dummy"
+
+    def execute(self, context):
+        self.report({'INFO'}, "Hello")
+        return {'FINISHED'}
+
+
+_bootstrap_classes = (
+    LD_OT_install_deps,
+    LD_Preferences,
+)
+
+_full_classes = (
+    LD_OT_dummy,
+)
+
+_registered_full = False
+
+
+def register():
+    global _registered_full
+    for c in _bootstrap_classes:
+        bpy.utils.register_class(c)
+
+    # 依存が揃っていれば本体も登録
+    if not request.deps_missing():
+        for c in _full_classes:
+            bpy.utils.register_class(c)
+        _registered_full = True
+    else:
+        _registered_full = False
+
+
+def unregister():
+    global _registered_full
+    if _registered_full:
+        for c in reversed(_full_classes):
+            bpy.utils.unregister_class(c)
+
+    for c in reversed(_bootstrap_classes):
+        bpy.utils.unregister_class(c)

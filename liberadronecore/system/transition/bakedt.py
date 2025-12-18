@@ -1,0 +1,507 @@
+import bpy
+from mathutils import Vector
+from mathutils.kdtree import KDTree
+
+# =========================================================
+# ユーザー設定
+# =========================================================
+V_MAX = 2.0        # 最大速度 (m/s)
+A_MAX = 8.0        # 最大加速度 (m/s^2)
+J_MAX = 60.0       # 最大ジャーク (m/s^3)  小さいほど滑らか
+
+D_MIN = 0.30       # 最小距離 (m)
+
+# 仮想ポーズ（適応分割）
+MAX_SUBDIV = 6               # 再帰分割の最大深さ
+SAMPLES_IN_INTERVAL = 2      # 区間チェックのサンプル数（1/3,2/3…）
+CHECK_RELAX_ITERS = 4        # 判定用の軽いリラックス反復
+PRE_RELAX_ITERS = 12         # 仮想ポーズ生成時の本気リラックス反復
+
+# 仮想ポーズの直線からの逸脱を抑える（前処理）
+TETHER_PRE = 0.35            # 0..1 直線位置(base)へ戻す強さ
+MAX_SHIFT_PER_POSE = 0.25    # baseから許容する最大ずれ (m)
+
+# 本番（フレームごと）
+RUN_RELAX_ITERS = 6          # 本番近接解消反復
+TETHER_RUN = 0.15            # 本番は弱め（強すぎると離れない）
+MAX_SHIFT_RUN = None         # Noneなら D_MIN*0.75 を使用
+
+MAX_NEIGHBORS = 12           # KDTreeで見る近傍数
+
+# Bake先
+COLLECTION_NAME = "Drones_Empties"
+NAME_PREFIX = "DroneNull_"
+EMPTY_SIZE = 0.05
+CLEAR_OLD = True
+
+# =========================================================
+# Sカーブ台形（ジャーク制限）: 数値積分テーブル
+# =========================================================
+def build_scurve_table(L, T_total, v_max, a_max, j_max, samples=2048):
+    if L <= 1e-12 or T_total <= 1e-12:
+        return {"T": T_total, "ts": [0.0], "ss": [0.0], "vs": [0.0]}
+
+    dt = T_total / (samples - 1)
+
+    tJ = a_max / max(j_max, 1e-12)
+    tJ = min(tJ, T_total * 0.25)
+
+    # v_maxに到達する目安の加速時間
+    t_acc_nom = v_max / max(a_max, 1e-12)
+    tA_hold = max(0.0, t_acc_nom - 2.0 * tJ)
+
+    t_acc = 2.0 * tJ + tA_hold
+    t_cruise = max(0.0, T_total - 2.0 * t_acc)
+
+    if T_total < 2.0 * t_acc:
+        tA_hold = max(0.0, (T_total / 2.0) - 2.0 * tJ)
+        t_acc = 2.0 * tJ + tA_hold
+        t_cruise = 0.0
+
+    def accel_at_time(t):
+        t0 = 0.0
+        t1 = t0 + tJ
+        t2 = t1 + tA_hold
+        t3 = t2 + tJ
+        t4 = t3 + t_cruise
+
+        if t < t0:
+            return 0.0
+        if t < t1:
+            return j_max * (t - t0)
+        if t < t2:
+            return a_max
+        if t < t3:
+            return a_max - j_max * (t - t2)
+        if t < t4:
+            return 0.0
+
+        tr = T_total - t
+        if tr < t1:
+            return -(j_max * (tr - t0))
+        if tr < t2:
+            return -a_max
+        if tr < t3:
+            return -(a_max - j_max * (tr - t2))
+        return 0.0
+
+    ts = [0.0]
+    vs = [0.0]
+    ss = [0.0]
+    v = 0.0
+    s = 0.0
+
+    for n in range(1, samples):
+        t_prev = (n - 1) * dt
+        t = n * dt
+
+        a0 = accel_at_time(t_prev)
+        a1 = accel_at_time(t)
+        a = 0.5 * (a0 + a1)
+
+        v = v + a * dt
+        if v > v_max:
+            v = v_max
+        if v < 0.0:
+            v = 0.0
+
+        s = s + v * dt
+
+        ts.append(t)
+        vs.append(v)
+        ss.append(s)
+
+    # 距離を L に合わせてスケール
+    if ss[-1] > 1e-12:
+        scale = L / ss[-1]
+    else:
+        scale = 1.0
+    ss = [x * scale for x in ss]
+    vs = [x * scale for x in vs]
+
+    return {"T": T_total, "ts": ts, "ss": ss, "vs": vs}
+
+def table_lookup(table, t, key="s"):
+    T = table["T"]
+    if t <= 0.0:
+        return table["ss"][0] if key == "s" else table["vs"][0]
+    if t >= T:
+        return table["ss"][-1] if key == "s" else table["vs"][-1]
+
+    ts = table["ts"]
+    arr = table["ss"] if key == "s" else table["vs"]
+
+    u = t / T
+    idx = int(u * (len(ts) - 1))
+    idx = max(0, min(len(ts) - 2, idx))
+
+    t0, t1 = ts[idx], ts[idx + 1]
+    a0, a1 = arr[idx], arr[idx + 1]
+    if t1 - t0 <= 1e-12:
+        return a0
+    w = (t - t0) / (t1 - t0)
+    return a0 + (a1 - a0) * w
+
+# =========================================================
+# KDTree：距離違反チェック
+# =========================================================
+def has_min_dist_violation(pos_list, d_min, max_neighbors=12):
+    N = len(pos_list)
+    if N < 2:
+        return False
+    d2 = d_min * d_min
+
+    kd = KDTree(N)
+    for i, p in enumerate(pos_list):
+        kd.insert(p, i)
+    kd.balance()
+
+    for i, p in enumerate(pos_list):
+        for (q, j, dist) in kd.find_n(p, max_neighbors + 1):
+            if j == i:
+                continue
+            if dist * dist < d2:
+                return True
+    return False
+
+# =========================================================
+# 近接押し離し + tether + shift clamp
+# =========================================================
+def relax_pose(pos, base, d_min, iters, max_neighbors, tether, max_shift):
+    N = len(pos)
+    if N < 2:
+        return
+    d2_min = d_min * d_min
+
+    for _ in range(iters):
+        kd = KDTree(N)
+        for i, p in enumerate(pos):
+            kd.insert(p, i)
+        kd.balance()
+
+        moved = [Vector((0,0,0)) for _ in range(N)]
+
+        for i, p in enumerate(pos):
+            for (q, j, dist) in kd.find_n(p, max_neighbors + 1):
+                if j == i:
+                    continue
+                if dist <= 1e-12:
+                    push = Vector((d_min * 0.5, 0, 0))
+                    moved[i] += push
+                    moved[j] -= push
+                    continue
+                if dist * dist < d2_min:
+                    dirv = (p - q) / dist
+                    delta = (d_min - dist) * 0.5
+                    moved[i] += dirv * delta
+                    moved[j] -= dirv * delta
+
+        for i in range(N):
+            p = pos[i] + moved[i]
+            # tether
+            if tether > 0.0:
+                p = p.lerp(base[i], tether)
+            # clamp shift
+            if max_shift is not None:
+                off = p - base[i]
+                L = off.length
+                if L > max_shift and L > 1e-12:
+                    p = base[i] + off * (max_shift / L)
+            pos[i] = p
+
+# =========================================================
+# 適応仮想ポーズ生成（時間中間→リラックス→必要なら再帰分割）
+# =========================================================
+def base_pose_at_time(Aw, Ew, L_base, table, t):
+    s = table_lookup(table, t, key="s")
+    u = 0.0 if L_base <= 1e-12 else min(1.0, max(0.0, s / L_base))
+    return [Aw[i].lerp(Ew[i], u) for i in range(len(Aw))]
+
+def interval_needs_split(
+    Aw, Ew, L_base, table,
+    t0, t1,
+    d_min,
+    tether, max_shift,
+    check_relax_iters=4,
+    samples_in_interval=2,
+    max_neighbors=12
+):
+    if t1 - t0 <= 1e-8:
+        return False
+
+    for sidx in range(1, samples_in_interval + 1):
+        w = sidx / (samples_in_interval + 1)
+        ts = t0 + (t1 - t0) * w
+
+        base = base_pose_at_time(Aw, Ew, L_base, table, ts)
+        test = [p.copy() for p in base]
+
+        relax_pose(
+            test, base,
+            d_min=d_min,
+            iters=check_relax_iters,
+            max_neighbors=max_neighbors,
+            tether=tether,
+            max_shift=max_shift
+        )
+
+        if has_min_dist_violation(test, d_min, max_neighbors=max_neighbors):
+            return True
+
+    return False
+
+def build_adaptive_poses(
+    Aw, Ew, L_base, table,
+    t0, t1,
+    d_min,
+    pre_iters,
+    tether,
+    max_shift,
+    max_subdiv,
+    max_neighbors=12,
+    check_relax_iters=4,
+    samples_in_interval=2
+):
+    base0 = base_pose_at_time(Aw, Ew, L_base, table, t0)
+    base1 = base_pose_at_time(Aw, Ew, L_base, table, t1)
+    pose0 = [p.copy() for p in base0]
+    pose1 = [p.copy() for p in base1]
+
+    # 端点も軽く整える（ここでズレるのが嫌なら iters=0 にしてOK）
+    relax_pose(pose0, base0, d_min, pre_iters, max_neighbors, tether, max_shift)
+    relax_pose(pose1, base1, d_min, pre_iters, max_neighbors, tether, max_shift)
+
+    poses = [(t0, pose0), (t1, pose1)]
+
+    def rec(tL, pL, tR, pR, depth):
+        if depth >= max_subdiv:
+            return
+
+        if not interval_needs_split(
+            Aw, Ew, L_base, table,
+            tL, tR,
+            d_min=d_min,
+            tether=tether,
+            max_shift=max_shift,
+            check_relax_iters=check_relax_iters,
+            samples_in_interval=samples_in_interval,
+            max_neighbors=max_neighbors
+        ):
+            return
+
+        tM = 0.5 * (tL + tR)
+        baseM = base_pose_at_time(Aw, Ew, L_base, table, tM)
+        pM = [p.copy() for p in baseM]
+        relax_pose(pM, baseM, d_min, pre_iters, max_neighbors, tether, max_shift)
+
+        poses.append((tM, pM))
+        rec(tL, pL, tM, pM, depth + 1)
+        rec(tM, pM, tR, pR, depth + 1)
+
+    rec(t0, pose0, t1, pose1, 0)
+    poses.sort(key=lambda x: x[0])
+    return poses  # [(t, pose[N]), ...]
+
+# =========================================================
+# 折れ線補間（距離sで進む）
+# =========================================================
+def position_along_polyline(points, seglens, s):
+    if s <= 0.0:
+        return points[0]
+    Ltot = sum(seglens)
+    if s >= Ltot:
+        return points[-1]
+
+    remain = s
+    for k in range(len(points)-1):
+        L = seglens[k]
+        a = points[k]
+        b = points[k+1]
+        if L <= 1e-12:
+            continue
+        if remain <= L:
+            t = remain / L
+            return a.lerp(b, t)
+        remain -= L
+    return points[-1]
+
+# =========================================================
+# Blender util
+# =========================================================
+def ensure_collection(name):
+    col = bpy.data.collections.get(name)
+    if col is None:
+        col = bpy.data.collections.new(name)
+        bpy.context.scene.collection.children.link(col)
+    return col
+
+def clear_empties_in_collection(col):
+    for obj in list(col.objects):
+        if obj.type == 'EMPTY':
+            bpy.data.objects.remove(obj, do_unlink=True)
+
+def set_action_fcurves_linear(obj):
+    ad = obj.animation_data
+    if not ad or not ad.action:
+        return
+    for fc in ad.action.fcurves:
+        for kp in fc.keyframe_points:
+            kp.interpolation = 'LINEAR'
+            kp.handle_left_type = 'VECTOR'
+            kp.handle_right_type = 'VECTOR'
+
+def get_two_selected_mesh_objects():
+    meshes = [o for o in bpy.context.selected_objects if o.type == 'MESH']
+    if len(meshes) != 2:
+        raise RuntimeError("メッシュをちょうど2つ選択してください（アクティブがA、もう一つがEnd）。")
+    A = bpy.context.view_layer.objects.active
+    if A not in meshes:
+        A = meshes[0]
+    End = meshes[0] if meshes[1] == A else meshes[1]
+    return A, End
+
+# =========================================================
+# main
+# =========================================================
+def main():
+    scene = bpy.context.scene
+    fps = scene.render.fps / scene.render.fps_base
+    dt = 1.0 / fps
+
+    start_f = scene.frame_start
+    end_f = scene.frame_end
+    frames = end_f - start_f
+    if frames <= 0:
+        raise RuntimeError("フレーム範囲が不正です。")
+    T_total = frames / fps
+
+    A, End = get_two_selected_mesh_objects()
+    if len(A.data.vertices) != len(End.data.vertices):
+        raise RuntimeError("AとEndの頂点数が一致しません。")
+
+    N = len(A.data.vertices)
+    Aw = [A.matrix_world @ v.co for v in A.data.vertices]
+    Ew = [End.matrix_world @ v.co for v in End.data.vertices]
+
+    # 代表距離（台形になりやすいようmax）
+    dists = [(Ew[i] - Aw[i]).length for i in range(N)]
+    L_base = max(dists) if N else 0.0
+
+    # 速度テーブル（Sカーブ）
+    table = build_scurve_table(L_base, T_total, V_MAX, A_MAX, J_MAX, samples=2048)
+
+    # 適応仮想ポーズ生成
+    poses_t = build_adaptive_poses(
+        Aw, Ew, L_base, table,
+        t0=0.0, t1=T_total,
+        d_min=D_MIN,
+        pre_iters=PRE_RELAX_ITERS,
+        tether=TETHER_PRE,
+        max_shift=MAX_SHIFT_PER_POSE,
+        max_subdiv=MAX_SUBDIV,
+        max_neighbors=MAX_NEIGHBORS,
+        check_relax_iters=CHECK_RELAX_ITERS,
+        samples_in_interval=SAMPLES_IN_INTERVAL
+    )
+
+    # pose点列（K点）
+    K = len(poses_t)
+    poses = [pose for (t, pose) in poses_t]
+    pose_times = [t for (t, pose) in poses_t]
+
+    # 各ドローンの折れ線パス長
+    seglens = [[0.0]*(K-1) for _ in range(N)]
+    total_len = [0.0]*N
+    for i in range(N):
+        L = 0.0
+        for k in range(K-1):
+            d = (poses[k+1][i] - poses[k][i]).length
+            seglens[i][k] = d
+            L += d
+        total_len[i] = L
+
+    # Empties
+    col = ensure_collection(COLLECTION_NAME)
+    if CLEAR_OLD:
+        clear_empties_in_collection(col)
+
+    empties = []
+    for i in range(N):
+        e = bpy.data.objects.new(f"{NAME_PREFIX}{i:05d}", None)
+        e.empty_display_type = 'PLAIN_AXES'
+        e.empty_display_size = EMPTY_SIZE
+        e.location = poses[0][i]
+        col.objects.link(e)
+        empties.append(e)
+
+    cur_pos = [poses[0][i].copy() for i in range(N)]
+    prev_vel = [Vector((0.0,0.0,0.0)) for _ in range(N)]
+
+    max_shift_run = (D_MIN * 0.75) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
+
+    # Bake
+    for f in range(start_f, end_f + 1):
+        t = (f - start_f) / fps
+
+        s_base = table_lookup(table, t, key="s")
+        v_allow = table_lookup(table, t, key="v")  # Sカーブ速度そのもの
+        u = 0.0 if L_base <= 1e-12 else min(1.0, max(0.0, s_base / L_base))
+
+        # 目標位置（各ドローンは自分のパス長に比例して進む）
+        target = [None]*N
+        for i in range(N):
+            Li = total_len[i]
+            si = u * Li
+            per_points = [poses[k][i] for k in range(K)]
+            target[i] = position_along_polyline(per_points, seglens[i], si)
+
+        next_pos = [p.copy() for p in target]
+
+        # 本番近接解消（目標へ引き戻しつつ）
+        relax_pose(
+            next_pos,
+            base=target,
+            d_min=D_MIN,
+            iters=RUN_RELAX_ITERS,
+            max_neighbors=MAX_NEIGHBORS,
+            tether=TETHER_RUN,
+            max_shift=max_shift_run
+        )
+
+        # 速度・加速度制限（暴れ止め）
+        v_allow = min(V_MAX, max(0.0, v_allow))
+
+        for i in range(N):
+            dp = next_pos[i] - cur_pos[i]
+            v = dp / dt
+
+            spd = v.length
+            if spd > 1e-12 and spd > v_allow:
+                v = v * (v_allow / spd)
+                next_pos[i] = cur_pos[i] + v * dt
+
+            dv = v - prev_vel[i]
+            acc = dv.length / dt
+            if acc > 1e-12 and acc > A_MAX:
+                dv = dv * (A_MAX / acc)
+                v2 = prev_vel[i] + dv
+                spd2 = v2.length
+                if spd2 > 1e-12 and spd2 > v_allow:
+                    v2 = v2 * (v_allow / spd2)
+                next_pos[i] = cur_pos[i] + v2 * dt
+                v = v2
+
+            prev_vel[i] = v
+
+        # キー
+        for i, e in enumerate(empties):
+            cur_pos[i] = next_pos[i]
+            e.location = cur_pos[i]
+            e.keyframe_insert(data_path="location", frame=f)
+
+    for e in empties:
+        set_action_fcurves_linear(e)
+
+    print(f"Done: N={N}, adaptive_poses={K}, MAX_SUBDIV={MAX_SUBDIV}, frames=[{start_f}-{end_f}]")
+
+main()

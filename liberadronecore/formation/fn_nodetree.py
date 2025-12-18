@@ -1,7 +1,7 @@
-class LD_FormationTree(bpy.types.NodeTree):
-    bl_idname = "LD_FormationTree"
-    bl_label  = "LD Formaiton"
-    bl_icon   = 'SEQ_STRIP'  # 好きなアイコン
+class FN_FormationTree(bpy.types.NodeTree):
+    bl_idname = "FN_FormationTree"
+    bl_label  = "FN Formaiton"
+    bl_icon   = 'NODETREE'  # 好きなアイコン
 
     @classmethod
     def poll(cls, context):

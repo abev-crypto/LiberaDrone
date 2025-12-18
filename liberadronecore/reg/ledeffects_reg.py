@@ -50,9 +50,8 @@ node_categories = [
     ),
 ]
 
-
+"""
 class LedEffectsRegister(RegisterBase):
-    """Register/unregister LED effect related Blender classes."""
 
     @classmethod
     def register(cls) -> None:
@@ -65,3 +64,4 @@ class LedEffectsRegister(RegisterBase):
         unregister_node_categories("LD_LED_EFFECTS_NODES")
         for cls in reversed(classes):
             bpy.utils.unregister_class(cls)
+"""

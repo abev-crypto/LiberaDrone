@@ -4,8 +4,8 @@ from .base_reg import RegisterBase
 import bpy
 
 
-class OverlayRegister(RegisterBase):
-    """Register/unregister overlay related Blender classes."""
+class FormationNodeRegister(RegisterBase):
+    """Register/unregister formation node related Blender classes."""
 
     @classmethod
     def register(cls) -> None:

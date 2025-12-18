@@ -1,3 +1,9 @@
+""""
+Docstring for liberadronecore.overlay.checker
+頂点属性に基づいて、チェックマークを3Dビューに描画するオーバーレイ
+TODO 横速度 上速度 下速度 加速度 距離制限の各オーバーレイを作成
+"""
+
 import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader

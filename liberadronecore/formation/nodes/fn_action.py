@@ -1,5 +1,6 @@
-class LD_ActionNode(bpy.types.Node):
-    bl_idname = "LD_ActionNode"
+import bpy
+class FN_ActionNode(bpy.types.Node):
+    bl_idname = "FN_ActionNode"
     bl_label  = "Action"
     bl_icon = "ACTION"
 
@@ -8,8 +9,8 @@ class LD_ActionNode(bpy.types.Node):
     duration: bpy.props.FloatProperty(name="Duration", default=5.0, min=0.0)
 
     def init(self, context):
-        self.inputs.new("LD_SocketFlow", "In")
-        self.outputs.new("LD_SocketFlow", "Next")
+        self.inputs.new("FN_SocketFlow", "In")
+        self.outputs.new("FN_SocketFlow", "Next")
 
     def draw_buttons(self, context, layout):
         layout.prop(self, "effect_name")

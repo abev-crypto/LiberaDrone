@@ -23,8 +23,8 @@ import bpy
 
 @dataclass
 class GithubRepo:
-    owner: str
-    repo: str
+    owner: str = "abev-crypto"
+    repo: str = "LiberaDrone"
     branch: str = "main"
     # リポジトリ内でアドオンが置かれている相対パス（repo 直下なら空でOK）
     # 例: "src/my_addon" の場合は "src/my_addon"
@@ -196,8 +196,8 @@ def install_from_zip_bytes(zip_bytes: bytes, repo: GithubRepo, target_addon_dir:
 # Blender Operator / UI
 # -----------------------------
 
-class ADDONUPDATER_OT_check_update(bpy.types.Operator):
-    bl_idname = "addon_updater.check_update"
+class LD_OT_check_update(bpy.types.Operator):
+    bl_idname = "liberadrone.check_update"
     bl_label = "Check Update (GitHub main)"
     bl_options = {'INTERNAL'}
 
@@ -234,8 +234,8 @@ class ADDONUPDATER_OT_check_update(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class ADDONUPDATER_OT_apply_update(bpy.types.Operator):
-    bl_idname = "addon_updater.apply_update"
+class LD_OT_apply_update(bpy.types.Operator):
+    bl_idname = "liberadrone.apply_update"
     bl_label = "Update Now (Download & Install)"
     bl_options = {'INTERNAL'}
 
@@ -263,53 +263,9 @@ class ADDONUPDATER_OT_apply_update(bpy.types.Operator):
             self.report({'ERROR'}, f"更新に失敗: {e}")
             return {'CANCELLED'}
 
-
-class ADDONUPDATER_Preferences(bpy.types.AddonPreferences):
-    bl_idname = __package__
-
-    gh_owner: bpy.props.StringProperty(name="GitHub Owner", default="")
-    gh_repo: bpy.props.StringProperty(name="GitHub Repo", default="")
-    gh_branch: bpy.props.StringProperty(name="Branch", default="main")
-    gh_addon_subdir: bpy.props.StringProperty(
-        name="Addon Subdir (in repo)",
-        default="",
-        description="リポジトリ直下なら空。例: src/my_addon",
-    )
-
-    update_available: bpy.props.BoolProperty(name="Update Available", default=False)
-    last_local_version: bpy.props.StringProperty(name="Local Version", default="")
-    last_remote_version: bpy.props.StringProperty(name="Remote Version", default="")
-
-    def draw(self, context):
-        layout = self.layout
-        col = layout.column(align=True)
-        col.label(text="GitHub main updater")
-
-        col.prop(self, "gh_owner")
-        col.prop(self, "gh_repo")
-        col.prop(self, "gh_branch")
-        col.prop(self, "gh_addon_subdir")
-
-        row = col.row(align=True)
-        row.operator("addon_updater.check_update", text="Check Update")
-
-        if self.update_available:
-            col.alert = True
-            col.label(text="Update available!", icon='ERROR')
-            col.alert = False
-            col.operator("addon_updater.apply_update", text="Update Now", icon='IMPORT')
-        else:
-            col.label(text="No update detected (or not checked yet).")
-
-        col.separator()
-        col.label(text=f"Local:  {self.last_local_version}")
-        col.label(text=f"Remote: {self.last_remote_version}")
-
-
 classes = (
-    ADDONUPDATER_OT_check_update,
-    ADDONUPDATER_OT_apply_update,
-    ADDONUPDATER_Preferences,
+    LD_OT_check_update,
+    LD_OT_apply_update,
 )
 
 
