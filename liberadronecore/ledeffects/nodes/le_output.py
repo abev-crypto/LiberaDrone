@@ -1,7 +1,8 @@
 import bpy
+from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
 
 
-class LDLEDOutputNode(bpy.types.Node):
+class LDLEDOutputNode(bpy.types.Node, LDLED_Node):
     """Node representing the LED output surface."""
 
     bl_idname = "LDLEDOutputNode"

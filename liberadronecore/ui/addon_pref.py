@@ -30,16 +30,16 @@ class LD_OT_install_deps(bpy.types.Operator):
 
 
 class LD_Preferences(bpy.types.AddonPreferences):
-    # ★ ここはアドオンのモジュール名（フォルダ名 / __init__.py のパッケージ名）
-    bl_idname = __package__ or __name__
+    # ☁Eここはアドオンのモジュール名（フォルダ吁E/ __init__.py のパッケージ名！E
+    bl_idname = "liberadronecore"
     bl_label = "LiberaDrone Preferences"
-    gh_owner: bpy.props.StringProperty(name="GitHub Owner", default="")
-    gh_repo: bpy.props.StringProperty(name="GitHub Repo", default="")
+    gh_owner: bpy.props.StringProperty(name="GitHub Owner", default="abev-crypto")
+    gh_repo: bpy.props.StringProperty(name="GitHub Repo", default="LiberaDrone")
     gh_branch: bpy.props.StringProperty(name="Branch", default="main")
     gh_addon_subdir: bpy.props.StringProperty(
         name="Addon Subdir (in repo)",
         default="",
-        description="リポジトリ直下なら空。例: src/my_addon",
+        description="リポジトリ直下なら空。侁E src/my_addon",
     )
 
     update_available: bpy.props.BoolProperty(name="Update Available", default=False)
@@ -63,7 +63,7 @@ class LD_Preferences(bpy.types.AddonPreferences):
             layout.label(text="After installation:", icon='INFO')
             layout.label(text="Restart Blender or use 'Reload Scripts'.")
         else:
-            layout.label(text="All dependencies are installed ✅", icon='CHECKMARK')
+            layout.label(text="All dependencies are installed.", icon='CHECKMARK')
 
 
         col = layout.column(align=True)
@@ -90,7 +90,7 @@ class LD_Preferences(bpy.types.AddonPreferences):
         col.label(text=f"Remote: {self.last_remote_version}")
 
 
-# ---- (例) 本体機能：依存OKの時だけ登録したいならここに入れる ----
+# ---- (侁E 本体機�E�E�依存OKの時だけ登録したぁE��らここに入れる ----
 class LD_OT_dummy(bpy.types.Operator):
     bl_idname = "liberadrone.dummy"
     bl_label = "Dummy"
@@ -113,11 +113,12 @@ _registered_full = False
 
 
 def register():
+    print("LiberaDrone: register addon_pref")
     global _registered_full
     for c in _bootstrap_classes:
         bpy.utils.register_class(c)
 
-    # 依存が揃っていれば本体も登録
+    # 依存が揁E��てぁE��ば本体も登録
     if not request.deps_missing():
         for c in _full_classes:
             bpy.utils.register_class(c)
@@ -134,3 +135,4 @@ def unregister():
 
     for c in reversed(_bootstrap_classes):
         bpy.utils.unregister_class(c)
+

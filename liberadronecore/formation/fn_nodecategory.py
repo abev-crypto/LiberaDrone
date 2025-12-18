@@ -1,6 +1,5 @@
 from liberadronecore.reg.autoreg import AutoNode, AutoRegister, Registry
 from nodeitems_utils import NodeCategory, NodeItem, register_node_categories, unregister_node_categories
-import liberadronecore.formation.nodes
 
 class FN_NodeCategory(NodeCategory):
     @classmethod
@@ -9,7 +8,7 @@ class FN_NodeCategory(NodeCategory):
         return (space is not None) and (getattr(space, "tree_type", None) == "FN_FormationTree")
 
 class FN_RegisterBase(Registry[FN_NodeCategory]):
-    pass
+    nc = FN_NodeCategory
 
 class FN_Register(AutoRegister[FN_RegisterBase]):
     registry = FN_RegisterBase

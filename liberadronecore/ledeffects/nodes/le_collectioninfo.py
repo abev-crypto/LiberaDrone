@@ -1,7 +1,8 @@
 import bpy
+from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
 
 
-class LDLEDCollectionInfoNode(bpy.types.Node):
+class LDLEDCollectionInfoNode(bpy.types.Node, LDLED_Node):
     """Provides access to a Blender collection for LED assignment."""
 
     bl_idname = "LDLEDCollectionInfoNode"

@@ -1,7 +1,8 @@
 import bpy
+from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
 
 
-class LDLEDMeshInfoNode(bpy.types.Node):
+class LDLEDMeshInfoNode(bpy.types.Node, LDLED_Node):
     """Exposes mesh information for LED sampling."""
 
     bl_idname = "LDLEDMeshInfoNode"

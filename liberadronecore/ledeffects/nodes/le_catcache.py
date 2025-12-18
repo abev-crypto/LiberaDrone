@@ -1,7 +1,8 @@
 import bpy
+from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
 
 
-class LDLEDCatCacheNode(bpy.types.Node):
+class LDLEDCatCacheNode(bpy.types.Node, LDLED_Node):
     """Represents cached LED categories to reuse across effects."""
 
     bl_idname = "LDLEDCatCacheNode"

@@ -1,7 +1,8 @@
 import bpy
+from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
 
 
-class LDLEDValueNode(bpy.types.Node):
+class LDLEDValueNode(bpy.types.Node, LDLED_Node):
     """A minimal node to test the LED effects node tree."""
 
     bl_idname = "LDLEDValueNode"

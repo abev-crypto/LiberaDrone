@@ -1,7 +1,8 @@
 import bpy
+from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
 
 
-class LDLEDBlendNode(bpy.types.Node):
+class LDLEDBlendNode(bpy.types.Node, LDLED_Node):
     """Blend two LED colors together."""
 
     bl_idname = "LDLEDBlendNode"

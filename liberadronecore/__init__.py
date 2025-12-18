@@ -10,6 +10,7 @@ bl_info = {
 
 import liberadronecore.reg
 import liberadronecore.formation
+import liberadronecore.ledeffects
 
 from liberadronecore.reg.base_reg import RegisterBase
 

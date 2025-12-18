@@ -1,7 +1,8 @@
 import bpy
+from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
 
 
-class LDLEDMathNode(bpy.types.Node):
+class LDLEDMathNode(bpy.types.Node, LDLED_Node):
     """Basic math node for LED intensities."""
 
     bl_idname = "LDLEDMathNode"

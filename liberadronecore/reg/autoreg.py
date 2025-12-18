@@ -10,6 +10,7 @@ T = TypeVar('T')
 
 
 class Registry(RegisterBase, Generic[T]):
+    nc : Optional[Type[T]] = None
     classes: List[Type] = []
     _class_set = set()
 
@@ -49,9 +50,10 @@ class Registry(RegisterBase, Generic[T]):
     @classmethod
     def build_node_categories(cls) -> List[T]:
         cats: List[T] = []
+        ncat = getattr(cls, "nc", None)
         for cat_id, items in cls.node_items.items():
             label = cls.node_labels.get(cat_id, cat_id)
-            cats.append(T(cat_id, label, items=[NodeItem(x) for x in items]))
+            cats.append(ncat(cat_id, label, items=[NodeItem(x) for x in items]))
         # 必要ならカテゴリ順制御
         cats.sort(key=lambda c: c.identifier)
         return cats
