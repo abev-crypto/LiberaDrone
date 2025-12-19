@@ -1,4 +1,3 @@
-from . import le_blend
 from . import le_catcache
 from . import le_collectioninfo
 from . import le_effect

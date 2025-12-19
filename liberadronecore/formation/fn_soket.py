@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import StringProperty, FloatProperty, BoolProperty, EnumProperty, IntProperty
+from bpy.props import FloatProperty, BoolProperty, IntProperty, PointerProperty
 from liberadronecore.formation.fn_nodecategory import FN_Register
 
 class FN_SocketFlow(bpy.types.NodeSocket, FN_Register):
@@ -20,10 +20,31 @@ class FN_SocketBool(bpy.types.NodeSocket, FN_Register):
     value: BoolProperty(name="Value", default=False)
 
     def draw(self, context, layout, node, text):
-        layout.prop(self, "value", text=text if text else self.name)
+        label = text if text else self.name
+        if self.is_output or self.is_linked:
+            layout.label(text=label)
+        else:
+            layout.prop(self, "value", text=label)
 
     def draw_color(self, context, node):
         return (0.2, 0.8, 0.2, 1.0)
+
+class FN_SocketCollection(bpy.types.NodeSocket, FN_Register):
+    """Collection socket"""
+    bl_idname = "FN_SocketCollection"
+    bl_label = "Collection"
+
+    collection: PointerProperty(type=bpy.types.Collection)
+
+    def draw(self, context, layout, node, text):
+        label = text if text else self.name
+        if self.is_output or self.is_linked:
+            layout.label(text=label)
+        else:
+            layout.prop(self, "collection", text=label)
+
+    def draw_color(self, context, node):
+        return (0.4, 0.6, 1.0, 1.0)
     
 class FN_SocketFloat(bpy.types.NodeSocket, FN_Register):
     """Boolean socket (for conditions)"""
@@ -33,7 +54,11 @@ class FN_SocketFloat(bpy.types.NodeSocket, FN_Register):
     value: FloatProperty(name="Value", default=0.0)
 
     def draw(self, context, layout, node, text):
-        layout.prop(self, "value", text=text if text else self.name)
+        label = text if text else self.name
+        if self.is_output or self.is_linked:
+            layout.label(text=label)
+        else:
+            layout.prop(self, "value", text=label)
 
     def draw_color(self, context, node):
         return (0.2, 0.8, 0.2, 1.0)
@@ -46,7 +71,11 @@ class FN_SocketInt(bpy.types.NodeSocket, FN_Register):
     value: IntProperty(name="Value", default=0)
 
     def draw(self, context, layout, node, text):
-        layout.prop(self, "value", text=text if text else self.name)
+        label = text if text else self.name
+        if self.is_output or self.is_linked:
+            layout.label(text=label)
+        else:
+            layout.prop(self, "value", text=label)
 
     def draw_color(self, context, node):
         return (0.2, 0.8, 0.2, 1.0)
