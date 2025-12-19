@@ -152,7 +152,13 @@ def create_any_mesh_points(name=ANY_MESH_NAME, n_verts=ANY_MESH_VERTS):
 # -----------------------------
 # 実行本体
 # -----------------------------
-def init_scene_env():
+def init_scene_env(n_verts=None):
+    global ANY_MESH_VERTS
+    if n_verts is not None:
+        try:
+            ANY_MESH_VERTS = int(n_verts)
+        except Exception:
+            pass
     # 5) 専用コレクション作成
     root = None
     cols = {n: get_or_create_collection(n, parent=root) for n in COLLECTION_NAMES}
@@ -181,4 +187,5 @@ def init_scene_env():
     print("[Init] Done:",
           f"Material={mat.name}, Icosphere={iso.name}, AnyMesh={any_obj.name}, Attr={ATTR_NAME}")
 
-init_scene_env()
+if __name__ == "__main__":
+    init_scene_env()

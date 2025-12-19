@@ -96,7 +96,16 @@ def _propagate_formation_ids(prev_mesh: bpy.types.Mesh, cur_mesh: bpy.types.Mesh
         cur_form.data[idx].value = mapping.get(pid, pid)
 
 
+def _as_collection(value: Any) -> Optional[bpy.types.Collection]:
+    if isinstance(value, bpy.types.Collection):
+        return value
+    return None
+
+
 def _collect_mesh_objects(col: bpy.types.Collection) -> List[bpy.types.Object]:
+    col = _as_collection(col)
+    if col is None:
+        return []
     meshes = [obj for obj in col.all_objects if obj.type == 'MESH']
     meshes.sort(key=lambda o: o.name)
     return meshes
@@ -124,6 +133,7 @@ def _assign_ids_for_collections(cols: Sequence[bpy.types.Collection]) -> None:
 
 
 def _count_collection_vertices(col: Optional[bpy.types.Collection]) -> int:
+    col = _as_collection(col)
     if col is None:
         return -1
     count = 0
@@ -141,6 +151,8 @@ def _first_valid_link(sock: bpy.types.NodeSocket) -> Optional[bpy.types.NodeLink
     for link in sock.links:
         if link.is_valid:
             return link
+    for link in sock.links:
+        return link
     return None
 
 
@@ -149,7 +161,21 @@ def _socket_ui_value(sock: bpy.types.NodeSocket) -> Any:
         return sock.value
     if hasattr(sock, "collection"):
         return sock.collection
+    if hasattr(sock, "default_value"):
+        return sock.default_value
     return _UNSET
+
+
+def _find_input_socket(node: bpy.types.Node, name: str) -> Optional[bpy.types.NodeSocket]:
+    if not hasattr(node, "inputs"):
+        return None
+    sock = node.inputs.get(name)
+    if sock:
+        return sock
+    for candidate in node.inputs:
+        if getattr(candidate, "name", None) == name or getattr(candidate, "identifier", None) == name or getattr(candidate, "label", None) == name:
+            return candidate
+    return None
 
 
 def _eval_math_node(node: bpy.types.Node, a: Any, b: Any) -> float:
@@ -213,9 +239,9 @@ def _eval_socket_value(
         else:
             value = _socket_ui_value(sock)
     else:
-        if sock.is_linked:
+        if sock.links:
             link = _first_valid_link(sock)
-            if link:
+            if link and link.from_socket:
                 value = _eval_socket_value(link.from_socket, cache, stack)
         if value is _UNSET:
             value = _socket_ui_value(sock)
@@ -232,7 +258,7 @@ def _resolve_input_value(
     default: Any,
     fallback_attr: Optional[str] = None,
 ) -> Any:
-    sock = node.inputs.get(socket_name) if hasattr(node, "inputs") else None
+    sock = _find_input_socket(node, socket_name)
     if sock:
         value = _eval_socket_value(sock, cache, set())
         if value is not _UNSET:
@@ -249,36 +275,39 @@ def _coerce_int(value: Any, default: int = 0) -> int:
         return default
 
 
-def _flow_sequence(tree: bpy.types.NodeTree) -> List[bpy.types.Node]:
-    start_nodes = [n for n in tree.nodes if n.bl_idname == "FN_StartNode"]
-    if not start_nodes:
-        return []
-
-    start_node = start_nodes[0]
-    sequence: List[bpy.types.Node] = [start_node]
-    visited = {start_node}
-    current = start_node
-    while True:
-        next_node = None
-        for out_sock in current.outputs:
-            if getattr(out_sock, "bl_idname", "") != "FN_SocketFlow":
+def _flow_edges(tree: bpy.types.NodeTree) -> Dict[bpy.types.Node, List[bpy.types.Node]]:
+    edges: Dict[bpy.types.Node, List[bpy.types.Node]] = {}
+    for node in tree.nodes:
+        targets: List[bpy.types.Node] = []
+        for out_sock in node.outputs:
+            if not _is_flow_socket(out_sock):
                 continue
             for link in out_sock.links:
                 if not link.is_valid:
                     continue
                 target = link.to_node
-                if target in visited:
+                if target is None:
                     continue
-                next_node = target
-                break
-            if next_node:
-                break
-        if not next_node:
-            break
-        sequence.append(next_node)
-        visited.add(next_node)
-        current = next_node
-    return sequence
+                targets.append(target)
+        if targets:
+            edges[node] = targets
+    return edges
+
+
+def _flow_reachable(start_node: bpy.types.Node, edges: Dict[bpy.types.Node, List[bpy.types.Node]]) -> List[bpy.types.Node]:
+    reachable: List[bpy.types.Node] = []
+    seen: set[bpy.types.Node] = set()
+    stack: List[bpy.types.Node] = [start_node]
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        reachable.append(node)
+        for target in edges.get(node, []):
+            if target not in seen:
+                stack.append(target)
+    return reachable
 
 
 def _duration_frames(duration_value: Any) -> int:
@@ -311,30 +340,87 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
                 except Exception:
                     node.collection_vertex_count = -1
 
-        seq = _flow_sequence(tree)
-        if not seq:
+        start_nodes = [n for n in tree.nodes if n.bl_idname == "FN_StartNode"]
+        if not start_nodes:
             continue
 
-        start_value = _resolve_input_value(seq[0], "Start Frame", value_cache, 0, "start_frame")
-        current_frame = _coerce_int(start_value, 0)
-        if hasattr(seq[0], "computed_start_frame"):
-            try:
-                seq[0].computed_start_frame = int(current_frame)
-            except Exception:
-                pass
-        for node in seq[1:]:
+        start_node = start_nodes[0]
+        edges = _flow_edges(tree)
+        reachable = _flow_reachable(start_node, edges)
+        if not reachable:
+            continue
+
+        in_degree: Dict[bpy.types.Node, int] = {node: 0 for node in reachable}
+        for node in reachable:
+            for target in edges.get(node, []):
+                if target in in_degree:
+                    in_degree[target] += 1
+
+        queue: List[bpy.types.Node] = [node for node in reachable if in_degree[node] == 0]
+        if start_node in queue:
+            queue.remove(start_node)
+            queue.insert(0, start_node)
+
+        incoming_max: Dict[bpy.types.Node, int] = {}
+        node_start: Dict[bpy.types.Node, int] = {}
+        node_end: Dict[bpy.types.Node, int] = {}
+
+        start_value = _resolve_input_value(start_node, "Start Frame", value_cache, 0, "start_frame")
+        node_start[start_node] = _coerce_int(start_value, 0)
+
+        ordered: List[bpy.types.Node] = []
+        while queue:
+            node = queue.pop(0)
+            ordered.append(node)
+            start = node_start.get(node)
+            if start is None:
+                start = incoming_max.get(node, 0)
+                node_start[node] = start
             duration_value = _resolve_input_value(node, "Duration", value_cache, 0.0, "duration")
             dur = _duration_frames(duration_value)
-            start = current_frame
-            end = current_frame + dur
+            end = start + dur
+            node_end[node] = end
+
+            for target in edges.get(node, []):
+                if target not in in_degree:
+                    continue
+                prev = incoming_max.get(target)
+                if prev is None or end > prev:
+                    incoming_max[target] = end
+                in_degree[target] -= 1
+                if in_degree[target] == 0:
+                    node_start[target] = incoming_max.get(target, 0)
+                    queue.append(target)
+
+        for node in reachable:
+            if node in ordered:
+                continue
+            start = incoming_max.get(node, 0)
+            node_start[node] = start
+            duration_value = _resolve_input_value(node, "Duration", value_cache, 0.0, "duration")
+            dur = _duration_frames(duration_value)
+            node_end[node] = start + dur
+            ordered.append(node)
+
+        if hasattr(start_node, "computed_start_frame"):
+            try:
+                start_node.computed_start_frame = int(node_start[start_node])
+            except Exception:
+                pass
+
+        for node in ordered:
+            if node == start_node:
+                continue
+            start = node_start.get(node, 0)
+            end = node_end.get(node, start)
             col = _resolve_input_value(node, "Collection", value_cache, None, "collection")
+            col = _as_collection(col)
             schedule.append(ScheduleEntry(tree.name, node.name, start, end, col))
             if hasattr(node, "computed_start_frame"):
                 try:
                     node.computed_start_frame = int(start)
                 except Exception:
                     node.computed_start_frame = -1
-            current_frame = end
 
     ordered_cols: List[bpy.types.Collection] = []
     for entry in schedule:
@@ -365,6 +451,45 @@ class FN_OT_calculate_schedule(bpy.types.Operator, FN_Register):
             return {'FINISHED'}
         except Exception as e:
             self.report({'ERROR'}, f"Calculate failed: {e}")
+            return {'CANCELLED'}
+
+
+class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
+    bl_idname = "fn.setup_scene"
+    bl_label = "Setup Scene"
+    bl_description = "Run scene setup using Start node drone count"
+
+    def execute(self, context):
+        tree = None
+        space = context.space_data
+        if space and getattr(space, "edit_tree", None):
+            tree = space.edit_tree
+        if tree is None or getattr(tree, "bl_idname", "") != "FN_FormationTree":
+            tree = next((ng for ng in bpy.data.node_groups if getattr(ng, "bl_idname", "") == "FN_FormationTree"), None)
+
+        drone_count = None
+        if tree:
+            for node in tree.nodes:
+                if getattr(node, "bl_idname", "") == "FN_StartNode":
+                    drone_count = getattr(node, "drone_count", None)
+                    break
+
+        try:
+            from liberadronecore.system import sence_setup
+            if drone_count is not None:
+                try:
+                    drone_count = max(1, int(drone_count))
+                except Exception:
+                    drone_count = None
+            if drone_count is not None:
+                sence_setup.ANY_MESH_VERTS = drone_count
+                sence_setup.init_scene_env(n_verts=drone_count)
+            else:
+                sence_setup.init_scene_env()
+            self.report({'INFO'}, "Setup completed")
+            return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Setup failed: {e}")
             return {'CANCELLED'}
 
 
@@ -428,6 +553,7 @@ class FN_PT_formation_panel(bpy.types.Panel, FN_Register):
 
     def draw(self, context):
         layout = self.layout
+        layout.operator("fn.setup_scene", text="Setup")
         layout.operator("fn.calculate_schedule", text="Calculate")
         if COMPUTED_SCHEDULE:
             layout.label(text=f"Cached entries: {len(COMPUTED_SCHEDULE)}")

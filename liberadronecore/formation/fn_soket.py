@@ -68,7 +68,18 @@ class FN_SocketInt(bpy.types.NodeSocket, FN_Register):
     bl_idname = "FN_SocketInt"
     bl_label = "Int"
 
-    value: IntProperty(name="Value", default=0)
+    def _on_value_update(self, context):
+        if self.name != "Num":
+            return
+        node = getattr(self, "node", None)
+        if node is None:
+            return
+        if hasattr(node, "_update_dynamic_sockets"):
+            node._update_dynamic_sockets()
+        if hasattr(node, "_update_flow_inputs"):
+            node._update_flow_inputs()
+
+    value: IntProperty(name="Value", default=0, update=_on_value_update)
 
     def draw(self, context, layout, node, text):
         label = text if text else self.name
