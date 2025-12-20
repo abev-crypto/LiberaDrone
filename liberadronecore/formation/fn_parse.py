@@ -10,6 +10,8 @@ from liberadronecore.formation.fn_nodecategory import FN_Register
 
 PAIR_ID_ATTR = "PairID"
 FORMATION_ID_ATTR = "FormationID"
+FORMATION_ATTR_NAME = "formation_id"
+PAIR_ATTR_NAME = "pair_id"
 
 COMPUTED_SCHEDULE: List["ScheduleEntry"] = []
 _UNSET = object()
@@ -245,7 +247,6 @@ def _eval_socket_value(
                 value = _eval_socket_value(link.from_socket, cache, stack)
         if value is _UNSET:
             value = _socket_ui_value(sock)
-
     stack.remove(sock_id)
     cache[sock_id] = value
     return value
@@ -311,11 +312,145 @@ def _flow_reachable(start_node: bpy.types.Node, edges: Dict[bpy.types.Node, List
 
 
 def _duration_frames(duration_value: Any) -> int:
-    try:
-        frames = int(math.ceil(float(duration_value)))
-    except Exception:
-        frames = 0
+    frames = int(math.ceil(float(duration_value)))
     return max(0, frames)
+
+
+def _ensure_int_point_attr(mesh: bpy.types.Mesh, name: str) -> bpy.types.Attribute:
+    """Ensure an INT attribute on point domain, recreating if mismatched."""
+    attr = mesh.attributes.get(name)
+    if attr and attr.data_type == 'INT' and attr.domain == 'POINT' and len(attr.data) == len(mesh.vertices):
+        return attr
+    if attr:
+        mesh.attributes.remove(attr)
+    return mesh.attributes.new(name=name, type='INT', domain='POINT')
+
+
+def _assign_formation_ids(col: bpy.types.Collection, drone_count: Optional[int]) -> bool:
+    """Assign formation_id (and PairID/FormationID legacy) once per collection if missing."""
+    meshes = _collect_mesh_objects(col)
+    if not meshes:
+        return False
+
+    need_assign = False
+    for obj in meshes:
+        attr = obj.data.attributes.get(FORMATION_ATTR_NAME)
+        if not attr or attr.domain != 'POINT' or attr.data_type != 'INT' or len(attr.data) != len(obj.data.vertices):
+            need_assign = True
+            break
+    if not need_assign:
+        return False
+
+    count = max(0, int(drone_count)) if drone_count else None
+    next_id = 0
+    for obj in meshes:
+        mesh = obj.data
+        form_attr = _ensure_int_point_attr(mesh, FORMATION_ATTR_NAME)
+        legacy_form = _ensure_int_attribute(mesh, FORMATION_ID_ATTR)
+        legacy_pair = _ensure_int_attribute(mesh, PAIR_ID_ATTR)
+        vert_len = len(mesh.vertices)
+        values = []
+        for i in range(vert_len):
+            if count:
+                vid = next_id % count
+            else:
+                vid = next_id
+            values.append(vid)
+            next_id += 1
+        # bulk write
+        form_attr.data.foreach_set("value", values)
+        legacy_form.data.foreach_set("value", values)
+        legacy_pair.data.foreach_set("value", values)
+    return True
+
+
+def _pair_from_previous(prev_meshes: List[bpy.types.Object], next_meshes: List[bpy.types.Object]) -> bool:
+    """Assign pair_id on next_meshes based on Hungarian match to prev_meshes."""
+    if not prev_meshes or not next_meshes:
+        return False
+    from liberadronecore.system.drone import calculate_mapping
+    import numpy as np
+
+    def _flatten(meshes, attr_name: Optional[str]) -> tuple[np.ndarray, List[int], List[tuple[bpy.types.Mesh, int]]]:
+        coords = []
+        ids: List[int] = []
+        spans: List[tuple[bpy.types.Mesh, int]] = []
+        for obj in meshes:
+            mesh = obj.data
+            mat = obj.matrix_world
+            spans.append((mesh, len(mesh.vertices)))
+            coords.extend([(mat @ v.co)[:] for v in mesh.vertices])
+            if attr_name:
+                attr = mesh.attributes.get(attr_name)
+                if attr and attr.data_type == 'INT' and attr.domain == 'POINT' and len(attr.data) == len(mesh.vertices):
+                    ids.extend([val.value for val in attr.data])
+                    continue
+            ids.extend(list(range(len(mesh.vertices))))
+        return np.asarray(coords, dtype=np.float64), ids, spans
+
+    pts_prev, prev_ids, prev_spans = _flatten(prev_meshes, PAIR_ATTR_NAME)
+    pts_next, _, next_spans = _flatten(next_meshes, None)
+    if len(pts_prev) != len(pts_next) or len(pts_prev) == 0:
+        return False
+
+    _, pairB = calculate_mapping.hungarian_from_points(pts_prev, pts_next)
+
+    # Build flat array of mapped ids for next
+    mapped_ids = [prev_ids[p] for p in pairB]
+
+    offset = 0
+    for mesh, span in next_spans:
+        attr = _ensure_int_point_attr(mesh, PAIR_ATTR_NAME)
+        values = mapped_ids[offset:offset + span]
+        attr.data.foreach_set("value", values)
+        offset += span
+    return True
+
+
+def _ensure_geometry_node_group(module, main_builder, target_name: str) -> Optional[bpy.types.NodeTree]:
+    """Create or fetch a Geometry Nodes group using the generated builders."""
+    node_tree_names: Dict[Any, str] = {}
+    err_builder = getattr(module, "gn_drone_errorcheck_1_node_group", None)
+    if callable(err_builder):
+        existing_err = bpy.data.node_groups.get("GN_Drone_ErrorCheck")
+        if existing_err is not None:
+            node_tree_names[err_builder] = existing_err.name
+        else:
+            err_group = err_builder(node_tree_names)
+            node_tree_names[err_builder] = getattr(err_group, "name", "GN_Drone_ErrorCheck")
+    existing = bpy.data.node_groups.get(target_name)
+    if existing is not None:
+        node_tree_names[main_builder] = existing.name
+        return existing
+    try:
+        created = main_builder(node_tree_names)
+    except Exception:
+        created = None
+    if created is None:
+        return None
+    try:
+        if created.name != target_name:
+            created.name = target_name
+    except Exception:
+        pass
+    return bpy.data.node_groups.get(target_name) or created
+
+
+def _attach_node_group(obj_name: str, node_group: Optional[bpy.types.NodeTree], modifier_name: str) -> bool:
+    """Attach a geometry nodes modifier to the named object if possible."""
+    if node_group is None:
+        return False
+    obj = bpy.data.objects.get(obj_name)
+    if obj is None:
+        return False
+    mod = obj.modifiers.get(modifier_name)
+    if mod is None or mod.type != 'NODES':
+        mod = obj.modifiers.new(name=modifier_name, type='NODES')
+    try:
+        mod.node_group = node_group
+        return True
+    except Exception:
+        return False
 
 
 def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[ScheduleEntry]:
@@ -326,7 +461,6 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
     trees = [ng for ng in bpy.data.node_groups if getattr(ng, "bl_idname", "") == "FN_FormationTree"]
     for tree in trees:
         value_cache: Dict[int, Any] = {}
-        # clear cached start frames and refresh collection vertex counts before computing
         for node in tree.nodes:
             if hasattr(node, "computed_start_frame"):
                 try:
@@ -366,7 +500,8 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
         node_end: Dict[bpy.types.Node, int] = {}
 
         start_value = _resolve_input_value(start_node, "Start Frame", value_cache, 0, "start_frame")
-        node_start[start_node] = _coerce_int(start_value, 0)
+        start_offset = _coerce_int(start_value, 0)
+        node_start[start_node] = 0  # keep traversal relative; apply start_offset when reporting
 
         ordered: List[bpy.types.Node] = []
         while queue:
@@ -404,7 +539,7 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
 
         if hasattr(start_node, "computed_start_frame"):
             try:
-                start_node.computed_start_frame = int(node_start[start_node])
+                start_node.computed_start_frame = int(start_offset)
             except Exception:
                 pass
 
@@ -413,12 +548,14 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
                 continue
             start = node_start.get(node, 0)
             end = node_end.get(node, start)
+            start_with_offset = start + start_offset
+            end_with_offset = end + start_offset
             col = _resolve_input_value(node, "Collection", value_cache, None, "collection")
             col = _as_collection(col)
-            schedule.append(ScheduleEntry(tree.name, node.name, start, end, col))
+            schedule.append(ScheduleEntry(tree.name, node.name, start_with_offset, end_with_offset, col))
             if hasattr(node, "computed_start_frame"):
                 try:
-                    node.computed_start_frame = int(start)
+                    node.computed_start_frame = int(start_with_offset)
                 except Exception:
                     node.computed_start_frame = -1
 
@@ -428,7 +565,43 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
             ordered_cols.append(entry.collection)
 
     if ordered_cols:
-        _assign_ids_for_collections(ordered_cols)
+        drone_count = None
+        try:
+            start_drone = getattr(start_node, "drone_count", None)
+            if start_drone is not None:
+                drone_count = max(0, int(start_drone))
+        except Exception:
+            drone_count = None
+
+        seen_cols: set[bpy.types.Collection] = set()
+        ordered_unique: List[bpy.types.Collection] = []
+        for col in ordered_cols:
+            if col not in seen_cols:
+                ordered_unique.append(col)
+                seen_cols.add(col)
+
+        for col in ordered_unique:
+            _assign_formation_ids(col, drone_count)
+
+        prev_meshes: Optional[List[bpy.types.Object]] = None
+        for col in ordered_unique:
+            meshes = _collect_mesh_objects(col)
+            if not meshes:
+                continue
+            if prev_meshes is None:
+                # seed pair_id from formation_id for the first formation
+                for obj in meshes:
+                    mesh = obj.data
+                    form = mesh.attributes.get(FORMATION_ATTR_NAME)
+                    if not form or form.data_type != 'INT' or form.domain != 'POINT' or len(form.data) != len(mesh.vertices):
+                        form = _ensure_int_point_attr(mesh, FORMATION_ATTR_NAME)
+                        form.data.foreach_set("value", list(range(len(mesh.vertices))))
+                    pair_attr = _ensure_int_point_attr(mesh, PAIR_ATTR_NAME)
+                    pair_attr.data.foreach_set("value", [val.value for val in form.data])
+                prev_meshes = meshes
+                continue
+            _pair_from_previous(prev_meshes, meshes)
+            prev_meshes = meshes
 
     COMPUTED_SCHEDULE = schedule
     return schedule
@@ -486,6 +659,28 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
                 sence_setup.init_scene_env(n_verts=drone_count)
             else:
                 sence_setup.init_scene_env()
+
+            proxy_group = None
+            preview_group = None
+            try:
+                from liberadronecore.system.drone import proxy_points_gn, preview_drone_gn
+
+                proxy_group = _ensure_geometry_node_group(
+                    proxy_points_gn,
+                    proxy_points_gn.geometry_nodes_001_1_node_group,
+                    "GN_ProxyPoints",
+                )
+                preview_group = _ensure_geometry_node_group(
+                    preview_drone_gn,
+                    preview_drone_gn.geometry_nodes_001_1_node_group,
+                    "GN_PreviewDrone",
+                )
+            except Exception:
+                pass
+
+            attached_proxy = _attach_node_group("AnyMesh", proxy_group, "ProxyPointsGN")
+            attached_preview = _attach_node_group("Iso", preview_group, "PreviewDroneGN")
+
             self.report({'INFO'}, "Setup completed")
             return {'FINISHED'}
         except Exception as e:

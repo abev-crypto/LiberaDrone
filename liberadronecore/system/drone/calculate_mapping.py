@@ -80,11 +80,8 @@ def main():
     meshA = objA.data
     meshB = objB.data
 
-    attrA = ensure_int_point_attr(meshA, PAIR_ATTR_NAME)
     attrB = ensure_int_point_attr(meshB, PAIR_ATTR_NAME)
 
-    # A側は「自分のindex」を書いておく（対応キー用）
-    attrA.data.foreach_set("value", pairA.astype(np.int32))
     # B側は「対応するAのindex」
     attrB.data.foreach_set("value", pairB.astype(np.int32))
 
