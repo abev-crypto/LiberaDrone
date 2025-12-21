@@ -1,6 +1,6 @@
-"""
+﻿"""
 Docstring for liberadronecore.system.transition.copyloc
-TODO あれであったCopyLocationを使ったシンプルな移動システムを作成する
+TODO 縺ゅｌ縺ｧ縺ゅ▲縺櫃opyLocation繧剃ｽｿ縺｣縺溘す繝ｳ繝励Ν縺ｪ遘ｻ蜍輔す繧ｹ繝・Β繧剃ｽ懈・縺吶ｋ
 """
 
 import bpy
@@ -8,7 +8,7 @@ import bpy
 # -----------------------------
 # Settings
 # -----------------------------
-VG_PREFIX = "PT_vtx_"                 # 作り直すVGのプレフィックス
+VG_PREFIX = "PT_vtx_"                 # 菴懊ｊ逶ｴ縺儼G縺ｮ繝励Ξ繝輔ぅ繝・け繧ｹ
 COLLECTION_PREFIX = "PT_VGBlend_"
 CONTROLLER_NAME = "PT_VGBlend_CTRL"
 EMPTY_PREFIX = "PT_vtxNull_"
@@ -24,11 +24,11 @@ def ensure_object_mode():
 def get_two_selected_mesh_objects():
     sel = [o for o in bpy.context.selected_objects if o.type == 'MESH']
     if len(sel) != 2:
-        raise RuntimeError("メッシュオブジェクトをちょうど2つ選択してください。（アクティブ= A、もう1つ= B）")
+        raise RuntimeError("繝｡繝・す繝･繧ｪ繝悶ず繧ｧ繧ｯ繝医ｒ縺｡繧・≧縺ｩ2縺､驕ｸ謚槭＠縺ｦ縺上□縺輔＞縲ゑｼ医い繧ｯ繝・ぅ繝・ A縲√ｂ縺・縺､= B・・)
 
     A = bpy.context.view_layer.objects.active
     if A not in sel:
-        raise RuntimeError("アクティブオブジェクトが選択メッシュに含まれていません。")
+        raise RuntimeError("繧｢繧ｯ繝・ぅ繝悶が繝悶ず繧ｧ繧ｯ繝医′驕ｸ謚槭Γ繝・す繝･縺ｫ蜷ｫ縺ｾ繧後※縺・∪縺帙ｓ縲・)
 
     B = sel[0] if sel[1] == A else sel[1]
     return A, B
@@ -41,18 +41,18 @@ def ensure_collection(name: str):
     return col
 
 def link_to_collection(obj, col):
-    # すでにどこかにリンクされている前提で、目的コレクションにもリンク
+    # 縺吶〒縺ｫ縺ｩ縺薙°縺ｫ繝ｪ繝ｳ繧ｯ縺輔ｌ縺ｦ縺・ｋ蜑肴署縺ｧ縲∫岼逧・さ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｫ繧ゅΜ繝ｳ繧ｯ
     if obj.name not in col.objects:
         col.objects.link(obj)
 
 def safe_remove_object(obj):
-    # 全コレクションから unlink して削除
+    # 蜈ｨ繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺九ｉ unlink 縺励※蜑企勁
     for c in list(obj.users_collection):
         c.objects.unlink(obj)
     bpy.data.objects.remove(obj, do_unlink=True)
 
 def clear_old_objects_in_collection(col):
-    # コレクション内のオブジェクトを削除（Empty群など）
+    # 繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ蜀・・繧ｪ繝悶ず繧ｧ繧ｯ繝医ｒ蜑企勁・・mpty鄒､縺ｪ縺ｩ・・
     for obj in list(col.objects):
         safe_remove_object(obj)
 
@@ -69,7 +69,7 @@ def ensure_blend_property(ctrl_obj):
     ui.update(min=0.0, max=1.0, soft_min=0.0, soft_max=1.0, description="0=A, 1=B")
 
 def set_influence_driver(con, ctrl_obj, invert=False):
-    # 既存ドライバ消して張り直し
+    # 譌｢蟄倥ラ繝ｩ繧､繝先ｶ医＠縺ｦ蠑ｵ繧顔峩縺・
     try:
         con.driver_remove("influence")
     except TypeError:
@@ -90,39 +90,46 @@ def set_influence_driver(con, ctrl_obj, invert=False):
     drv.expression = "(1.0 - t)" if invert else "t"
 
 # -----------------------------
-# Main
+# Builder
 # -----------------------------
-def main():
+def build_copyloc(
+    A,
+    B,
+    *,
+    collection_name: str | None = None,
+    controller_name: str | None = None,
+    clear_old: bool = True,
+):
     ensure_object_mode()
-    A, B = get_two_selected_mesh_objects()
-
     vcountA = len(A.data.vertices)
     vcountB = len(B.data.vertices)
     if vcountA != vcountB:
-        raise RuntimeError(f"頂点数が一致していません: A={vcountA} / B={vcountB}")
+        raise RuntimeError(f"頂点数が一致してぁE��せん: A={vcountA} / B={vcountB}")
 
-    # コレクション（以前のを破棄して作り直し）
-    col_name = f"{COLLECTION_PREFIX}{A.name}_to_{B.name}"
+    col_name = collection_name or f"{COLLECTION_PREFIX}{A.name}_to_{B.name}"
+    ctrl_name = controller_name or f"{CONTROLLER_NAME}_{A.name}_to_{B.name}"
+
     col = ensure_collection(col_name)
-    clear_old_objects_in_collection(col)
+    if clear_old:
+        clear_old_objects_in_collection(col)
 
-    # VGは「再利用しない」→ prefix一致を両方消して作り直し
+    # VGは「�E利用しなぁE���E prefix一致を両方消して作り直ぁE
     remove_prefixed_vertex_groups(A, VG_PREFIX)
     remove_prefixed_vertex_groups(B, VG_PREFIX)
 
-    # コントローラEmpty（blend一本化）
-    ctrl = bpy.data.objects.new(CONTROLLER_NAME, None)
+    # コントローラEmpty�E�Elend一本化！E
+    ctrl = bpy.data.objects.new(ctrl_name, None)
     ctrl.empty_display_type = 'PLAIN_AXES'
     ctrl.empty_display_size = 0.2
     bpy.context.scene.collection.objects.link(ctrl)
     link_to_collection(ctrl, col)
     ensure_blend_property(ctrl)
 
-    # 各頂点分：VG作成 + Null作成 + CopyLoc 2本 + ドライバ
+    # 吁E��点刁E��VG作�E + Null作�E + CopyLoc 2本 + ドライチE
     for i in range(vcountA):
         vg_name = f"{VG_PREFIX}{i:06d}"
 
-        # VertexGroup（単一頂点 weight=1）
+        # VertexGroup�E�単一頂点 weight=1�E�E
         vgA = A.vertex_groups.new(name=vg_name)
         vgA.add([i], 1.0, 'REPLACE')
 
@@ -135,7 +142,7 @@ def main():
         null.empty_display_type = 'SPHERE'
         null.empty_display_size = 0.03
 
-        # 初期位置はA頂点のワールド座標
+        # 初期位置はA頂点のワールド座樁E
         null.location = A.matrix_world @ A.data.vertices[i].co
 
         bpy.context.scene.collection.objects.link(null)
@@ -161,6 +168,16 @@ def main():
         set_influence_driver(cA, ctrl, invert=True)   # 1 - blend
         set_influence_driver(cB, ctrl, invert=False)  # blend
 
-    print(f"Done: {vcountA} Nulls + VG per vertex created in collection '{col_name}'. Controller='{CONTROLLER_NAME}' prop='{PROP_NAME}'")
+    print(f"Done: {vcountA} Nulls + VG per vertex created in collection '{col_name}'. Controller='{ctrl_name}' prop='{PROP_NAME}'")
+    return ctrl, col
+
+
+# -----------------------------
+# Main
+# -----------------------------
+def main():
+    ensure_object_mode()
+    A, B = get_two_selected_mesh_objects()
+    build_copyloc(A, B, collection_name=None, controller_name=None, clear_old=True)
 
 main()

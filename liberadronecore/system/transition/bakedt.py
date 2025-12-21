@@ -361,6 +361,158 @@ def get_two_selected_mesh_objects():
     return A, End
 
 # =========================================================
+# Bake util for VAT tracks
+# =========================================================
+def build_tracks_from_positions(
+    start_positions,
+    end_positions,
+    frame_start: int,
+    frame_end: int,
+    fps: float,
+):
+    if fps <= 0.0:
+        raise RuntimeError("Invalid FPS")
+    if len(start_positions) != len(end_positions):
+        raise RuntimeError("Start/End vertex counts do not match")
+
+    start_f = int(frame_start)
+    end_f = int(frame_end)
+    if end_f < start_f:
+        raise RuntimeError("Invalid frame range")
+
+    frames = end_f - start_f
+    if frames <= 0:
+        tracks = []
+        for i, pos in enumerate(start_positions):
+            tracks.append(
+                {
+                    "name": f"Drone_{i:04d}",
+                    "data": [
+                        {
+                            "frame": float(start_f),
+                            "x": float(pos.x),
+                            "y": float(pos.y),
+                            "z": float(pos.z),
+                            "r": 255,
+                            "g": 255,
+                            "b": 255,
+                        }
+                    ],
+                }
+            )
+        return tracks
+
+    T_total = frames / fps
+
+    Aw = list(start_positions)
+    Ew = list(end_positions)
+    N = len(Aw)
+
+    dists = [(Ew[i] - Aw[i]).length for i in range(N)]
+    L_base = max(dists) if N else 0.0
+
+    table = build_scurve_table(L_base, T_total, V_MAX, A_MAX, J_MAX, samples=2048)
+
+    poses_t = build_adaptive_poses(
+        Aw, Ew, L_base, table,
+        t0=0.0, t1=T_total,
+        d_min=D_MIN,
+        pre_iters=PRE_RELAX_ITERS,
+        tether=TETHER_PRE,
+        max_shift=MAX_SHIFT_PER_POSE,
+        max_subdiv=MAX_SUBDIV,
+        max_neighbors=MAX_NEIGHBORS,
+        check_relax_iters=CHECK_RELAX_ITERS,
+        samples_in_interval=SAMPLES_IN_INTERVAL
+    )
+
+    K = len(poses_t)
+    poses = [pose for (t, pose) in poses_t]
+
+    seglens = [[0.0]*(K-1) for _ in range(N)]
+    total_len = [0.0]*N
+    for i in range(N):
+        L = 0.0
+        for k in range(K-1):
+            d = (poses[k+1][i] - poses[k][i]).length
+            seglens[i][k] = d
+            L += d
+        total_len[i] = L
+
+    cur_pos = [poses[0][i].copy() for i in range(N)]
+    prev_vel = [Vector((0.0, 0.0, 0.0)) for _ in range(N)]
+
+    max_shift_run = (D_MIN * 0.75) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
+
+    tracks = [{"name": f"Drone_{i:04d}", "data": []} for i in range(N)]
+
+    for f in range(start_f, end_f + 1):
+        t = (f - start_f) / fps
+
+        s_base = table_lookup(table, t, key="s")
+        v_allow = table_lookup(table, t, key="v")
+        u = 0.0 if L_base <= 1e-12 else min(1.0, max(0.0, s_base / L_base))
+
+        target = [None]*N
+        for i in range(N):
+            Li = total_len[i]
+            si = u * Li
+            per_points = [poses[k][i] for k in range(K)]
+            target[i] = position_along_polyline(per_points, seglens[i], si)
+
+        next_pos = [p.copy() for p in target]
+
+        relax_pose(
+            next_pos,
+            base=target,
+            d_min=D_MIN,
+            iters=RUN_RELAX_ITERS,
+            max_neighbors=MAX_NEIGHBORS,
+            tether=TETHER_RUN,
+            max_shift=max_shift_run
+        )
+
+        v_allow = min(V_MAX, max(0.0, v_allow))
+
+        for i in range(N):
+            dp = next_pos[i] - cur_pos[i]
+            v = dp / (1.0 / fps)
+
+            spd = v.length
+            if spd > 1e-12 and spd > v_allow:
+                v = v * (v_allow / spd)
+                next_pos[i] = cur_pos[i] + v * (1.0 / fps)
+
+            dv = v - prev_vel[i]
+            acc = dv.length / (1.0 / fps)
+            if acc > 1e-12 and acc > A_MAX:
+                dv = dv * (A_MAX / acc)
+                v2 = prev_vel[i] + dv
+                spd2 = v2.length
+                if spd2 > 1e-12 and spd2 > v_allow:
+                    v2 = v2 * (v_allow / spd2)
+                next_pos[i] = cur_pos[i] + v2 * (1.0 / fps)
+                v = v2
+
+            prev_vel[i] = v
+
+        for i, pos in enumerate(next_pos):
+            cur_pos[i] = pos
+            tracks[i]["data"].append(
+                {
+                    "frame": float(f),
+                    "x": float(pos.x),
+                    "y": float(pos.y),
+                    "z": float(pos.z),
+                    "r": 255,
+                    "g": 255,
+                    "b": 255,
+                }
+            )
+
+    return tracks
+
+# =========================================================
 # main
 # =========================================================
 def main():
