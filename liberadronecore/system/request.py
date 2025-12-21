@@ -9,7 +9,6 @@ REQUIRED = [
     ("numpy", "numpy", None),
     ("scipy", "scipy", None),
     ("Pillow", "PIL", None),
-    ("google-api-python-client", "google-api-python-client", None),
 ]
 
 def deps_missing():

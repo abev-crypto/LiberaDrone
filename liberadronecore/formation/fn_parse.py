@@ -297,6 +297,8 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
             if hasattr(node, "collection_vertex_count"):
                 col = _resolve_input_value(node, "Collection", None, "collection")
                 node.collection_vertex_count = _count_collection_vertices(col)
+            if hasattr(node, "error_message"):
+                node.error_message = ""
 
         start_nodes = [n for n in tree.nodes if n.bl_idname == "FN_StartNode"]
         if not start_nodes:
@@ -344,9 +346,8 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
                 if target not in in_degree:
                     continue
                 prev = incoming_max.get(target)
-                end_with_gap = end if node == start_node else end + 1
-                if prev is None or end_with_gap > prev:
-                    incoming_max[target] = end_with_gap
+                if prev is None or end > prev:
+                    incoming_max[target] = end
                 in_degree[target] -= 1
                 if in_degree[target] == 0:
                     node_start[target] = incoming_max.get(target, 0)
@@ -386,12 +387,50 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
             if col is not None:
                 formation_cols.append(col)
 
-        if formation_cols:
-            drone_count = None
-            start_drone = getattr(start_node, "drone_count", None)
-            if start_drone is not None:
-                drone_count = max(0, int(start_drone))
+        reverse_edges = _flow_reverse_edges(edges)
+        transition_nodes = [n for n in reachable if _is_transition_node(n)]
 
+        def _formation_count(node: bpy.types.Node) -> int:
+            col = _resolve_input_value(node, "Collection", None, "collection")
+            col = _as_collection(col)
+            return _count_collection_vertices(col)
+
+        drone_count = None
+        start_drone = getattr(start_node, "drone_count", None)
+        if start_drone is not None:
+            drone_count = max(0, int(start_drone))
+
+        if hasattr(start_node, "error_message"):
+            next_nodes = _find_next_formations(start_node, edges)
+            if not next_nodes:
+                start_node.error_message = "No formation connected."
+            else:
+                counts = [_formation_count(n) for n in next_nodes]
+                if any(c < 0 for c in counts):
+                    start_node.error_message = "Missing collection for formation."
+                else:
+                    total = sum(counts)
+                    if drone_count is not None and total != drone_count:
+                        start_node.error_message = f"Drone count mismatch: {total} != {drone_count}"
+
+        for node in transition_nodes:
+            prev_nodes = _find_prev_formations(node, reverse_edges)
+            next_nodes = _find_next_formations(node, edges)
+            if not prev_nodes or not next_nodes:
+                if hasattr(node, "error_message"):
+                    node.error_message = "Missing previous/next formation."
+                continue
+            prev_counts = [_formation_count(n) for n in prev_nodes]
+            next_counts = [_formation_count(n) for n in next_nodes]
+            if any(c < 0 for c in prev_counts + next_counts):
+                if hasattr(node, "error_message"):
+                    node.error_message = "Missing collection for formation."
+                continue
+            if sum(prev_counts) != sum(next_counts):
+                if hasattr(node, "error_message"):
+                    node.error_message = f"Vertex count mismatch: {sum(prev_counts)} != {sum(next_counts)}"
+
+        if formation_cols:
             seen_cols: set[bpy.types.Collection] = set()
             ordered_unique: List[bpy.types.Collection] = []
             for col in formation_cols:
@@ -402,8 +441,6 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
             for col in ordered_unique:
                 _assign_formation_ids(col, drone_count)
 
-            reverse_edges = _flow_reverse_edges(edges)
-            transition_nodes = [n for n in reachable if _is_transition_node(n)]
             pair_steps: List[tuple[int, List[bpy.types.Node], List[bpy.types.Node]]] = []
             seen_steps: set[tuple[frozenset[int], frozenset[int]]] = set()
 

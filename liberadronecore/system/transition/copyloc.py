@@ -18,17 +18,23 @@ PROP_NAME = "blend"                   # 0..1 : 0=A, 1=B
 # Helpers
 # -----------------------------
 def ensure_object_mode():
-    if bpy.context.mode != 'OBJECT':
-        bpy.ops.object.mode_set(mode='OBJECT')
+    if getattr(bpy.context, "mode", None) != 'OBJECT':
+        try:
+            bpy.ops.object.mode_set(mode='OBJECT')
+        except Exception:
+            pass
 
 def get_two_selected_mesh_objects():
-    sel = [o for o in bpy.context.selected_objects if o.type == 'MESH']
+    selected = getattr(bpy.context, "selected_objects", None)
+    if not selected:
+        raise RuntimeError("No selected objects available in this context.")
+    sel = [o for o in selected if o.type == 'MESH']
     if len(sel) != 2:
-        raise RuntimeError("繝｡繝・す繝･繧ｪ繝悶ず繧ｧ繧ｯ繝医ｒ縺｡繧・≧縺ｩ2縺､驕ｸ謚槭＠縺ｦ縺上□縺輔＞縲ゑｼ医い繧ｯ繝・ぅ繝・ A縲√ｂ縺・縺､= B・・)
+        raise RuntimeError("Select exactly 2 mesh objects (active = A, other = B).")
 
     A = bpy.context.view_layer.objects.active
     if A not in sel:
-        raise RuntimeError("繧｢繧ｯ繝・ぅ繝悶が繝悶ず繧ｧ繧ｯ繝医′驕ｸ謚槭Γ繝・す繝･縺ｫ蜷ｫ縺ｾ繧後※縺・∪縺帙ｓ縲・)
+        raise RuntimeError("Active object must be one of the selected mesh objects.")
 
     B = sel[0] if sel[1] == A else sel[1]
     return A, B
@@ -180,4 +186,5 @@ def main():
     A, B = get_two_selected_mesh_objects()
     build_copyloc(A, B, collection_name=None, controller_name=None, clear_old=True)
 
-main()
+if __name__ == "__main__":
+    main()

@@ -656,4 +656,6 @@ def main():
 
     print(f"Done: N={N}, adaptive_poses={K}, MAX_SUBDIV={MAX_SUBDIV}, frames=[{start_f}-{end_f}]")
 
-main()
+
+if __name__ == "__main__":
+    main()

@@ -82,6 +82,8 @@ def _collect_positions_for_collection(
     col: bpy.types.Collection,
     frame: int,
     depsgraph: bpy.types.Depsgraph,
+    *,
+    require_pair_id: bool,
 ) -> Dict[int, Vector]:
     positions: Dict[int, Vector] = {}
     meshes = _collect_mesh_objects(col)
@@ -92,6 +94,8 @@ def _collect_positions_for_collection(
         if not attr or attr.domain != 'POINT' or attr.data_type != 'INT':
             if eval_obj and eval_mesh:
                 eval_obj.to_mesh_clear()
+            if require_pair_id:
+                raise RuntimeError(f"pair_id attribute missing on {obj.name}")
             continue
         for idx, vtx in enumerate(eval_mesh.vertices):
             pid = attr.data[idx].value
@@ -116,7 +120,7 @@ def _collect_positions_for_nodes(
             continue
         frame = frame_selector(entry)
         scene.frame_set(frame)
-        positions.update(_collect_positions_for_collection(entry.collection, frame, depsgraph))
+        positions.update(_collect_positions_for_collection(entry.collection, frame, depsgraph, require_pair_id=True))
     return positions
 
 
@@ -146,6 +150,8 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
     depsgraph = context.evaluated_depsgraph_get() if context else bpy.context.evaluated_depsgraph_get()
 
     schedule = fn_parse.compute_schedule(context)
+    if getattr(node, "error_message", ""):
+        raise RuntimeError(node.error_message)
     entry_map = {entry.node_name: entry for entry in schedule if entry.tree_name == tree.name}
 
     edges = fn_parse._flow_edges(tree)

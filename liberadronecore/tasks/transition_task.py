@@ -15,8 +15,12 @@ def _ensure_root(scene: bpy.types.Scene) -> bpy.types.Collection:
     if col is None:
         col = bpy.data.collections.new(FORMATION_ROOT)
         scene.collection.children.link(col)
-    elif col not in scene.collection.children:
-        scene.collection.children.link(col)
+    else:
+        try:
+            if col.name not in scene.collection.children:
+                scene.collection.children.link(col)
+        except TypeError:
+            scene.collection.children.link(col)
     return col
 
 

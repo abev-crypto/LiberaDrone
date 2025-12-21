@@ -25,6 +25,7 @@ class FN_TransitionBase:
         ],
         default="AUTO",
     )
+    error_message: StringProperty(name="Error", default="", options={'SKIP_SAVE'})
     copyloc_mode: EnumProperty(
         name="CopyLoc Mode",
         items=[
@@ -50,6 +51,8 @@ class FN_TransitionBase:
             row = layout.row()
             row.alignment = 'RIGHT'
             row.label(text=f"start:{self.computed_start_frame}f")
+        if self.error_message:
+            layout.label(text=self.error_message, icon='ERROR')
         layout.prop(self, "mode")
         if self.mode == "COPYLOC":
             layout.prop(self, "copyloc_mode")
