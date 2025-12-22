@@ -37,30 +37,21 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
                 col = bpy.data.collections.new(name)
                 scene.collection.children.link(col)
             else:
-                try:
-                    if col.name not in scene.collection.children:
-                        scene.collection.children.link(col)
-                except TypeError:
+                if col.name not in scene.collection.children:
                     scene.collection.children.link(col)
             return col
 
         def _set_gn_input(mod: bpy.types.Modifier, name: str, value) -> None:
             if mod is None:
                 return
-            try:
-                mod[name] = value
-                return
-            except Exception:
-                pass
+            mod[name] = value
+            return
             node_group = getattr(mod, "node_group", None)
             if node_group is None:
                 return
             for inp in node_group.inputs:
                 if inp.name == name:
-                    try:
-                        mod[inp.identifier] = value
-                    except Exception:
-                        pass
+                    mod[inp.identifier] = value
                     break
 
         def _get_nodes_modifier(obj: bpy.types.Object, name: str) -> Optional[bpy.types.Modifier]:

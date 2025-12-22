@@ -8,6 +8,21 @@ import bpy
 def ms_to_frame(ms: float, fps: float) -> float:
     return (ms / 1000.0) * fps
 
+
+def _create_image(name: str, width: int, height: int, use_float: bool) -> bpy.types.Image:
+    img = bpy.data.images.get(name)
+    if img is None:
+        img = bpy.data.images.new(name=name, width=width, height=height, alpha=True, float_buffer=use_float)
+    else:
+        img.scale(width, height)
+        img.alpha_mode = 'STRAIGHT'
+        img.use_alpha = True
+        try:
+            img.use_float = use_float
+        except Exception:
+            pass
+    return img
+
 def _row_frame(row: dict, fps: float) -> float:
     if "frame" in row:
         try:

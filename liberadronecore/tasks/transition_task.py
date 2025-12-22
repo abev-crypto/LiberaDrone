@@ -33,7 +33,7 @@ def _link_collection(scene: bpy.types.Scene, collection: bpy.types.Collection) -
     for child in list(root.children):
         if child != collection:
             root.children.unlink(child)
-    if collection not in root.children:
+    if collection.name not in root.children:
         root.children.link(collection)
     _last_linked = collection
 
