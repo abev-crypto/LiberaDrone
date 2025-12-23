@@ -28,7 +28,7 @@ class GithubRepo:
     branch: str = "main"
     # リポジトリ内でアドオンが置かれている相対パス（repo 直下なら空でOK）
     # 例: "src/my_addon" の場合は "src/my_addon"
-    addon_subdir: str = ""
+    addon_subdir: str = "liberadronecore"
 
 
 # -----------------------------
@@ -202,7 +202,8 @@ class LD_OT_check_update(bpy.types.Operator):
     bl_options = {'INTERNAL'}
 
     def execute(self, context):
-        prefs = context.preferences.addons[__package__].preferences
+        addon_key = __package__.split(".")[0]
+        prefs = context.preferences.addons[addon_key].preferences
 
         repo = GithubRepo(
             owner=prefs.gh_owner,
@@ -212,7 +213,7 @@ class LD_OT_check_update(bpy.types.Operator):
         )
 
         try:
-            local_v = get_local_version(__package__)
+            local_v = get_local_version(addon_key)
             remote_v = get_remote_version(repo)
         except Exception as e:
             self.report({'ERROR'}, f"更新チェック失敗: {e}")
@@ -240,7 +241,8 @@ class LD_OT_apply_update(bpy.types.Operator):
     bl_options = {'INTERNAL'}
 
     def execute(self, context):
-        prefs = context.preferences.addons[__package__].preferences
+        addon_key = __package__.split(".")[0]
+        prefs = context.preferences.addons[addon_key].preferences
         repo = GithubRepo(
             owner=prefs.gh_owner,
             repo=prefs.gh_repo,
@@ -249,7 +251,7 @@ class LD_OT_apply_update(bpy.types.Operator):
         )
 
         try:
-            addon_dir = _addon_root_dir_from_module(__package__)
+            addon_dir = _addon_root_dir_from_module(addon_key)
             zip_bytes = download_main_zip(repo)
             install_from_zip_bytes(zip_bytes, repo, addon_dir)
 
