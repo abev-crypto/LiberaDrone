@@ -40,6 +40,39 @@ def _link_object_to_collection(obj: bpy.types.Object, collection: bpy.types.Coll
     collection.objects.link(obj)
 
 
+def _remove_collection_recursive(col: bpy.types.Collection) -> None:
+    for child in list(col.children):
+        _remove_collection_recursive(child)
+    for obj in list(col.objects):
+        try:
+            bpy.data.objects.remove(obj, do_unlink=True)
+        except TypeError:
+            for c in list(obj.users_collection):
+                c.objects.unlink(obj)
+            bpy.data.objects.remove(obj)
+    try:
+        bpy.data.collections.remove(col, do_unlink=True)
+    except TypeError:
+        bpy.data.collections.remove(col)
+
+
+def _purge_transition_collections(node_name: str) -> None:
+    base_name = f"Transition_{node_name}"
+    for col in list(bpy.data.collections):
+        if col.name == base_name or col.name.startswith(f"PT_{node_name}_"):
+            _remove_collection_recursive(col)
+
+
+def _set_transition_collection(node: bpy.types.Node, scene: bpy.types.Scene) -> None:
+    if not hasattr(node, "collection"):
+        return
+    col = _ensure_collection(scene, f"Transition_{node.name}")
+    try:
+        node.collection = col
+    except Exception:
+        pass
+
+
 def _create_point_mesh(name: str, positions: Sequence[Vector]) -> bpy.types.Mesh:
     mesh = bpy.data.meshes.new(f"{name}_Mesh")
     verts = [(float(p.x), float(p.y), float(p.z)) for p in positions]
@@ -304,6 +337,7 @@ def _apply_auto(ctx: TransitionContext) -> str:
         tracks,
         ctx.fps,
         image_name_prefix=prefix,
+        recreate_images=True,
     )
 
     col = _ensure_collection(ctx.scene, prefix)
@@ -398,16 +432,26 @@ def apply_transition_by_node_name(node_name: str, context=None) -> Tuple[bool, s
 
 def apply_transition(node: bpy.types.Node, context=None) -> Tuple[bool, str]:
     ctx = _build_transition_context(node, context)
+    _purge_transition_collections(node.name)
+    if hasattr(node, "collection"):
+        try:
+            node.collection = None
+        except Exception:
+            pass
     mode = getattr(node, "mode", "AUTO")
     if mode == "AUTO":
-        return True, _apply_auto(ctx)
+        message = _apply_auto(ctx)
+        _set_transition_collection(node, ctx.scene)
+        return True, message
 
     copyloc_mode = getattr(node, "copyloc_mode", "NORMAL")
     split_count = fn_parse._resolve_input_value(node, "Num", getattr(node, "split_count", 1), "split_count")
     grid_spacing = getattr(node, "grid_spacing", 0.5)
-    return True, _apply_copyloc(
+    message = _apply_copyloc(
         ctx,
         mode=copyloc_mode,
         split_count=split_count,
         grid_spacing=grid_spacing,
     )
+    _set_transition_collection(node, ctx.scene)
+    return True, message

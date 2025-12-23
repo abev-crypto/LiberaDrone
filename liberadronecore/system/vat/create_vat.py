@@ -9,14 +9,32 @@ def ms_to_frame(ms: float, fps: float) -> float:
     return (ms / 1000.0) * fps
 
 
-def _create_image(name: str, width: int, height: int, use_float: bool) -> bpy.types.Image:
+def _create_image(
+    name: str,
+    width: int,
+    height: int,
+    use_float: bool,
+    *,
+    recreate: bool,
+) -> bpy.types.Image:
     img = bpy.data.images.get(name)
+    if img is not None and recreate:
+        try:
+            bpy.data.images.remove(img, do_unlink=True)
+        except TypeError:
+            try:
+                bpy.data.images.remove(img)
+            except Exception:
+                pass
+        img = bpy.data.images.get(name)
     if img is None:
         img = bpy.data.images.new(name=name, width=width, height=height, alpha=True, float_buffer=use_float)
     else:
         img.scale(width, height)
-        img.alpha_mode = 'STRAIGHT'
-        img.use_alpha = True
+        if hasattr(img, "alpha_mode"):
+            img.alpha_mode = 'STRAIGHT'
+        if hasattr(img, "use_alpha"):
+            img.use_alpha = True
         try:
             img.use_float = use_float
         except Exception:
@@ -86,7 +104,11 @@ def _determine_bounds(samples: Iterable[dict[str, np.ndarray]]):
     )
 
 def build_vat_images_from_tracks(
-    tracks: Sequence[dict], fps: float, *, image_name_prefix: str = "VAT"
+    tracks: Sequence[dict],
+    fps: float,
+    *,
+    image_name_prefix: str = "VAT",
+    recreate_images: bool = False,
 ):
     if not tracks:
         raise RuntimeError("No CSV tracks supplied for VAT generation")
@@ -119,8 +141,20 @@ def build_vat_images_from_tracks(
 
     drone_count = len(tracks)
     prefix = image_name_prefix or "VAT"
-    pos_img = _create_image(f"{prefix}_Pos", frame_count, drone_count, True)
-    col_img = _create_image(f"{prefix}_Color", frame_count, drone_count, False)
+    pos_img = _create_image(
+        f"{prefix}_Pos",
+        frame_count,
+        drone_count,
+        True,
+        recreate=recreate_images,
+    )
+    col_img = _create_image(
+        f"{prefix}_Color",
+        frame_count,
+        drone_count,
+        False,
+        recreate=recreate_images,
+    )
     pos_img.colorspace_settings.name = "Non-Color"
     
     rx = (pos_max[0] - pos_min[0]) or 1.0

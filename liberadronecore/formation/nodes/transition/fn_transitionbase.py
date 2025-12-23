@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import IntProperty, EnumProperty, StringProperty, FloatProperty
+from bpy.props import IntProperty, EnumProperty, StringProperty, FloatProperty, PointerProperty
 from liberadronecore.formation.fn_nodecategory import FN_Node, FN_Register
 from liberadronecore.system.transition.transition_apply import apply_transition_by_node_name
 
@@ -45,6 +45,11 @@ class FN_TransitionBase:
         default=0.5,
         min=0.01,
     )
+    collection: PointerProperty(
+        name="Collection",
+        type=bpy.types.Collection,
+        description="Transition output collection",
+    )
 
     def draw_buttons(self, context, layout):
         if self.computed_start_frame >= 0:
@@ -60,6 +65,7 @@ class FN_TransitionBase:
                 layout.prop(self, "split_count")
             elif self.copyloc_mode == "GRID":
                 layout.prop(self, "grid_spacing")
+        layout.prop(self, "collection")
         op = layout.operator("fn.apply_transition", text="Transition")
         op.node_name = self.name
         
