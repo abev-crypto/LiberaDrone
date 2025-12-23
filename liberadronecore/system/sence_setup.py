@@ -77,7 +77,11 @@ def set_viewport_solid_attribute(attr_name=ATTR_NAME):
             shading.type = 'SOLID'
             # Blenderのバージョンでプロパティ名が微妙に違うので分岐
             if hasattr(shading, "color_type"):
-                shading.color_type = 'ATTRIBUTE'
+                items = getattr(shading.bl_rna.properties.get("color_type"), "enum_items", None)
+                if items and "ATTRIBUTE" in items:
+                    shading.color_type = 'ATTRIBUTE'
+                else:
+                    shading.color_type = 'VERTEX'
             if hasattr(shading, "attribute_color"):
                 shading.attribute_color = attr_name
             elif hasattr(shading, "attribute"):

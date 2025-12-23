@@ -13,6 +13,36 @@ from liberadronecore.formation.fn_parse import (
 from liberadronecore.formation.fn_parse_pairing import _count_collection_vertices
 
 
+def _render_end_for_range(start: int, end: int) -> int:
+    if end <= start:
+        return int(start)
+    return int(end - 1)
+
+
+def _formation_entries(schedule):
+    return [entry for entry in schedule if entry.collection]
+
+
+def _overall_range(entries):
+    if not entries:
+        return None
+    start = min(entry.start for entry in entries)
+    end = max(entry.end for entry in entries)
+    return int(start), int(end)
+
+
+def _set_render_range(scene: bpy.types.Scene, start: int, end: int) -> None:
+    scene.frame_start = int(start)
+    scene.frame_end = _render_end_for_range(start, end)
+
+
+def _find_active_entry(entries, frame: int):
+    for entry in entries:
+        if entry.start <= frame < entry.end:
+            return entry
+    return None
+
+
 class FN_OT_calculate_schedule(bpy.types.Operator, FN_Register):
     bl_idname = "fn.calculate_schedule"
     bl_label = "Calculate Formation"
@@ -21,6 +51,10 @@ class FN_OT_calculate_schedule(bpy.types.Operator, FN_Register):
 
     def execute(self, context):
         schedule = compute_schedule(context)
+        entries = _formation_entries(schedule)
+        overall = _overall_range(entries)
+        if overall and context.scene:
+            _set_render_range(context.scene, overall[0], overall[1])
         self.report({'INFO'}, f"Schedule entries: {len(schedule)}")
         return {'FINISHED'}
 
@@ -44,6 +78,8 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
         def _set_gn_input(mod: bpy.types.Modifier, name: str, value) -> None:
             if mod is None:
                 return
+            print(f"Setting GN input {name} to {value}")
+            
             mod[name] = value
             return
             node_group = getattr(mod, "node_group", None)
@@ -236,6 +272,85 @@ class FN_OT_assign_selected_to_show(bpy.types.Operator, FN_Register):
         return {'FINISHED'}
 
 
+class FN_OT_render_range_current(bpy.types.Operator, FN_Register):
+    bl_idname = "fn.render_range_current"
+    bl_label = "Current Formation"
+    bl_description = "Set render range to the formation at current frame"
+
+    def execute(self, context):
+        schedule = get_cached_schedule(context.scene)
+        entries = _formation_entries(schedule)
+        if not entries:
+            self.report({'ERROR'}, "No cached schedule. Run Calculate first.")
+            return {'CANCELLED'}
+
+        frame = context.scene.frame_current
+        current = _find_active_entry(entries, frame)
+        if current is None:
+            current = entries[0]
+
+        start = int(current.start)
+        end = int(current.end)
+        render_end = _render_end_for_range(start, end)
+        if context.scene.frame_start == start and context.scene.frame_end == render_end:
+            overall = _overall_range(entries)
+            if overall:
+                _set_render_range(context.scene, overall[0], overall[1])
+        else:
+            _set_render_range(context.scene, start, end)
+        return {'FINISHED'}
+
+
+class FN_OT_render_range_prev(bpy.types.Operator, FN_Register):
+    bl_idname = "fn.render_range_prev"
+    bl_label = "Prev Formation"
+    bl_description = "Set render range to the previous formation"
+
+    def execute(self, context):
+        schedule = get_cached_schedule(context.scene)
+        entries = _formation_entries(schedule)
+        if not entries:
+            self.report({'ERROR'}, "No cached schedule. Run Calculate first.")
+            return {'CANCELLED'}
+
+        frame = context.scene.frame_current
+        current = _find_active_entry(entries, frame)
+        if current is None:
+            target = entries[-1]
+        else:
+            idx = entries.index(current)
+            target = entries[idx - 1] if idx > 0 else entries[0]
+
+        _set_render_range(context.scene, int(target.start), int(target.end))
+        context.scene.frame_set(int(target.start))
+        return {'FINISHED'}
+
+
+class FN_OT_render_range_next(bpy.types.Operator, FN_Register):
+    bl_idname = "fn.render_range_next"
+    bl_label = "Next Formation"
+    bl_description = "Set render range to the next formation"
+
+    def execute(self, context):
+        schedule = get_cached_schedule(context.scene)
+        entries = _formation_entries(schedule)
+        if not entries:
+            self.report({'ERROR'}, "No cached schedule. Run Calculate first.")
+            return {'CANCELLED'}
+
+        frame = context.scene.frame_current
+        current = _find_active_entry(entries, frame)
+        if current is None:
+            target = entries[0]
+        else:
+            idx = entries.index(current)
+            target = entries[idx + 1] if idx + 1 < len(entries) else entries[-1]
+
+        _set_render_range(context.scene, int(target.start), int(target.end))
+        context.scene.frame_set(int(target.start))
+        return {'FINISHED'}
+
+
 class FN_PT_formation_panel(bpy.types.Panel, FN_Register):
     bl_idname = "FN_PT_formation_panel"
     bl_label = "Formation Nodes"
@@ -252,6 +367,12 @@ class FN_PT_formation_panel(bpy.types.Panel, FN_Register):
         layout = self.layout
         layout.operator("fn.setup_scene", text="Setup")
         layout.operator("fn.calculate_schedule", text="Calculate")
+        layout.separator()
+        row = layout.row(align=True)
+        row.operator("fn.render_range_current", text="CurrentFormation")
+        row = layout.row(align=True)
+        row.operator("fn.render_range_prev", text="PrevFormation")
+        row.operator("fn.render_range_next", text="NextFormation")
         if get_cached_schedule():
             layout.label(text=f"Cached entries: {len(get_cached_schedule())}")
 

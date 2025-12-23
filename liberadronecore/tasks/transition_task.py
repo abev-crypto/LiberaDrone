@@ -40,7 +40,7 @@ def _link_collection(scene: bpy.types.Scene, collection: bpy.types.Collection) -
 
 @persistent
 def update_formation(scene: bpy.types.Scene) -> None:
-    schedule = fn_parse.get_cached_schedule()
+    schedule = fn_parse.get_cached_schedule(scene)
     if not schedule:
         return
 

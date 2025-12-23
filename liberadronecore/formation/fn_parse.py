@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import bpy
+from bpy.props import CollectionProperty, IntProperty, PointerProperty, StringProperty
 from liberadronecore.formation.fn_parse_pairing import (
     _as_collection,
     _assign_formation_ids,
@@ -14,9 +15,12 @@ from liberadronecore.formation.fn_parse_pairing import (
     _pair_from_previous,
     _seed_pair_ids,
 )
+from liberadronecore.reg.base_reg import RegisterBase
 
 COMPUTED_SCHEDULE: List["ScheduleEntry"] = []
 _UNSET = object()
+_CACHED_SCENE_ID: Optional[int] = None
+_CACHED_SCENE_VERSION: Optional[int] = None
 
 
 @dataclass
@@ -27,6 +31,93 @@ class ScheduleEntry:
     end: int
     collection: Optional[bpy.types.Collection]
 
+
+class FN_ScheduleEntryProperty(bpy.types.PropertyGroup):
+    tree_name: StringProperty(name="Tree")
+    node_name: StringProperty(name="Node")
+    start: IntProperty(name="Start")
+    end: IntProperty(name="End")
+    collection: PointerProperty(type=bpy.types.Collection)
+
+
+class FN_ScheduleStore(RegisterBase):
+    @classmethod
+    def register(cls) -> None:
+        try:
+            bpy.utils.register_class(FN_ScheduleEntryProperty)
+        except ValueError:
+            pass
+        if not hasattr(bpy.types.Scene, "fn_schedule_entries"):
+            bpy.types.Scene.fn_schedule_entries = CollectionProperty(type=FN_ScheduleEntryProperty)
+        if not hasattr(bpy.types.Scene, "fn_schedule_version"):
+            bpy.types.Scene.fn_schedule_version = IntProperty(name="Schedule Version", default=0)
+
+    @classmethod
+    def unregister(cls) -> None:
+        if hasattr(bpy.types.Scene, "fn_schedule_entries"):
+            del bpy.types.Scene.fn_schedule_entries
+        if hasattr(bpy.types.Scene, "fn_schedule_version"):
+            del bpy.types.Scene.fn_schedule_version
+        try:
+            bpy.utils.unregister_class(FN_ScheduleEntryProperty)
+        except ValueError:
+            pass
+
+
+def _scene_id(scene: Optional[bpy.types.Scene]) -> Optional[int]:
+    if scene is None:
+        return None
+    try:
+        return int(scene.as_pointer())
+    except Exception:
+        return None
+
+
+def _get_scene(context: Optional[bpy.types.Context]) -> Optional[bpy.types.Scene]:
+    if context and getattr(context, "scene", None):
+        return context.scene
+    try:
+        return bpy.context.scene
+    except Exception:
+        return None
+
+
+def _store_schedule_in_scene(scene: Optional[bpy.types.Scene], schedule: List[ScheduleEntry]) -> None:
+    global _CACHED_SCENE_ID, _CACHED_SCENE_VERSION
+    if scene is None:
+        return
+    entries = getattr(scene, "fn_schedule_entries", None)
+    if entries is None:
+        return
+    entries.clear()
+    for entry in schedule:
+        item = entries.add()
+        item.tree_name = entry.tree_name
+        item.node_name = entry.node_name
+        item.start = int(entry.start)
+        item.end = int(entry.end)
+        if entry.collection is not None:
+            item.collection = entry.collection
+        else:
+            item.collection = None
+    if hasattr(scene, "fn_schedule_version"):
+        try:
+            scene.fn_schedule_version += 1
+        except Exception:
+            scene.fn_schedule_version = 1
+    _CACHED_SCENE_ID = _scene_id(scene)
+    _CACHED_SCENE_VERSION = getattr(scene, "fn_schedule_version", 0)
+
+
+def _load_schedule_from_scene(scene: bpy.types.Scene) -> List[ScheduleEntry]:
+    entries = getattr(scene, "fn_schedule_entries", None)
+    if entries is None:
+        return []
+    schedule: List[ScheduleEntry] = []
+    for item in entries:
+        col = item.collection if isinstance(item.collection, bpy.types.Collection) else None
+        schedule.append(ScheduleEntry(item.tree_name, item.node_name, int(item.start), int(item.end), col))
+    return schedule
 
 def _is_flow_socket(sock: bpy.types.NodeSocket) -> bool:
     return getattr(sock, "bl_idname", "") == "FN_SocketFlow"
@@ -285,7 +376,7 @@ def _attach_node_group(obj_name: str, node_group: Optional[bpy.types.NodeTree], 
 
 
 def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[ScheduleEntry]:
-    global COMPUTED_SCHEDULE
+    global COMPUTED_SCHEDULE, _CACHED_SCENE_ID, _CACHED_SCENE_VERSION
 
     schedule: List[ScheduleEntry] = []
 
@@ -508,9 +599,28 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
                 if prev_meshes and next_meshes:
                     _pair_from_previous(prev_meshes, next_meshes)
 
+    scene = _get_scene(context)
+    _store_schedule_in_scene(scene, schedule)
     COMPUTED_SCHEDULE = schedule
+    if scene is not None:
+        _CACHED_SCENE_ID = _scene_id(scene)
+        _CACHED_SCENE_VERSION = getattr(scene, "fn_schedule_version", 0)
     return schedule
 
 
-def get_cached_schedule() -> List[ScheduleEntry]:
+def get_cached_schedule(scene: Optional[bpy.types.Scene] = None) -> List[ScheduleEntry]:
+    global COMPUTED_SCHEDULE, _CACHED_SCENE_ID, _CACHED_SCENE_VERSION
+    if scene is None:
+        scene = _get_scene(None)
+    if scene is None:
+        return list(COMPUTED_SCHEDULE)
+
+    scene_id = _scene_id(scene)
+    scene_version = getattr(scene, "fn_schedule_version", 0)
+    if COMPUTED_SCHEDULE and _CACHED_SCENE_ID == scene_id and _CACHED_SCENE_VERSION == scene_version:
+        return list(COMPUTED_SCHEDULE)
+
+    COMPUTED_SCHEDULE = _load_schedule_from_scene(scene)
+    _CACHED_SCENE_ID = scene_id
+    _CACHED_SCENE_VERSION = scene_version
     return list(COMPUTED_SCHEDULE)
