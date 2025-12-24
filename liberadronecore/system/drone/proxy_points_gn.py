@@ -48,7 +48,7 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
 
     # Socket Max Speed Up
     max_speed_up_socket = gn_drone_errorcheck_1.interface.new_socket(name="Max Speed Up", in_out='INPUT', socket_type='NodeSocketFloat')
-    max_speed_up_socket.default_value = 4.0
+    max_speed_up_socket.default_value = 0.0
     max_speed_up_socket.min_value = -3.4028234663852886e+38
     max_speed_up_socket.max_value = 3.4028234663852886e+38
     max_speed_up_socket.subtype = 'NONE'
@@ -56,7 +56,7 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
 
     # Socket Max Speed Down
     max_speed_down_socket = gn_drone_errorcheck_1.interface.new_socket(name="Max Speed Down", in_out='INPUT', socket_type='NodeSocketFloat')
-    max_speed_down_socket.default_value = 3.0
+    max_speed_down_socket.default_value = 0.0
     max_speed_down_socket.min_value = -3.4028234663852886e+38
     max_speed_down_socket.max_value = 3.4028234663852886e+38
     max_speed_down_socket.subtype = 'NONE'
@@ -64,7 +64,7 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
 
     # Socket Max Speed Horiz
     max_speed_horiz_socket = gn_drone_errorcheck_1.interface.new_socket(name="Max Speed Horiz", in_out='INPUT', socket_type='NodeSocketFloat')
-    max_speed_horiz_socket.default_value = 5.0
+    max_speed_horiz_socket.default_value = 0.0
     max_speed_horiz_socket.min_value = -3.4028234663852886e+38
     max_speed_horiz_socket.max_value = 3.4028234663852886e+38
     max_speed_horiz_socket.subtype = 'NONE'
@@ -72,7 +72,7 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
 
     # Socket Max Acc
     max_acc_socket = gn_drone_errorcheck_1.interface.new_socket(name="Max Acc", in_out='INPUT', socket_type='NodeSocketFloat')
-    max_acc_socket.default_value = 3.0
+    max_acc_socket.default_value = 0.0
     max_acc_socket.min_value = -3.4028234663852886e+38
     max_acc_socket.max_value = 3.4028234663852886e+38
     max_acc_socket.subtype = 'NONE'
@@ -80,7 +80,7 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
 
     # Socket Min Distance
     min_distance_socket = gn_drone_errorcheck_1.interface.new_socket(name="Min Distance", in_out='INPUT', socket_type='NodeSocketFloat')
-    min_distance_socket.default_value = 1.5
+    min_distance_socket.default_value = 0.0
     min_distance_socket.min_value = -3.4028234663852886e+38
     min_distance_socket.max_value = 3.4028234663852886e+38
     min_distance_socket.subtype = 'NONE'
@@ -276,18 +276,38 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
     boolean_math_001.name = "Boolean Math.001"
     boolean_math_001.operation = 'OR'
 
+    # Node Store Named Attribute.005
+    store_named_attribute_005 = gn_drone_errorcheck_1.nodes.new("GeometryNodeStoreNamedAttribute")
+    store_named_attribute_005.name = "Store Named Attribute.005"
+    store_named_attribute_005.data_type = 'FLOAT_VECTOR'
+    store_named_attribute_005.domain = 'POINT'
+    # Selection
+    store_named_attribute_005.inputs[1].default_value = True
+    # Name
+    store_named_attribute_005.inputs[2].default_value = "vel"
+
+    # Node Store Named Attribute
+    store_named_attribute = gn_drone_errorcheck_1.nodes.new("GeometryNodeStoreNamedAttribute")
+    store_named_attribute.name = "Store Named Attribute"
+    store_named_attribute.data_type = 'FLOAT_VECTOR'
+    store_named_attribute.domain = 'POINT'
+    # Selection
+    store_named_attribute.inputs[1].default_value = True
+    # Name
+    store_named_attribute.inputs[2].default_value = "prev_pos"
+
     # Set locations
     gn_drone_errorcheck_1.nodes["Group Input"].location = (-710.4562377929688, -36.167781829833984)
     gn_drone_errorcheck_1.nodes["Group Output"].location = (1414.5443115234375, -324.6570129394531)
-    gn_drone_errorcheck_1.nodes["Position"].location = (-526.6370849609375, -925.492919921875)
-    gn_drone_errorcheck_1.nodes["Vector Math"].location = (-307.3065185546875, -495.7132263183594)
-    gn_drone_errorcheck_1.nodes["Combine XYZ"].location = (-300.3328857421875, -644.7288208007812)
-    gn_drone_errorcheck_1.nodes["Vector Math.001"].location = (-128.02816772460938, -581.2835693359375)
-    gn_drone_errorcheck_1.nodes["Vector Math.002"].location = (72.25455474853516, -509.9707336425781)
-    gn_drone_errorcheck_1.nodes["Vector Math.003"].location = (259.61041259765625, -487.7044982910156)
-    gn_drone_errorcheck_1.nodes["Separate XYZ"].location = (191.871826171875, 229.05804443359375)
-    gn_drone_errorcheck_1.nodes["Combine XYZ.001"].location = (181.77005004882812, 74.2716064453125)
-    gn_drone_errorcheck_1.nodes["Vector Math.004"].location = (186.2061767578125, -77.36126708984375)
+    gn_drone_errorcheck_1.nodes["Position"].location = (-775.8805541992188, -798.4730224609375)
+    gn_drone_errorcheck_1.nodes["Vector Math"].location = (-423.8331298828125, -370.361083984375)
+    gn_drone_errorcheck_1.nodes["Combine XYZ"].location = (-426.0843200683594, -785.4727172851562)
+    gn_drone_errorcheck_1.nodes["Vector Math.001"].location = (-218.97227478027344, -461.51947021484375)
+    gn_drone_errorcheck_1.nodes["Vector Math.002"].location = (31.8991756439209, -521.2974853515625)
+    gn_drone_errorcheck_1.nodes["Vector Math.003"].location = (220.80526733398438, -451.8393249511719)
+    gn_drone_errorcheck_1.nodes["Separate XYZ"].location = (-39.46705627441406, 30.304824829101562)
+    gn_drone_errorcheck_1.nodes["Combine XYZ.001"].location = (171.32273864746094, 138.37579345703125)
+    gn_drone_errorcheck_1.nodes["Vector Math.004"].location = (223.94143676757812, -128.6003875732422)
     gn_drone_errorcheck_1.nodes["Store Named Attribute.002"].location = (403.80999755859375, 264.58099365234375)
     gn_drone_errorcheck_1.nodes["Store Named Attribute.003"].location = (413.74462890625, 39.436771392822266)
     gn_drone_errorcheck_1.nodes["Vector Math.005"].location = (440.35882568359375, -446.8684387207031)
@@ -306,6 +326,8 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
     gn_drone_errorcheck_1.nodes["Compare.004"].location = (762.1175537109375, -678.6265869140625)
     gn_drone_errorcheck_1.nodes["Store Named Attribute.010"].location = (1001.7158203125, -562.5946044921875)
     gn_drone_errorcheck_1.nodes["Boolean Math.001"].location = (966.8374633789062, 14.716817855834961)
+    gn_drone_errorcheck_1.nodes["Store Named Attribute.005"].location = (407.29071044921875, -170.5794219970703)
+    gn_drone_errorcheck_1.nodes["Store Named Attribute"].location = (234.66925048828125, -250.11599731445312)
 
     # Set dimensions
     gn_drone_errorcheck_1.nodes["Group Input"].width  = 140.0
@@ -394,6 +416,12 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
 
     gn_drone_errorcheck_1.nodes["Boolean Math.001"].width  = 140.0
     gn_drone_errorcheck_1.nodes["Boolean Math.001"].height = 100.0
+
+    gn_drone_errorcheck_1.nodes["Store Named Attribute.005"].width  = 140.0
+    gn_drone_errorcheck_1.nodes["Store Named Attribute.005"].height = 100.0
+
+    gn_drone_errorcheck_1.nodes["Store Named Attribute"].width  = 140.0
+    gn_drone_errorcheck_1.nodes["Store Named Attribute"].height = 100.0
 
 
     # Initialize gn_drone_errorcheck_1 links
@@ -643,10 +671,30 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
         gn_drone_errorcheck_1.nodes["Store Named Attribute.002"].outputs[0],
         gn_drone_errorcheck_1.nodes["Store Named Attribute.004"].inputs[0]
     )
-    # group_input.Geometry -> store_named_attribute_003.Geometry
+    # store_named_attribute_005.Geometry -> store_named_attribute_003.Geometry
+    gn_drone_errorcheck_1.links.new(
+        gn_drone_errorcheck_1.nodes["Store Named Attribute.005"].outputs[0],
+        gn_drone_errorcheck_1.nodes["Store Named Attribute.003"].inputs[0]
+    )
+    # position.Position -> store_named_attribute.Value
+    gn_drone_errorcheck_1.links.new(
+        gn_drone_errorcheck_1.nodes["Position"].outputs[0],
+        gn_drone_errorcheck_1.nodes["Store Named Attribute"].inputs[3]
+    )
+    # group_input.Geometry -> store_named_attribute.Geometry
     gn_drone_errorcheck_1.links.new(
         gn_drone_errorcheck_1.nodes["Group Input"].outputs[0],
-        gn_drone_errorcheck_1.nodes["Store Named Attribute.003"].inputs[0]
+        gn_drone_errorcheck_1.nodes["Store Named Attribute"].inputs[0]
+    )
+    # store_named_attribute.Geometry -> store_named_attribute_005.Geometry
+    gn_drone_errorcheck_1.links.new(
+        gn_drone_errorcheck_1.nodes["Store Named Attribute"].outputs[0],
+        gn_drone_errorcheck_1.nodes["Store Named Attribute.005"].inputs[0]
+    )
+    # vector_math_001.Vector -> store_named_attribute_005.Value
+    gn_drone_errorcheck_1.links.new(
+        gn_drone_errorcheck_1.nodes["Vector Math.001"].outputs[0],
+        gn_drone_errorcheck_1.nodes["Store Named Attribute.005"].inputs[3]
     )
 
     return gn_drone_errorcheck_1
@@ -677,7 +725,7 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
 
     # Socket Max Speed Up
     max_speed_up_socket = gn_proxypoints_1.interface.new_socket(name="Max Speed Up", in_out='INPUT', socket_type='NodeSocketFloat')
-    max_speed_up_socket.default_value = 4.0
+    max_speed_up_socket.default_value = 0.0
     max_speed_up_socket.min_value = -3.4028234663852886e+38
     max_speed_up_socket.max_value = 3.4028234663852886e+38
     max_speed_up_socket.subtype = 'NONE'
@@ -685,7 +733,7 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
 
     # Socket Max Speed Down
     max_speed_down_socket = gn_proxypoints_1.interface.new_socket(name="Max Speed Down", in_out='INPUT', socket_type='NodeSocketFloat')
-    max_speed_down_socket.default_value = 3.0
+    max_speed_down_socket.default_value = 0.0
     max_speed_down_socket.min_value = -3.4028234663852886e+38
     max_speed_down_socket.max_value = 3.4028234663852886e+38
     max_speed_down_socket.subtype = 'NONE'
@@ -693,7 +741,7 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
 
     # Socket Max Speed Horiz
     max_speed_horiz_socket = gn_proxypoints_1.interface.new_socket(name="Max Speed Horiz", in_out='INPUT', socket_type='NodeSocketFloat')
-    max_speed_horiz_socket.default_value = 5.0
+    max_speed_horiz_socket.default_value = 0.0
     max_speed_horiz_socket.min_value = -3.4028234663852886e+38
     max_speed_horiz_socket.max_value = 3.4028234663852886e+38
     max_speed_horiz_socket.subtype = 'NONE'
@@ -701,7 +749,7 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
 
     # Socket Max Acc
     max_acc_socket = gn_proxypoints_1.interface.new_socket(name="Max Acc", in_out='INPUT', socket_type='NodeSocketFloat')
-    max_acc_socket.default_value = 3.0
+    max_acc_socket.default_value = 0.0
     max_acc_socket.min_value = -3.4028234663852886e+38
     max_acc_socket.max_value = 3.4028234663852886e+38
     max_acc_socket.subtype = 'NONE'
@@ -709,7 +757,7 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
 
     # Socket Min Distance
     min_distance_socket = gn_proxypoints_1.interface.new_socket(name="Min Distance", in_out='INPUT', socket_type='NodeSocketFloat')
-    min_distance_socket.default_value = 1.5
+    min_distance_socket.default_value = 0.0
     min_distance_socket.min_value = -3.4028234663852886e+38
     min_distance_socket.max_value = 3.4028234663852886e+38
     min_distance_socket.subtype = 'NONE'
@@ -743,19 +791,6 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
     # Create item "Geometry"
     simulation_output.state_items.new('GEOMETRY', "Geometry")
     simulation_output.state_items[0].attribute_domain = 'POINT'
-
-    # Node Capture Attribute
-    capture_attribute = gn_proxypoints_1.nodes.new("GeometryNodeCaptureAttribute")
-    capture_attribute.name = "Capture Attribute"
-    capture_attribute.active_index = 0
-    capture_attribute.capture_items.clear()
-    capture_attribute.capture_items.new('FLOAT', "Position")
-    capture_attribute.capture_items["Position"].data_type = 'FLOAT_VECTOR'
-    capture_attribute.domain = 'POINT'
-
-    # Node Position
-    position = gn_proxypoints_1.nodes.new("GeometryNodeInputPosition")
-    position.name = "Position"
 
     # Node Named Attribute
     named_attribute = gn_proxypoints_1.nodes.new("GeometryNodeInputNamedAttribute")
@@ -830,6 +865,24 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
     # Offset
     set_position.inputs[3].default_value = (0.0, 0.0, 0.0)
 
+    # Node Named Attribute.001
+    named_attribute_001 = gn_proxypoints_1.nodes.new("GeometryNodeInputNamedAttribute")
+    named_attribute_001.name = "Named Attribute.001"
+    named_attribute_001.data_type = 'FLOAT_VECTOR'
+    # Name
+    named_attribute_001.inputs[0].default_value = "prev_pos"
+
+    # Node Capture Attribute
+    capture_attribute = gn_proxypoints_1.nodes.new("GeometryNodeCaptureAttribute")
+    capture_attribute.name = "Capture Attribute"
+    capture_attribute.active_index = 1
+    capture_attribute.capture_items.clear()
+    capture_attribute.capture_items.new('FLOAT', "Attribute")
+    capture_attribute.capture_items["Attribute"].data_type = 'FLOAT_VECTOR'
+    capture_attribute.capture_items.new('FLOAT', "Attribute.001")
+    capture_attribute.capture_items["Attribute.001"].data_type = 'FLOAT_VECTOR'
+    capture_attribute.domain = 'POINT'
+
     # Process zone input Simulation Input
     simulation_input.pair_with_output(simulation_output)
 
@@ -837,21 +890,21 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
 
     # Set locations
     gn_proxypoints_1.nodes["Group Input"].location = (-1224.3953857421875, -179.26084899902344)
-    gn_proxypoints_1.nodes["Group Output"].location = (921.4347534179688, -246.2064971923828)
+    gn_proxypoints_1.nodes["Group Output"].location = (1036.3668212890625, -200.17587280273438)
     gn_proxypoints_1.nodes["Simulation Input"].location = (-74.16285705566406, -143.55059814453125)
-    gn_proxypoints_1.nodes["Simulation Output"].location = (611.5438842773438, -200.75521850585938)
-    gn_proxypoints_1.nodes["Capture Attribute"].location = (154.31085205078125, -126.03953552246094)
-    gn_proxypoints_1.nodes["Position"].location = (-111.36146545410156, -386.9756774902344)
+    gn_proxypoints_1.nodes["Simulation Output"].location = (794.2518920898438, -47.84729766845703)
     gn_proxypoints_1.nodes["Named Attribute"].location = (-102.1490478515625, -470.6581726074219)
-    gn_proxypoints_1.nodes["Group"].location = (309.4452819824219, -292.27996826171875)
+    gn_proxypoints_1.nodes["Group"].location = (520.9176025390625, -142.02915954589844)
     gn_proxypoints_1.nodes["Collection Info"].location = (-1009.32177734375, 86.92550659179688)
     gn_proxypoints_1.nodes["Mesh to Points"].location = (-582.4127807617188, 96.82801818847656)
     gn_proxypoints_1.nodes["Sample Index"].location = (-410.7318115234375, 87.01919555664062)
     gn_proxypoints_1.nodes["Position.001"].location = (-641.5189208984375, -193.10543823242188)
     gn_proxypoints_1.nodes["Index"].location = (-634.4633178710938, -242.64747619628906)
     gn_proxypoints_1.nodes["Realize Instances"].location = (-765.2047119140625, 114.92731475830078)
-    gn_proxypoints_1.nodes["Set Position.001"].location = (318.02685546875, -47.46184539794922)
-    gn_proxypoints_1.nodes["Set Position"].location = (-204.0633544921875, -70.75257873535156)
+    gn_proxypoints_1.nodes["Set Position.001"].location = (124.7191162109375, 30.70676612854004)
+    gn_proxypoints_1.nodes["Set Position"].location = (-277.8728332519531, -153.45828247070312)
+    gn_proxypoints_1.nodes["Named Attribute.001"].location = (-98.857666015625, -332.0057678222656)
+    gn_proxypoints_1.nodes["Capture Attribute"].location = (314.76611328125, -118.56640625)
 
     # Set dimensions
     gn_proxypoints_1.nodes["Group Input"].width  = 140.0
@@ -865,12 +918,6 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
 
     gn_proxypoints_1.nodes["Simulation Output"].width  = 140.0
     gn_proxypoints_1.nodes["Simulation Output"].height = 100.0
-
-    gn_proxypoints_1.nodes["Capture Attribute"].width  = 140.0
-    gn_proxypoints_1.nodes["Capture Attribute"].height = 100.0
-
-    gn_proxypoints_1.nodes["Position"].width  = 140.0
-    gn_proxypoints_1.nodes["Position"].height = 100.0
 
     gn_proxypoints_1.nodes["Named Attribute"].width  = 140.0
     gn_proxypoints_1.nodes["Named Attribute"].height = 100.0
@@ -902,29 +949,15 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
     gn_proxypoints_1.nodes["Set Position"].width  = 140.0
     gn_proxypoints_1.nodes["Set Position"].height = 100.0
 
+    gn_proxypoints_1.nodes["Named Attribute.001"].width  = 140.0
+    gn_proxypoints_1.nodes["Named Attribute.001"].height = 100.0
+
+    gn_proxypoints_1.nodes["Capture Attribute"].width  = 140.0
+    gn_proxypoints_1.nodes["Capture Attribute"].height = 100.0
+
 
     # Initialize gn_proxypoints_1 links
 
-    # simulation_input.Geometry -> capture_attribute.Geometry
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Simulation Input"].outputs[1],
-        gn_proxypoints_1.nodes["Capture Attribute"].inputs[0]
-    )
-    # position.Position -> capture_attribute.Position
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Position"].outputs[0],
-        gn_proxypoints_1.nodes["Capture Attribute"].inputs[1]
-    )
-    # capture_attribute.Position -> group.Prev Pos
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Capture Attribute"].outputs[1],
-        gn_proxypoints_1.nodes["Group"].inputs[1]
-    )
-    # named_attribute.Attribute -> group.Prev Vel
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Named Attribute"].outputs[0],
-        gn_proxypoints_1.nodes["Group"].inputs[2]
-    )
     # simulation_input.Delta Time -> group.Delta Time
     gn_proxypoints_1.links.new(
         gn_proxypoints_1.nodes["Simulation Input"].outputs[0],
@@ -995,25 +1028,10 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
         gn_proxypoints_1.nodes["Group Input"].outputs[7],
         gn_proxypoints_1.nodes["Simulation Output"].inputs[0]
     )
-    # capture_attribute.Geometry -> set_position_001.Geometry
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Capture Attribute"].outputs[0],
-        gn_proxypoints_1.nodes["Set Position.001"].inputs[0]
-    )
     # sample_index.Value -> set_position_001.Position
     gn_proxypoints_1.links.new(
         gn_proxypoints_1.nodes["Sample Index"].outputs[0],
         gn_proxypoints_1.nodes["Set Position.001"].inputs[2]
-    )
-    # set_position_001.Geometry -> group.Geometry
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Set Position.001"].outputs[0],
-        gn_proxypoints_1.nodes["Group"].inputs[0]
-    )
-    # simulation_output.Geometry -> group_output.Geometry
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Simulation Output"].outputs[0],
-        gn_proxypoints_1.nodes["Group Output"].inputs[0]
     )
     # group_input.Geometry -> set_position.Geometry
     gn_proxypoints_1.links.new(
@@ -1029,6 +1047,46 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
     gn_proxypoints_1.links.new(
         gn_proxypoints_1.nodes["Sample Index"].outputs[0],
         gn_proxypoints_1.nodes["Set Position"].inputs[2]
+    )
+    # simulation_input.Geometry -> set_position_001.Geometry
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Simulation Input"].outputs[1],
+        gn_proxypoints_1.nodes["Set Position.001"].inputs[0]
+    )
+    # set_position_001.Geometry -> capture_attribute.Geometry
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Set Position.001"].outputs[0],
+        gn_proxypoints_1.nodes["Capture Attribute"].inputs[0]
+    )
+    # simulation_output.Geometry -> group_output.Geometry
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Simulation Output"].outputs[0],
+        gn_proxypoints_1.nodes["Group Output"].inputs[0]
+    )
+    # named_attribute_001.Attribute -> capture_attribute.Attribute
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Named Attribute.001"].outputs[0],
+        gn_proxypoints_1.nodes["Capture Attribute"].inputs[1]
+    )
+    # capture_attribute.Attribute -> group.Prev Pos
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Capture Attribute"].outputs[1],
+        gn_proxypoints_1.nodes["Group"].inputs[1]
+    )
+    # named_attribute.Attribute -> capture_attribute.Attribute.001
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Named Attribute"].outputs[0],
+        gn_proxypoints_1.nodes["Capture Attribute"].inputs[2]
+    )
+    # capture_attribute.Attribute.001 -> group.Prev Vel
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Capture Attribute"].outputs[2],
+        gn_proxypoints_1.nodes["Group"].inputs[2]
+    )
+    # capture_attribute.Geometry -> group.Geometry
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Capture Attribute"].outputs[0],
+        gn_proxypoints_1.nodes["Group"].inputs[0]
     )
 
     return gn_proxypoints_1
