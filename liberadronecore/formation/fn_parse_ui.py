@@ -78,17 +78,30 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
         def _set_gn_input(mod: bpy.types.Modifier, name: str, value) -> None:
             if mod is None:
                 return
-            print(f"Setting GN input {name} to {value}")
-            
-            mod[name] = value
-            return
             node_group = getattr(mod, "node_group", None)
-            if node_group is None:
-                return
-            for inp in node_group.inputs:
-                if inp.name == name:
-                    mod[inp.identifier] = value
-                    break
+            if node_group is not None:
+                iface = getattr(node_group, "interface", None)
+                if iface is not None:
+                    for sock in iface.items_tree:
+                        if getattr(sock, "in_out", None) != 'INPUT':
+                            continue
+                        if sock.name == name:
+                            try:
+                                mod[sock.identifier] = value
+                                return
+                            except Exception:
+                                pass
+                for inp in getattr(node_group, "inputs", []):
+                    if inp.name == name:
+                        try:
+                            mod[inp.identifier] = value
+                            return
+                        except Exception:
+                            pass
+            try:
+                mod[name] = value
+            except Exception:
+                pass
 
         def _get_nodes_modifier(obj: bpy.types.Object, name: str) -> Optional[bpy.types.Modifier]:
             mod = obj.modifiers.get(name)

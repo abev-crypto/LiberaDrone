@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import bpy
+from bpy.app.handlers import persistent
 
 
 # -----------------------------
@@ -196,6 +197,74 @@ def install_from_zip_bytes(zip_bytes: bytes, repo: GithubRepo, target_addon_dir:
 # Blender Operator / UI
 # -----------------------------
 
+_AUTO_CHECK_DONE = False
+
+
+def _addon_key() -> str:
+    return __package__.split(".")[0]
+
+
+def _get_prefs() -> Optional[bpy.types.AddonPreferences]:
+    try:
+        return bpy.context.preferences.addons[_addon_key()].preferences
+    except Exception:
+        return None
+
+
+def _check_update_for_prefs(prefs: bpy.types.AddonPreferences) -> Tuple[bool, str]:
+    repo = GithubRepo(
+        owner=prefs.gh_owner,
+        repo=prefs.gh_repo,
+        branch=prefs.gh_branch,
+        addon_subdir=prefs.gh_addon_subdir,
+    )
+
+    try:
+        local_v = get_local_version(_addon_key())
+        remote_v = get_remote_version(repo)
+    except Exception as e:
+        return False, str(e)
+
+    prefs.last_local_version = str(local_v) if local_v else "None"
+    prefs.last_remote_version = str(remote_v) if remote_v else "None"
+
+    if not local_v or not remote_v:
+        prefs.update_available = False
+        return False, "Missing version info"
+
+    prefs.update_available = _version_gt(remote_v, local_v)
+    return True, "Update available" if prefs.update_available else "Up to date"
+
+
+def _notify_update_available(message: str) -> None:
+    wm = getattr(bpy.context, "window_manager", None)
+    if wm is None:
+        print(message)
+        return
+
+    def _draw(self, _context):
+        self.layout.label(text=message)
+
+    try:
+        wm.popup_menu(_draw, title="LiberaDrone", icon='INFO')
+    except Exception:
+        print(message)
+
+
+@persistent
+def _auto_check_on_load(_scene) -> None:
+    global _AUTO_CHECK_DONE
+    if _AUTO_CHECK_DONE:
+        return
+    prefs = _get_prefs()
+    if prefs is None or not getattr(prefs, "auto_check", False):
+        _AUTO_CHECK_DONE = True
+        return
+    ok, _msg = _check_update_for_prefs(prefs)
+    if ok and getattr(prefs, "update_available", False):
+        _notify_update_available("LiberaDrone update available. Open Preferences to update.")
+    _AUTO_CHECK_DONE = True
+
 class LD_OT_check_update(bpy.types.Operator):
     bl_idname = "liberadrone.check_update"
     bl_label = "Check Update (GitHub main)"
@@ -274,8 +343,12 @@ classes = (
 def register():
     for c in classes:
         bpy.utils.register_class(c)
+    if _auto_check_on_load not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_auto_check_on_load)
 
 
 def unregister():
+    if _auto_check_on_load in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_auto_check_on_load)
     for c in reversed(classes):
         bpy.utils.unregister_class(c)

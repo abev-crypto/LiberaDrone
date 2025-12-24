@@ -1,4 +1,5 @@
 import liberadronecore.ui.addon_pref as addon_pref
+import liberadronecore.ui.liberadrone_panel as liberadrone_panel
 from .base_reg import RegisterBase
 
 
@@ -8,7 +9,9 @@ class UIRegister(RegisterBase):
     @classmethod
     def register(cls) -> None:
         addon_pref.register()
+        liberadrone_panel.register()
 
     @classmethod
     def unregister(cls) -> None:
+        liberadrone_panel.unregister()
         addon_pref.unregister()

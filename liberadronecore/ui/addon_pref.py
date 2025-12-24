@@ -45,6 +45,7 @@ class LD_Preferences(bpy.types.AddonPreferences):
     update_available: bpy.props.BoolProperty(name="Update Available", default=False)
     last_local_version: bpy.props.StringProperty(name="Local Version", default="")
     last_remote_version: bpy.props.StringProperty(name="Remote Version", default="")
+    auto_check: bpy.props.BoolProperty(name="Auto Check Update", default=True)
 
     def draw(self, context):
         layout = self.layout
@@ -73,6 +74,7 @@ class LD_Preferences(bpy.types.AddonPreferences):
         col.prop(self, "gh_repo")
         col.prop(self, "gh_branch")
         col.prop(self, "gh_addon_subdir")
+        col.prop(self, "auto_check")
 
         row = col.row(align=True)
         row.operator("liberadrone.check_update", text="Check Update")
