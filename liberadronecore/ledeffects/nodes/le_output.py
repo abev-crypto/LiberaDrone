@@ -1,3 +1,7 @@
+""" 
+Color Alpha Entry Influence Priorityを持つ
+"""
+
 import bpy
 from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
 

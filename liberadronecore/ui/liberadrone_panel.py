@@ -183,13 +183,6 @@ def _ensure_workspace(name: str):
     if ws is not None:
         return ws
     try:
-        bpy.ops.workspace.new(name=name)
-        ws = bpy.data.workspaces.get(name)
-        if ws is not None:
-            return ws
-    except Exception:
-        pass
-    try:
         return bpy.data.workspaces.new(name)
     except Exception:
         return None
@@ -321,16 +314,20 @@ class LD_PT_libera_panel(bpy.types.Panel):
         col.prop(scene, "ld_proxy_max_acc_vert", text="MaxAcc")
         col.prop(scene, "ld_proxy_min_distance", text="MinDistance")
         col.prop(scene, "ld_proxy_skip_check", text="SkipCheck")
+        col.separator()
+        col.prop(scene, "ld_checker_range_enabled", text="Range Check")
+        col.prop(scene, "ld_checker_range_object", text="Range Object")
+        col.prop(scene, "ld_checker_range_width", text="Range Width")
 
         box = layout.box()
         box.label(text="Overlay")
         box.prop(scene, "ld_checker_enabled", text="Show Checker")
         col = box.column(align=True)
+        col.prop(scene, "ld_checker_show_speed", text="Speed")
+        col.prop(scene, "ld_checker_show_acc", text="Acc")
+        col.prop(scene, "ld_checker_show_distance", text="Distance")
+        col.prop(scene, "ld_checker_range_enabled", text="Range")
         col.prop(scene, "ld_checker_size", text="Checker Size")
-        col.prop(scene, "ld_checker_range_object", text="Range Object")
-        col.prop(scene, "ld_checker_range_width", text="Range Width")
-        col.prop(scene, "ld_checker_range_depth", text="Range Depth")
-        col.prop(scene, "ld_checker_range_height", text="Range Height")
 
         box = layout.box()
         box.label(text="Workspace")
@@ -404,6 +401,22 @@ def register():
         default=6.0,
         min=1.0,
     )
+    bpy.types.Scene.ld_checker_show_speed = bpy.props.BoolProperty(
+        name="Speed",
+        default=True,
+    )
+    bpy.types.Scene.ld_checker_show_acc = bpy.props.BoolProperty(
+        name="Acc",
+        default=True,
+    )
+    bpy.types.Scene.ld_checker_show_distance = bpy.props.BoolProperty(
+        name="Distance",
+        default=True,
+    )
+    bpy.types.Scene.ld_checker_range_enabled = bpy.props.BoolProperty(
+        name="Range",
+        default=True,
+    )
     bpy.types.Scene.ld_checker_range_object = bpy.props.PointerProperty(
         name="Range Object",
         type=bpy.types.Object,
@@ -413,25 +426,19 @@ def register():
         default=0.0,
         min=0.0,
     )
-    bpy.types.Scene.ld_checker_range_depth = bpy.props.FloatProperty(
-        name="Range Depth",
-        default=0.0,
-        min=0.0,
-    )
-    bpy.types.Scene.ld_checker_range_height = bpy.props.FloatProperty(
-        name="Range Height",
-        default=0.0,
-        min=0.0,
-    )
 
 
 def unregister():
     if hasattr(bpy.types.Scene, "ld_limit_profile"):
         del bpy.types.Scene.ld_limit_profile
-    if hasattr(bpy.types.Scene, "ld_checker_range_height"):
-        del bpy.types.Scene.ld_checker_range_height
-    if hasattr(bpy.types.Scene, "ld_checker_range_depth"):
-        del bpy.types.Scene.ld_checker_range_depth
+    if hasattr(bpy.types.Scene, "ld_checker_range_enabled"):
+        del bpy.types.Scene.ld_checker_range_enabled
+    if hasattr(bpy.types.Scene, "ld_checker_show_distance"):
+        del bpy.types.Scene.ld_checker_show_distance
+    if hasattr(bpy.types.Scene, "ld_checker_show_acc"):
+        del bpy.types.Scene.ld_checker_show_acc
+    if hasattr(bpy.types.Scene, "ld_checker_show_speed"):
+        del bpy.types.Scene.ld_checker_show_speed
     if hasattr(bpy.types.Scene, "ld_checker_range_width"):
         del bpy.types.Scene.ld_checker_range_width
     if hasattr(bpy.types.Scene, "ld_checker_range_object"):

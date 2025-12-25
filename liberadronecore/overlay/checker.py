@@ -63,8 +63,9 @@ def _get_attr_values(attr) -> list[float]:
 def _draw_points_2d(coords, color, size):
     if not coords:
         return
-    shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
-    batch = batch_for_shader(shader, 'POINTS', {"pos": coords})
+    coords_3d = [(co[0], co[1], 0.0) for co in coords]
+    shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+    batch = batch_for_shader(shader, 'POINTS', {"pos": coords_3d})
     gpu.state.blend_set('ALPHA')
     gpu.state.depth_test_set('NONE')
     gpu.state.depth_mask_set(False)
@@ -77,6 +78,8 @@ def _draw_points_2d(coords, color, size):
 
 
 def _get_range_bounds(scene):
+    if not bool(getattr(scene, "ld_checker_range_enabled", True)):
+        return None
     range_obj = getattr(scene, "ld_checker_range_object", None)
     if range_obj is not None:
         bounds = [range_obj.matrix_world @ Vector(corner) for corner in range_obj.bound_box]
@@ -85,10 +88,10 @@ def _get_range_bounds(scene):
         return min_v, max_v
 
     width = float(getattr(scene, "ld_checker_range_width", 0.0))
-    depth = float(getattr(scene, "ld_checker_range_depth", 0.0))
-    height = float(getattr(scene, "ld_checker_range_height", 0.0))
-    if width <= 0.0 or depth <= 0.0 or height <= 0.0:
+    if width <= 0.0:
         return None
+    depth = width
+    height = width
     half_w = width * 0.5
     half_d = depth * 0.5
     min_v = Vector((-half_w, 0.0, -half_d))
@@ -102,17 +105,31 @@ def _draw_stats(mesh, font_id: int = 0):
     acc = _get_attr_values(_get_attr(mesh, "acc"))
     min_dist = _get_attr_values(_get_attr(mesh, "min_distance"))
 
+    scene = bpy.context.scene
+    limit_up = float(getattr(scene, "ld_proxy_max_speed_up", 0.0))
+    limit_down = float(getattr(scene, "ld_proxy_max_speed_down", 0.0))
+    limit_horiz = float(getattr(scene, "ld_proxy_max_speed_horiz", 0.0))
+    limit_acc = float(getattr(scene, "ld_proxy_max_acc_vert", 0.0))
+    limit_dist = float(getattr(scene, "ld_proxy_min_distance", 0.0))
+
+    show_speed = bool(getattr(scene, "ld_checker_show_speed", True))
+    show_acc = bool(getattr(scene, "ld_checker_show_acc", True))
+    show_distance = bool(getattr(scene, "ld_checker_show_distance", True))
+
     lines = []
-    if speed_vert or speed_horiz:
+    if show_speed and (speed_vert or speed_horiz):
         max_up = max([v for v in speed_vert if v > 0.0] or [0.0])
         max_down = min([v for v in speed_vert if v < 0.0] or [0.0])
-        lines.append(f"Max Speed Up: {max_up:.2f}")
-        lines.append(f"Max Speed Down: {abs(max_down):.2f}")
-        lines.append(f"Max Speed Horiz: {max(speed_horiz or [0.0]):.2f}")
-    if acc:
-        lines.append(f"Max Acc: {max(acc or [0.0]):.2f}")
-    if min_dist:
-        lines.append(f"Min Distance: {min(min_dist):.2f}")
+        lines.append(("Max Speed Up", max_up, max_up > limit_up))
+        lines.append(("Max Speed Down", abs(max_down), abs(max_down) > limit_down))
+        max_horiz = max(speed_horiz or [0.0])
+        lines.append(("Max Speed Horiz", max_horiz, max_horiz > limit_horiz))
+    if show_acc and acc:
+        max_acc = max(acc or [0.0])
+        lines.append(("Max Acc", max_acc, max_acc > limit_acc))
+    if show_distance and min_dist:
+        min_val = min(min_dist)
+        lines.append(("Min Distance", min_val, min_val < limit_dist))
 
     if not lines:
         return
@@ -151,9 +168,13 @@ def _draw_stats(mesh, font_id: int = 0):
         blf.size(font_id, int(11 * ui_scale))
     else:
         blf.size(font_id, int(11 * ui_scale), 72)
-    for line in lines:
+    for label, value, is_error in lines:
+        if is_error:
+            blf.color(font_id, 1.0, 0.2, 0.2, 1.0)
+        else:
+            blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
         blf.position(font_id, x, y, 0)
-        blf.draw(font_id, line)
+        blf.draw(font_id, f"{label}: {value:.2f}")
         y -= 16
 
 
@@ -174,10 +195,15 @@ def draw_gn_vertex_markers():
     if mesh is None:
         return
 
-    err_speed = _get_attr_flags(_get_attr(mesh, "err_speed"))
-    err_acc = _get_attr_flags(_get_attr(mesh, "err_acc"))
-    err_close = _get_attr_flags(_get_attr(mesh, "err_close"))
-    range_bounds = _get_range_bounds(context.scene)
+    show_speed = bool(getattr(context.scene, "ld_checker_show_speed", True))
+    show_acc = bool(getattr(context.scene, "ld_checker_show_acc", True))
+    show_distance = bool(getattr(context.scene, "ld_checker_show_distance", True))
+    show_range = bool(getattr(context.scene, "ld_checker_range_enabled", True))
+
+    err_speed = _get_attr_flags(_get_attr(mesh, "err_speed")) if show_speed else []
+    err_acc = _get_attr_flags(_get_attr(mesh, "err_acc")) if show_acc else []
+    err_close = _get_attr_flags(_get_attr(mesh, "err_close")) if show_distance else []
+    range_bounds = _get_range_bounds(context.scene) if show_range else None
 
     size = float(getattr(context.scene, "ld_checker_size", 6.0))
     size = max(1.0, size)
@@ -197,13 +223,13 @@ def draw_gn_vertex_markers():
             continue
 
         flags = []
-        if i < len(err_speed) and err_speed[i]:
+        if show_speed and i < len(err_speed) and err_speed[i]:
             flags.append("speed")
-        if i < len(err_acc) and err_acc[i]:
+        if show_acc and i < len(err_acc) and err_acc[i]:
             flags.append("acc")
-        if i < len(err_close) and err_close[i]:
+        if show_distance and i < len(err_close) and err_close[i]:
             flags.append("distance")
-        if range_bounds is not None:
+        if show_range and range_bounds is not None:
             min_v, max_v = range_bounds
             in_range = (
                 min_v.x <= world_co.x <= max_v.x

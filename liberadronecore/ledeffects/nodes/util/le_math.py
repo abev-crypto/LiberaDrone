@@ -1,6 +1,9 @@
 import bpy
 from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
 
+"""
+TODO: Step Saturate Fraction Floor Ceil Sine Cosine OneMinusを実装
+"""
 
 class LDLEDMathNode(bpy.types.Node, LDLED_Node):
     """Basic math node for LED intensities."""
