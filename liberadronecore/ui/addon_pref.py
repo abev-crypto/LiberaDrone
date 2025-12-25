@@ -1,6 +1,6 @@
 import bpy
 import liberadronecore.system.request as request
-from liberadronecore.ui.addon_operators import LD_OT_dummy, LD_OT_install_deps
+from liberadronecore.ui.operators import LD_OT_dummy, LD_OT_install_deps
 
 
 class LD_Preferences(bpy.types.AddonPreferences):

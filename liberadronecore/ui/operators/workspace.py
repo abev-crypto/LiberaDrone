@@ -129,20 +129,3 @@ class LD_OT_setup_workspace_led(LD_OT_setup_workspace):
     def invoke(self, context, event):
         self.mode = "LED"
         return self.execute(context)
-
-
-classes = (
-    LD_OT_setup_workspace,
-    LD_OT_setup_workspace_formation,
-    LD_OT_setup_workspace_led,
-)
-
-
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
-
-def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)

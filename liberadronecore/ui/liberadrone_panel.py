@@ -202,6 +202,10 @@ class LD_PT_libera_panel(bpy.types.Panel):
         col.prop(scene, "ld_checker_size", text="Checker Size")
 
         box = layout.box()
+        box.label(text="Graph")
+        box.operator("liberadrone.show_check_graph", text="Show Check Graph")
+
+        box = layout.box()
         box.label(text="Workspace")
         row = box.row(align=True)
         row.operator("liberadrone.setup_workspace_formation", text="FormationNodeWindow")
