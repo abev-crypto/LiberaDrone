@@ -88,10 +88,14 @@ def _get_range_bounds(scene):
         return min_v, max_v
 
     width = float(getattr(scene, "ld_checker_range_width", 0.0))
+    height = float(getattr(scene, "ld_checker_range_height", 0.0))
+    depth = float(getattr(scene, "ld_checker_range_depth", 0.0))
     if width <= 0.0:
         return None
-    depth = width
-    height = width
+    if height <= 0.0:
+        height = width
+    if depth <= 0.0:
+        depth = width
     half_w = width * 0.5
     half_d = depth * 0.5
     min_v = Vector((-half_w, 0.0, -half_d))
