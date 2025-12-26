@@ -1,8 +1,8 @@
 import bpy
-from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
+from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 
 
-class LDLEDValueNode(bpy.types.Node, LDLED_Node):
+class LDLEDValueNode(bpy.types.Node, LDLED_CodeNodeBase):
     """A minimal node to test the LED effects node tree."""
 
     bl_idname = "LDLEDValueNode"
@@ -36,3 +36,15 @@ class LDLEDValueNode(bpy.types.Node, LDLED_Node):
     def draw_buttons(self, context, layout):
         layout.prop(self, "color", text="")
         layout.prop(self, "intensity")
+
+    def build_code(self, inputs):
+        color_var = self.output_var("Color")
+        intensity_var = self.output_var("Intensity")
+        color = tuple(float(c) for c in self.color)
+        intensity = float(self.intensity)
+        return "\n".join(
+            [
+                f"{color_var} = {color!r}",
+                f"{intensity_var} = {intensity!r}",
+            ]
+        )

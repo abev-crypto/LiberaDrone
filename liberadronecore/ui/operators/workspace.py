@@ -23,14 +23,15 @@ def _split_area(context, screen, area, direction: str, factor: float):
     return new_areas[0] if new_areas else None
 
 
-def _ensure_workspace(name: str):
-    ws = bpy.data.workspaces.get(name)
-    if ws is not None:
-        return ws
-    try:
-        return bpy.data.workspaces.new(name)
-    except Exception:
-        return None
+def _ensure_workspace(context, name: str):
+    bpy.ops.workspace.append_activate(
+        context,
+        idname=name,
+        filepath="",
+    )
+    ws = context.workspace
+    ws.name = name
+    return ws
 
 
 def _configure_workspace_screen(context, screen, tree_type: str):
@@ -68,7 +69,10 @@ def _configure_workspace_screen(context, screen, tree_type: str):
                 right.ui_type = tree_type
 
     if timeline_area is not None:
-        timeline_area.type = 'TIMELINE'
+        timeline_area.type = 'DOPESHEET_EDITOR'
+        space = timeline_area.spaces.active
+        if hasattr(space, "ui_type"):
+            space.ui_type = 'TIMELINE'
 
     for area in screen.areas:
         if area.type == 'VIEW_3D':
@@ -97,9 +101,9 @@ class LD_OT_setup_workspace(bpy.types.Operator):
             name = "FormationNodeWindow"
             tree_type = "FN_FormationTree"
 
-        ws = _ensure_workspace(name)
+        ws = _ensure_workspace(context, name)
         if ws is None:
-            self.report({'ERROR'}, "Failed to create workspace")
+            self.report({'ERROR'}, "Failed to create workspace (missing template or window)")
             return {'CANCELLED'}
 
         window = context.window

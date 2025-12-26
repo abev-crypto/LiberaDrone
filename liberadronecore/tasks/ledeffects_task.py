@@ -5,11 +5,13 @@ TODO LedEffectsをドローンへ反映するタスク
 フォーメーションを跨げない　正しく跨ぐには、、、
 """
 
-import liberadronecore.util.droneutil as du
-
 from typing import MutableSequence
+
 import bpy
 from bpy.app.handlers import persistent
+
+import liberadronecore.util.droneutil as du
+from liberadronecore.ledeffects import led_codegen_runtime as le_codegen
 
 
 
@@ -72,44 +74,38 @@ def _write_led_color_attribute(colors: list[MutableSequence[float]]) -> None:
 
 @persistent
 def update_led_effects(scene):
-    global _base_color_cache
-
     if _is_any_viewport_wireframe():
         return
 
     if not getattr(scene, "update_led_effects", True):
         return
 
+    tree = le_codegen.get_active_tree(scene)
+    if tree is None:
+        return
+
+    effect_fn = le_codegen.get_compiled_effect(tree)
+    if effect_fn is None:
+        return
 
     frame = scene.frame_current
     frame_start = scene.frame_start
 
     drones = du.get_all_drones_in_scene(scene)
-    mapping = scene.skybrush.storyboard.get_mapping_at_frame(frame)
-    height = len(mapping) if mapping is not None else len(drones)
-
-    if not drones or height == 0:
+    if not drones:
         return
 
-    colors: list[MutableSequence[float]] | None = None
-    positions = None
-    random_seq = scene.skybrush.settings.random_sequence_root
+    positions = [du.get_position_of_object(drone) for drone in drones]
+    random_seq = getattr(scene.skybrush.settings, "random_sequence_root", None)
 
-    for effect in light_effects.iter_active_effects_in_frame(frame):
-        if colors is None:
-            positions = [du.get_position_of_object(drone) for drone in drones]
-            colors = [[0.0, 0.0, 0.0, 0.0] for _ in drones]
+    colors: list[MutableSequence[float]] = []
+    for idx, pos in enumerate(positions):
+        color = effect_fn(idx, pos, frame, random_seq)
+        if not color:
+            color = [0.0, 0.0, 0.0, 1.0]
+        elif len(color) < 4:
+            color = list(color) + [1.0] * (4 - len(color))
+        colors.append(color)
 
-        effect.apply_on_colors(
-            drones=drones,
-            colors=colors,
-            positions=positions,
-            mapping=mapping,
-            frame=frame,
-            random_seq=random_seq,
-        )
-    if colors:
-        _write_column_to_cache(frame - frame_start, colors)
-        _write_led_color_attribute(colors)
-    else:
-        _write_led_color_attribute(cached)
+    _write_column_to_cache(frame - frame_start, colors)
+    _write_led_color_attribute(colors)

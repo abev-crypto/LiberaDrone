@@ -561,11 +561,6 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
         gn_drone_errorcheck_1.nodes["Compare.005"].outputs[0],
         gn_drone_errorcheck_1.nodes["Boolean Math"].inputs[1]
     )
-    # compare_002.Result -> store_named_attribute_008.Value
-    gn_drone_errorcheck_1.links.new(
-        gn_drone_errorcheck_1.nodes["Compare.002"].outputs[0],
-        gn_drone_errorcheck_1.nodes["Store Named Attribute.008"].inputs[3]
-    )
     # position.Position -> index_of_nearest.Position
     gn_drone_errorcheck_1.links.new(
         gn_drone_errorcheck_1.nodes["Position"].outputs[0],
@@ -600,11 +595,6 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
     gn_drone_errorcheck_1.links.new(
         gn_drone_errorcheck_1.nodes["Vector Math.006"].outputs[1],
         gn_drone_errorcheck_1.nodes["Compare.004"].inputs[0]
-    )
-    # compare_004.Result -> store_named_attribute_010.Value
-    gn_drone_errorcheck_1.links.new(
-        gn_drone_errorcheck_1.nodes["Compare.004"].outputs[0],
-        gn_drone_errorcheck_1.nodes["Store Named Attribute.010"].inputs[3]
     )
     # store_named_attribute_010.Geometry -> group_output.Geometry
     gn_drone_errorcheck_1.links.new(
@@ -695,6 +685,16 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
     gn_drone_errorcheck_1.links.new(
         gn_drone_errorcheck_1.nodes["Vector Math.001"].outputs[0],
         gn_drone_errorcheck_1.nodes["Store Named Attribute.005"].inputs[3]
+    )
+    # compare_004.Result -> store_named_attribute_010.Value
+    gn_drone_errorcheck_1.links.new(
+        gn_drone_errorcheck_1.nodes["Compare.004"].outputs[0],
+        gn_drone_errorcheck_1.nodes["Store Named Attribute.010"].inputs[3]
+    )
+    # compare_002.Result -> store_named_attribute_008.Value
+    gn_drone_errorcheck_1.links.new(
+        gn_drone_errorcheck_1.nodes["Compare.002"].outputs[0],
+        gn_drone_errorcheck_1.nodes["Store Named Attribute.008"].inputs[3]
     )
 
     return gn_drone_errorcheck_1
@@ -835,10 +835,6 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
     position_001 = gn_proxypoints_1.nodes.new("GeometryNodeInputPosition")
     position_001.name = "Position.001"
 
-    # Node Index
-    index = gn_proxypoints_1.nodes.new("GeometryNodeInputIndex")
-    index.name = "Index"
-
     # Node Realize Instances
     realize_instances = gn_proxypoints_1.nodes.new("GeometryNodeRealizeInstances")
     realize_instances.name = "Realize Instances"
@@ -883,6 +879,24 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
     capture_attribute.capture_items["Attribute.001"].data_type = 'FLOAT_VECTOR'
     capture_attribute.domain = 'POINT'
 
+    # Node Named Attribute.002
+    named_attribute_002 = gn_proxypoints_1.nodes.new("GeometryNodeInputNamedAttribute")
+    named_attribute_002.name = "Named Attribute.002"
+    named_attribute_002.data_type = 'INT'
+    # Name
+    named_attribute_002.inputs[0].default_value = "pair_id"
+
+    # Node Sample Index.001
+    sample_index_001 = gn_proxypoints_1.nodes.new("GeometryNodeSampleIndex")
+    sample_index_001.name = "Sample Index.001"
+    sample_index_001.clamp = False
+    sample_index_001.data_type = 'INT'
+    sample_index_001.domain = 'POINT'
+
+    # Node ID
+    id = gn_proxypoints_1.nodes.new("GeometryNodeInputID")
+    id.name = "ID"
+
     # Process zone input Simulation Input
     simulation_input.pair_with_output(simulation_output)
 
@@ -890,21 +904,23 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
 
     # Set locations
     gn_proxypoints_1.nodes["Group Input"].location = (-1224.3953857421875, -179.26084899902344)
-    gn_proxypoints_1.nodes["Group Output"].location = (1036.3668212890625, -200.17587280273438)
+    gn_proxypoints_1.nodes["Group Output"].location = (1086.16845703125, -56.01910400390625)
     gn_proxypoints_1.nodes["Simulation Input"].location = (-74.16285705566406, -143.55059814453125)
     gn_proxypoints_1.nodes["Simulation Output"].location = (794.2518920898438, -47.84729766845703)
     gn_proxypoints_1.nodes["Named Attribute"].location = (-102.1490478515625, -470.6581726074219)
     gn_proxypoints_1.nodes["Group"].location = (520.9176025390625, -142.02915954589844)
     gn_proxypoints_1.nodes["Collection Info"].location = (-1009.32177734375, 86.92550659179688)
-    gn_proxypoints_1.nodes["Mesh to Points"].location = (-582.4127807617188, 96.82801818847656)
-    gn_proxypoints_1.nodes["Sample Index"].location = (-410.7318115234375, 87.01919555664062)
-    gn_proxypoints_1.nodes["Position.001"].location = (-641.5189208984375, -193.10543823242188)
-    gn_proxypoints_1.nodes["Index"].location = (-634.4633178710938, -242.64747619628906)
-    gn_proxypoints_1.nodes["Realize Instances"].location = (-765.2047119140625, 114.92731475830078)
+    gn_proxypoints_1.nodes["Mesh to Points"].location = (-593.6319580078125, 167.0366973876953)
+    gn_proxypoints_1.nodes["Sample Index"].location = (-244.71310424804688, 207.21539306640625)
+    gn_proxypoints_1.nodes["Position.001"].location = (-442.7688293457031, 85.15586853027344)
+    gn_proxypoints_1.nodes["Realize Instances"].location = (-825.975341796875, 176.7109832763672)
     gn_proxypoints_1.nodes["Set Position.001"].location = (124.7191162109375, 30.70676612854004)
     gn_proxypoints_1.nodes["Set Position"].location = (-277.8728332519531, -153.45828247070312)
     gn_proxypoints_1.nodes["Named Attribute.001"].location = (-98.857666015625, -332.0057678222656)
     gn_proxypoints_1.nodes["Capture Attribute"].location = (314.76611328125, -118.56640625)
+    gn_proxypoints_1.nodes["Named Attribute.002"].location = (-742.475830078125, -21.904434204101562)
+    gn_proxypoints_1.nodes["Sample Index.001"].location = (-427.8231201171875, 4.82733154296875)
+    gn_proxypoints_1.nodes["ID"].location = (-753.151123046875, -152.33184814453125)
 
     # Set dimensions
     gn_proxypoints_1.nodes["Group Input"].width  = 140.0
@@ -937,9 +953,6 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
     gn_proxypoints_1.nodes["Position.001"].width  = 140.0
     gn_proxypoints_1.nodes["Position.001"].height = 100.0
 
-    gn_proxypoints_1.nodes["Index"].width  = 140.0
-    gn_proxypoints_1.nodes["Index"].height = 100.0
-
     gn_proxypoints_1.nodes["Realize Instances"].width  = 140.0
     gn_proxypoints_1.nodes["Realize Instances"].height = 100.0
 
@@ -954,6 +967,15 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
 
     gn_proxypoints_1.nodes["Capture Attribute"].width  = 140.0
     gn_proxypoints_1.nodes["Capture Attribute"].height = 100.0
+
+    gn_proxypoints_1.nodes["Named Attribute.002"].width  = 140.0
+    gn_proxypoints_1.nodes["Named Attribute.002"].height = 100.0
+
+    gn_proxypoints_1.nodes["Sample Index.001"].width  = 140.0
+    gn_proxypoints_1.nodes["Sample Index.001"].height = 100.0
+
+    gn_proxypoints_1.nodes["ID"].width  = 140.0
+    gn_proxypoints_1.nodes["ID"].height = 100.0
 
 
     # Initialize gn_proxypoints_1 links
@@ -1002,11 +1024,6 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
     gn_proxypoints_1.links.new(
         gn_proxypoints_1.nodes["Position.001"].outputs[0],
         gn_proxypoints_1.nodes["Sample Index"].inputs[1]
-    )
-    # index.Index -> sample_index.Index
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Index"].outputs[0],
-        gn_proxypoints_1.nodes["Sample Index"].inputs[2]
     )
     # collection_info.Instances -> realize_instances.Geometry
     gn_proxypoints_1.links.new(
@@ -1058,11 +1075,6 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
         gn_proxypoints_1.nodes["Set Position.001"].outputs[0],
         gn_proxypoints_1.nodes["Capture Attribute"].inputs[0]
     )
-    # simulation_output.Geometry -> group_output.Geometry
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Simulation Output"].outputs[0],
-        gn_proxypoints_1.nodes["Group Output"].inputs[0]
-    )
     # named_attribute_001.Attribute -> capture_attribute.Attribute
     gn_proxypoints_1.links.new(
         gn_proxypoints_1.nodes["Named Attribute.001"].outputs[0],
@@ -1087,6 +1099,31 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
     gn_proxypoints_1.links.new(
         gn_proxypoints_1.nodes["Capture Attribute"].outputs[0],
         gn_proxypoints_1.nodes["Group"].inputs[0]
+    )
+    # named_attribute_002.Attribute -> sample_index_001.Value
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Named Attribute.002"].outputs[0],
+        gn_proxypoints_1.nodes["Sample Index.001"].inputs[1]
+    )
+    # id.ID -> sample_index_001.Index
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["ID"].outputs[0],
+        gn_proxypoints_1.nodes["Sample Index.001"].inputs[2]
+    )
+    # sample_index_001.Value -> sample_index.Index
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Sample Index.001"].outputs[0],
+        gn_proxypoints_1.nodes["Sample Index"].inputs[2]
+    )
+    # simulation_output.Geometry -> group_output.Geometry
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Simulation Output"].outputs[0],
+        gn_proxypoints_1.nodes["Group Output"].inputs[0]
+    )
+    # mesh_to_points.Points -> sample_index_001.Geometry
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Mesh to Points"].outputs[0],
+        gn_proxypoints_1.nodes["Sample Index.001"].inputs[0]
     )
 
     return gn_proxypoints_1

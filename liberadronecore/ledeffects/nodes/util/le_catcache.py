@@ -1,6 +1,9 @@
 import bpy
 from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
-
+"""
+Docstring for liberadronecore.ledeffects.nodes.util.le_catcache
+TODO: 入力ColorをCAT形式でキャッシュ 
+"""
 
 class LDLEDCatCacheNode(bpy.types.Node, LDLED_Node):
     """Represents cached LED categories to reuse across effects."""

@@ -8,8 +8,6 @@ from .graph import LD_OT_show_check_graph
 
 
 _classes = (
-    LD_OT_install_deps,
-    LD_OT_dummy,
     LD_OT_setup_workspace,
     LD_OT_setup_workspace_formation,
     LD_OT_setup_workspace_led,

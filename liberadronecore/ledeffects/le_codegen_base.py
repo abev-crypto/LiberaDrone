@@ -35,6 +35,15 @@ class LDLED_CodeNodeBase(LDLED_Node):
         label = getattr(self, "label", "") or getattr(self, "name", "") or self.bl_idname
         return _sanitize_identifier(label)
 
+    def _set_codegen_output_vars(self, mapping: Dict[str, str]) -> None:
+        self._codegen_output_vars = mapping
+
+    def output_var(self, name: str) -> str:
+        mapping = getattr(self, "_codegen_output_vars", {})
+        if name in mapping:
+            return mapping[name]
+        return _sanitize_identifier(name)
+
     def code_inputs(self) -> List[str]:
         """Return input socket names used as variables in generated code."""
         if not hasattr(self, "inputs"):
