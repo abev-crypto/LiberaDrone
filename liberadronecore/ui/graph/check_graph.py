@@ -220,7 +220,8 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
         self.frames = []
         self.ohlc = {}
 
-        self.btn_refresh.clicked.connect(self.resample_and_redraw)\n        self.spin_bin.valueChanged.connect(self.resample_and_redraw)
+        self.btn_refresh.clicked.connect(self.resample_and_redraw)
+        self.spin_bin.valueChanged.connect(self.resample_and_redraw)
 
         self.resample_and_redraw()
 
@@ -231,7 +232,10 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Error", "Target object not found")
             return
 
-        frames, series = _sample_metric_series(scene)\n        bin_frames = int(self.spin_bin.value())\n        self.frames = frames\n        self.ohlc = {key: _to_ohlc(frames, series[key], bin_frames) for key in series}
+        frames, series = _sample_metric_series(scene)
+        bin_frames = int(self.spin_bin.value())
+        self.frames = frames
+        self.ohlc = {key: _to_ohlc(frames, series[key], bin_frames) for key in series}
 
         self.redraw()
 
@@ -252,7 +256,8 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
             self.canvas.draw_idle()
             return
 
-        bin_frames = int(self.spin_bin.value())\n        candle_width = max(1.0, bin_frames * 0.6)
+        bin_frames = int(self.spin_bin.value())
+        candle_width = max(1.0, bin_frames * 0.6)
 
         first_ax = None
         for i, (key, label, limit_prop, invert) in enumerate(targets, start=1):
@@ -287,5 +292,6 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
         VelocityCandleWindow._instance.show()
         return VelocityCandleWindow._instance
 
-if __name__ == "__main__":\n    VelocityCandleWindow.show_window()\n
+if __name__ == "__main__":
+        VelocityCandleWindow.show_window()
 
