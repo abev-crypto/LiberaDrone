@@ -140,12 +140,29 @@ def _set_proxy_min_distance(self, value):
     _set_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Min Distance", float(value))
 
 
-def _get_proxy_skip_check(self):
-    return bool(_get_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "SkipCheck", False))
+def _get_preview_gn_visible(self):
+    mod = _get_nodes_modifier(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME)
+    if mod is None:
+        return False
+    return bool(getattr(mod, "show_viewport", True))
 
 
-def _set_proxy_skip_check(self, value):
-    _set_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "SkipCheck", bool(value))
+def _set_preview_gn_visible(self, value):
+    mod = _get_nodes_modifier(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME)
+    if mod is None:
+        return
+    mod.show_viewport = bool(value)
+    obj = bpy.data.objects.get(PREVIEW_OBJ_NAME)
+    if obj is not None:
+        obj.update_tag()
+
+
+def _get_preview_scale(self):
+    return float(_get_gn_input_value(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME, "Scale", 0.4))
+
+
+def _set_preview_scale(self, value):
+    _set_gn_input_value(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME, "Scale", float(value))
 
 
 def _get_checker_enabled(self):
@@ -170,7 +187,10 @@ class LD_PT_libera_panel(bpy.types.Panel):
         box.label(text="PreviewDrone")
         if _get_nodes_modifier(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME) is None:
             box.label(text="PreviewDroneGN not found", icon='ERROR')
-        box.prop(scene, "ld_preview_show_ring", text="ShowRing")
+        col = box.column(align=True)
+        col.prop(scene, "ld_preview_show_ring", text="ShowRing")
+        col.prop(scene, "ld_preview_scale", text="Scale")
+        col.prop(scene, "ld_proxy_skip_check", text="SkipCheck")
 
         box = layout.box()
         box.label(text="ProxyPoints")
@@ -183,7 +203,6 @@ class LD_PT_libera_panel(bpy.types.Panel):
         col.prop(scene, "ld_proxy_max_speed_horiz", text="MaxSpeedHoriz")
         col.prop(scene, "ld_proxy_max_acc_vert", text="MaxAcc")
         col.prop(scene, "ld_proxy_min_distance", text="MinDistance")
-        col.prop(scene, "ld_proxy_skip_check", text="SkipCheck")
         col.separator()
         col.prop(scene, "ld_checker_range_enabled", text="Range Check")
         col.prop(scene, "ld_checker_range_object", text="Range Object")
@@ -259,10 +278,16 @@ def register():
         get=_get_proxy_min_distance,
         set=_set_proxy_min_distance,
     )
+    bpy.types.Scene.ld_preview_scale = bpy.props.FloatProperty(
+        name="Scale",
+        get=_get_preview_scale,
+        set=_set_preview_scale,
+        min=0.0,
+    )
     bpy.types.Scene.ld_proxy_skip_check = bpy.props.BoolProperty(
         name="SkipCheck",
-        get=_get_proxy_skip_check,
-        set=_set_proxy_skip_check,
+        get=_get_preview_gn_visible,
+        set=_set_preview_gn_visible,
     )
     bpy.types.Scene.ld_checker_enabled = bpy.props.BoolProperty(
         name="Show Checker",
@@ -348,6 +373,8 @@ def unregister():
         del bpy.types.Scene.ld_proxy_max_speed_up
     if hasattr(bpy.types.Scene, "ld_preview_show_ring"):
         del bpy.types.Scene.ld_preview_show_ring
+    if hasattr(bpy.types.Scene, "ld_preview_scale"):
+        del bpy.types.Scene.ld_preview_scale
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

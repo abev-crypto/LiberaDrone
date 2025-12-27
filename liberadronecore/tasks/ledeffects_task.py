@@ -40,7 +40,7 @@ def _write_column_to_cache(column: int, colors) -> None:
 
 
 def _write_led_color_attribute(colors) -> None:
-    system_obj = bpy.data.objects.get("ProxyPoints")
+    system_obj = bpy.data.objects.get("ColorVerts")
     if system_obj is None or system_obj.type != 'MESH':
         return
 

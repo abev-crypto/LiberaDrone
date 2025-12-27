@@ -112,6 +112,35 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
                     return m
             return None
 
+        def _ensure_color_verts(scene: bpy.types.Scene, count: Optional[int]) -> Optional[bpy.types.Object]:
+            if count is None:
+                return None
+            count = max(1, int(count))
+            obj = bpy.data.objects.get("ColorVerts")
+            if obj is not None and obj.type != 'MESH':
+                return None
+            if obj is None:
+                mesh = bpy.data.meshes.new("ColorVertsMesh")
+                obj = bpy.data.objects.new("ColorVerts", mesh)
+                scene.collection.objects.link(obj)
+            mesh = obj.data
+            if len(mesh.vertices) != count:
+                mesh.clear_geometry()
+                mesh.vertices.add(count)
+                mesh.update()
+            if obj.name not in scene.collection.objects:
+                scene.collection.objects.link(obj)
+            return obj
+
+        def _ensure_proxy_single_vert(obj: Optional[bpy.types.Object]) -> None:
+            if obj is None or obj.type != 'MESH':
+                return
+            mesh = obj.data
+            if len(mesh.vertices) != 1:
+                mesh.clear_geometry()
+                mesh.vertices.add(1)
+                mesh.update()
+
         tree = None
         space = context.space_data
         if space and getattr(space, "edit_tree", None):
@@ -142,8 +171,8 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
 
         if proxy_obj is None or preview_obj is None:
             if drone_count is not None:
-                sence_setup.ANY_MESH_VERTS = drone_count
-                sence_setup.init_scene_env(n_verts=drone_count)
+                sence_setup.ANY_MESH_VERTS = 1
+                sence_setup.init_scene_env(n_verts=1)
             else:
                 sence_setup.init_scene_env()
 
@@ -157,6 +186,9 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
         proxy_group = None
         preview_group = None
         from liberadronecore.system.drone import proxy_points_gn, preview_drone_gn
+
+        color_verts_obj = _ensure_color_verts(context.scene, drone_count)
+        _ensure_proxy_single_vert(proxy_obj)
 
         proxy_builder = getattr(proxy_points_gn, "geometry_nodes_001_1_node_group", None)
         if proxy_builder is None:
@@ -188,8 +220,10 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
             mod = _get_nodes_modifier(preview_obj, "PreviewDroneGN")
             mat = sence_setup.get_or_create_emission_attr_material(sence_setup.MAT_NAME, sence_setup.ATTR_NAME)
             _set_gn_input(mod, "Material", mat)
-            if proxy_obj:
-                _set_gn_input(mod, "Object", proxy_obj)
+            formation_col = _ensure_collection(context.scene, "Formation")
+            _set_gn_input(mod, "Collection", formation_col)
+            if color_verts_obj:
+                _set_gn_input(mod, "ColorVerts", color_verts_obj)
 
         self.report({'INFO'}, "Setup completed")
         return {'FINISHED'}

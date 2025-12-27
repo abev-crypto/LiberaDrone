@@ -700,7 +700,7 @@ def gn_drone_errorcheck_1_node_group(node_tree_names: dict[typing.Callable, str]
     return gn_drone_errorcheck_1
 
 
-def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
+def geometry_nodes_001_1_node_group(node_tree_names: dict[typing.Callable, str]):
     """Initialize GN_ProxyPoints node group"""
     gn_proxypoints_1 = bpy.data.node_groups.new(type='GeometryNodeTree', name="GN_ProxyPoints")
 
@@ -915,11 +915,11 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
     gn_proxypoints_1.nodes["Position.001"].location = (-442.7688293457031, 85.15586853027344)
     gn_proxypoints_1.nodes["Realize Instances"].location = (-825.975341796875, 176.7109832763672)
     gn_proxypoints_1.nodes["Set Position.001"].location = (124.7191162109375, 30.70676612854004)
-    gn_proxypoints_1.nodes["Set Position"].location = (-277.8728332519531, -153.45828247070312)
+    gn_proxypoints_1.nodes["Set Position"].location = (2.857452392578125, 285.9909362792969)
     gn_proxypoints_1.nodes["Named Attribute.001"].location = (-98.857666015625, -332.0057678222656)
     gn_proxypoints_1.nodes["Capture Attribute"].location = (314.76611328125, -118.56640625)
     gn_proxypoints_1.nodes["Named Attribute.002"].location = (-742.475830078125, -21.904434204101562)
-    gn_proxypoints_1.nodes["Sample Index.001"].location = (-427.8231201171875, 4.82733154296875)
+    gn_proxypoints_1.nodes["Sample Index.001"].location = (-407.08074951171875, 55.82173538208008)
     gn_proxypoints_1.nodes["ID"].location = (-753.151123046875, -152.33184814453125)
 
     # Set dimensions
@@ -1050,16 +1050,6 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
         gn_proxypoints_1.nodes["Sample Index"].outputs[0],
         gn_proxypoints_1.nodes["Set Position.001"].inputs[2]
     )
-    # group_input.Geometry -> set_position.Geometry
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Group Input"].outputs[0],
-        gn_proxypoints_1.nodes["Set Position"].inputs[0]
-    )
-    # set_position.Geometry -> simulation_input.Geometry
-    gn_proxypoints_1.links.new(
-        gn_proxypoints_1.nodes["Set Position"].outputs[0],
-        gn_proxypoints_1.nodes["Simulation Input"].inputs[0]
-    )
     # sample_index.Value -> set_position.Position
     gn_proxypoints_1.links.new(
         gn_proxypoints_1.nodes["Sample Index"].outputs[0],
@@ -1125,6 +1115,16 @@ def gn_proxypoints_1_node_group(node_tree_names: dict[typing.Callable, str]):
         gn_proxypoints_1.nodes["Mesh to Points"].outputs[0],
         gn_proxypoints_1.nodes["Sample Index.001"].inputs[0]
     )
+    # set_position.Geometry -> simulation_input.Geometry
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Set Position"].outputs[0],
+        gn_proxypoints_1.nodes["Simulation Input"].inputs[0]
+    )
+    # mesh_to_points.Points -> set_position.Geometry
+    gn_proxypoints_1.links.new(
+        gn_proxypoints_1.nodes["Mesh to Points"].outputs[0],
+        gn_proxypoints_1.nodes["Set Position"].inputs[0]
+    )
 
     return gn_proxypoints_1
 
@@ -1137,6 +1137,6 @@ if __name__ == "__main__":
     gn_drone_errorcheck = gn_drone_errorcheck_1_node_group(node_tree_names)
     node_tree_names[gn_drone_errorcheck_1_node_group] = gn_drone_errorcheck.name
 
-    gn_proxypoints = gn_proxypoints_1_node_group(node_tree_names)
-    node_tree_names[gn_proxypoints_1_node_group] = gn_proxypoints.name
+    gn_proxypoints = geometry_nodes_001_1_node_group(node_tree_names)
+    node_tree_names[geometry_nodes_001_1_node_group] = gn_proxypoints.name
 

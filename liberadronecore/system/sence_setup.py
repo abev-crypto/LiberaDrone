@@ -13,7 +13,7 @@ ICOSPHERE_SUBDIV = 2
 ICOSPHERE_RADIUS = 0.5
 
 ANY_MESH_NAME = "AnyMesh"
-ANY_MESH_VERTS = 200  # 任意の頂点数（ここを変える）
+ANY_MESH_VERTS = 1  # 任意の頂点数（ここを変える）
 
 COLLECTION_NAMES = [
     "COL_System",
@@ -131,7 +131,6 @@ def create_icosphere(name=ICOSPHERE_NAME, subdiv=ICOSPHERE_SUBDIV, radius=ICOSPH
     obj = bpy.context.active_object
     obj.name = name
     obj.data.name = f"{name}_Mesh"
-    ensure_color_attribute(obj.data, ATTR_NAME)
     return obj
 
 def create_any_mesh_points(name=ANY_MESH_NAME, n_verts=ANY_MESH_VERTS):
@@ -177,9 +176,6 @@ def init_scene_env(n_verts=None):
     # 3) 任意頂点数メッシュ（点メッシュ）
     any_obj = create_any_mesh_points(ANY_MESH_NAME, ANY_MESH_VERTS)
     assign_material(any_obj, mat)
-
-    # 4) Solid View の Color を Attribute 表示に
-    set_viewport_solid_attribute(ATTR_NAME)
 
     # コレクションへ配置
     if COL_FOR_ICOSPHERE in cols:
