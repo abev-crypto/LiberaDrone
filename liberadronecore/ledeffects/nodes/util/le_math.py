@@ -1,9 +1,6 @@
 import bpy
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 
-"""
-TODO: Step Saturate Fraction Floor Ceil Sine Cosine OneMinusを実装
-"""
 
 class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Basic math node for LED intensities."""
@@ -19,6 +16,14 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
         ("DIVIDE", "Divide", "Divide A by B"),
         ("MAX", "Max", "Maximum of A and B"),
         ("MIN", "Min", "Minimum of A and B"),
+        ("STEP", "Step", "0 if A < B else 1"),
+        ("SATURATE", "Saturate", "Clamp A between 0 and 1"),
+        ("FRACTION", "Fraction", "Fractional part of A"),
+        ("FLOOR", "Floor", "Floor A"),
+        ("CEIL", "Ceil", "Ceil A"),
+        ("SINE", "Sine", "Sine of A"),
+        ("COSINE", "Cosine", "Cosine of A"),
+        ("ONE_MINUS", "One Minus", "1 - A"),
     ]
 
     operation: bpy.props.EnumProperty(
@@ -63,6 +68,22 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
             expr = f"({a}) if ({a}) > ({b}) else ({b})"
         elif op == "MIN":
             expr = f"({a}) if ({a}) < ({b}) else ({b})"
+        elif op == "STEP":
+            expr = f"1.0 if ({a}) >= ({b}) else 0.0"
+        elif op == "SATURATE":
+            expr = f"_clamp01({a})"
+        elif op == "FRACTION":
+            expr = f"({a}) - float(int({a}))"
+        elif op == "FLOOR":
+            expr = f"math.floor({a})"
+        elif op == "CEIL":
+            expr = f"math.ceil({a})"
+        elif op == "SINE":
+            expr = f"math.sin({a})"
+        elif op == "COSINE":
+            expr = f"math.cos({a})"
+        elif op == "ONE_MINUS":
+            expr = f"1.0 - ({a})"
         else:
             expr = f"({a})"
         if self.clamp_result:

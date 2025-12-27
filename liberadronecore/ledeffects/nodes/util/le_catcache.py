@@ -1,12 +1,9 @@
 import bpy
-from liberadronecore.ledeffects.le_nodecategory import LDLED_Node
-"""
-Docstring for liberadronecore.ledeffects.nodes.util.le_catcache
-TODO: 入力ColorをCAT形式でキャッシュ 
-"""
+from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 
-class LDLEDCatCacheNode(bpy.types.Node, LDLED_Node):
-    """Represents cached LED categories to reuse across effects."""
+
+class LDLEDCatCacheNode(bpy.types.Node, LDLED_CodeNodeBase):
+    """Cache LED colors by name."""
 
     bl_idname = "LDLEDCatCacheNode"
     bl_label = "LED Category Cache"
@@ -41,3 +38,26 @@ class LDLEDCatCacheNode(bpy.types.Node, LDLED_Node):
     def draw_buttons(self, context, layout):
         layout.prop(self, "cache_mode", text="")
         layout.prop(self, "cache_name")
+
+    def build_code(self, inputs):
+        color = inputs.get("Color", "(0.0, 0.0, 0.0, 1.0)")
+        intensity = inputs.get("Intensity", "0.0")
+        out_color = self.output_var("Color")
+        out_intensity = self.output_var("Intensity")
+        cache_name = self.cache_name
+        cache_id = f"{self.codegen_id()}_{int(self.as_pointer())}"
+        if self.cache_mode == "READ":
+            return "\n".join(
+                [
+                    f"_cat_color_{cache_id}, _cat_intensity_{cache_id} = _cat_cache_read({cache_name!r})",
+                    f"{out_color} = _cat_color_{cache_id}",
+                    f"{out_intensity} = _cat_intensity_{cache_id}",
+                ]
+            )
+        return "\n".join(
+            [
+                f"_cat_cache_write({cache_name!r}, {color}, {intensity})",
+                f"{out_color} = {color}",
+                f"{out_intensity} = {intensity}",
+            ]
+        )

@@ -13,13 +13,6 @@ class LDLEDOutputNode(bpy.types.Node, LDLED_Node):
     bl_label = "LED Output"
     bl_icon = "OUTPUT"
 
-    exposure: bpy.props.FloatProperty(
-        name="Exposure",
-        default=0.0,
-        min=-10.0,
-        max=10.0,
-        description="Simple exposure control applied to incoming intensity",
-    )
     priority: bpy.props.IntProperty(
         name="Priority",
         default=0,
@@ -34,13 +27,10 @@ class LDLEDOutputNode(bpy.types.Node, LDLED_Node):
         color = self.inputs.new("NodeSocketColor", "Color")
         intensity = self.inputs.new("NodeSocketFloat", "Intensity")
         alpha = self.inputs.new("NodeSocketFloat", "Alpha")
-        entry = self.inputs.new("NodeSocketFloat", "Entry")
-        influence = self.inputs.new("NodeSocketFloat", "Influence")
+        entry = self.inputs.new("LDLEDEntrySocket", "Entry")
+        entry.is_multi_input = True
         intensity.default_value = 1.0
         alpha.default_value = 1.0
-        entry.default_value = 1.0
-        influence.default_value = 1.0
 
     def draw_buttons(self, context, layout):
-        layout.prop(self, "exposure")
         layout.prop(self, "priority")

@@ -109,3 +109,13 @@ def update_led_effects(scene):
 
     _write_column_to_cache(frame - frame_start, colors)
     _write_led_color_attribute(colors)
+
+
+def register():
+    if update_led_effects not in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.append(update_led_effects)
+
+
+def unregister():
+    if update_led_effects in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.remove(update_led_effects)
