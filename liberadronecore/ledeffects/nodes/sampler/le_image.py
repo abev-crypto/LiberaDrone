@@ -19,14 +19,16 @@ class LDLEDImageSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
-        self.inputs.new("NodeSocketVector", "UV")
+        self.inputs.new("NodeSocketFloat", "U")
+        self.inputs.new("NodeSocketFloat", "V")
         self.outputs.new("NodeSocketColor", "Color")
 
     def draw_buttons(self, context, layout):
         layout.prop(self, "image")
 
     def build_code(self, inputs):
-        uv = inputs.get("UV", "(0.0, 0.0, 0.0)")
+        u = inputs.get("U", "0.0")
+        v = inputs.get("V", "0.0")
         out_var = self.output_var("Color")
         image_name = self.image.name if self.image else ""
-        return f"{out_var} = _sample_image({image_name!r}, ({uv}[0], {uv}[1]))"
+        return f"{out_var} = _sample_image({image_name!r}, ({u}, {v}))"

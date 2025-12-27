@@ -9,9 +9,10 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
     bl_label = "LED Video Sampler"
     bl_icon = "SEQUENCE"
 
-    image: bpy.props.PointerProperty(
+    filepath: bpy.props.StringProperty(
         name="Video",
-        type=bpy.types.Image,
+        subtype='FILE_PATH',
+        default="",
     )
 
     @classmethod
@@ -19,22 +20,24 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
-        self.inputs.new("NodeSocketVector", "UV")
+        self.inputs.new("NodeSocketFloat", "U")
+        self.inputs.new("NodeSocketFloat", "V")
         self.inputs.new("LDLEDEntrySocket", "Entry")
         self.outputs.new("NodeSocketColor", "Color")
 
     def draw_buttons(self, context, layout):
-        layout.prop(self, "image")
+        layout.prop(self, "filepath")
 
     def build_code(self, inputs):
-        uv = inputs.get("UV", "(0.0, 0.0, 0.0)")
+        u = inputs.get("U", "0.0")
+        v = inputs.get("V", "0.0")
         entry = inputs.get("Entry", "_entry_empty()")
         out_var = self.output_var("Color")
-        image_name = self.image.name if self.image else ""
+        video_path = bpy.path.abspath(self.filepath) if self.filepath else ""
         vid_id = f"{self.codegen_id()}_{int(self.as_pointer())}"
         return "\n".join(
             [
                 f"_progress_{vid_id} = _entry_progress({entry}, frame)",
-                f"{out_var} = _sample_image({image_name!r}, ({uv}[0], {uv}[1])) if _progress_{vid_id} > 0.0 else (0.0, 0.0, 0.0, 1.0)",
+                f"{out_var} = _sample_video({video_path!r}, frame, {u}, {v}) if _progress_{vid_id} > 0.0 else (0.0, 0.0, 0.0, 1.0)",
             ]
         )

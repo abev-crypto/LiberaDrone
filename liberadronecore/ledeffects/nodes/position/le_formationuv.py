@@ -14,13 +14,16 @@ class LDLEDFormationUVNode(bpy.types.Node, LDLED_CodeNodeBase):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
-        self.outputs.new("NodeSocketVector", "UV")
+        self.outputs.new("NodeSocketFloat", "U")
+        self.outputs.new("NodeSocketFloat", "V")
 
     def build_code(self, inputs):
-        out_var = self.output_var("UV")
+        out_u = self.output_var("U")
+        out_v = self.output_var("V")
         return "\n".join(
             [
                 "_uv = _formation_bbox_uv((pos[0], pos[1], pos[2]))",
-                f"{out_var} = (_uv[0], _uv[1], 0.0)",
+                f"{out_u} = _uv[0]",
+                f"{out_v} = _uv[1]",
             ]
         )

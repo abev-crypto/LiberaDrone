@@ -3,7 +3,7 @@ from __future__ import annotations
 import colorsys
 import math
 import mathutils
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Any
 
 import bpy
 
@@ -131,6 +131,77 @@ def _to_grayscale(color: Tuple[float, float, float, float]) -> Tuple[float, floa
     r, g, b, a = color
     gray = 0.2126 * r + 0.7152 * g + 0.0722 * b
     return gray, gray, gray, a
+
+
+def _hue_lerp(h0: float, h1: float, t: float) -> float:
+    delta = (h1 - h0) % 1.0
+    if delta > 0.5:
+        delta -= 1.0
+    return (h0 + delta * t) % 1.0
+
+
+def _lerp(a: float, b: float, t: float) -> float:
+    return a + (b - a) * t
+
+
+def _lerp_color(c0: Tuple[float, float, float, float], c1: Tuple[float, float, float, float], t: float, mode: str):
+    mode = (mode or "RGB").upper()
+    if mode == "HSV":
+        h0, s0, v0 = colorsys.rgb_to_hsv(c0[0], c0[1], c0[2])
+        h1, s1, v1 = colorsys.rgb_to_hsv(c1[0], c1[1], c1[2])
+        h = _hue_lerp(h0, h1, t)
+        s = _lerp(s0, s1, t)
+        v = _lerp(v0, v1, t)
+        r, g, b = colorsys.hsv_to_rgb(h, s, v)
+        return r, g, b, _lerp(c0[3], c1[3], t)
+    if mode == "HSL":
+        h0, l0, s0 = colorsys.rgb_to_hls(c0[0], c0[1], c0[2])
+        h1, l1, s1 = colorsys.rgb_to_hls(c1[0], c1[1], c1[2])
+        h = _hue_lerp(h0, h1, t)
+        l = _lerp(l0, l1, t)
+        s = _lerp(s0, s1, t)
+        r, g, b = colorsys.hls_to_rgb(h, l, s)
+        return r, g, b, _lerp(c0[3], c1[3], t)
+    return (
+        _lerp(c0[0], c1[0], t),
+        _lerp(c0[1], c1[1], t),
+        _lerp(c0[2], c1[2], t),
+        _lerp(c0[3], c1[3], t),
+    )
+
+
+def _ease(t: float) -> float:
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _color_ramp_eval(
+    elements: List[Tuple[float, Tuple[float, float, float, float]]],
+    interpolation: str,
+    color_mode: str,
+    factor: float,
+) -> Tuple[float, float, float, float]:
+    if not elements:
+        return 0.0, 0.0, 0.0, 1.0
+    t = _clamp01(float(factor))
+    elements = sorted(elements, key=lambda e: e[0])
+    if t <= elements[0][0]:
+        return tuple(elements[0][1])
+    if t >= elements[-1][0]:
+        return tuple(elements[-1][1])
+    interp = (interpolation or "LINEAR").upper()
+    for idx in range(len(elements) - 1):
+        p0, c0 = elements[idx]
+        p1, c1 = elements[idx + 1]
+        if p0 <= t <= p1:
+            if p1 <= p0:
+                return tuple(c1)
+            local_t = (t - p0) / (p1 - p0)
+            if interp == "CONSTANT":
+                return tuple(c0)
+            if interp in {"EASE", "CARDINAL", "B_SPLINE"}:
+                local_t = _ease(local_t)
+            return _lerp_color(tuple(c0), tuple(c1), local_t, color_mode)
+    return tuple(elements[-1][1])
 
 
 def _get_object(name: str) -> Optional[bpy.types.Object]:
@@ -351,6 +422,49 @@ def _sample_image(image_name: str, uv: Tuple[float, float]) -> Tuple[float, floa
     if idx + 3 >= len(pixels):
         return 0.0, 0.0, 0.0, 1.0
     return float(pixels[idx]), float(pixels[idx + 1]), float(pixels[idx + 2]), float(pixels[idx + 3])
+
+
+_VIDEO_CACHE: Dict[str, object] = {}
+
+
+def _get_video_sampler(path: str):
+    if not path:
+        return None
+    full_path = bpy.path.abspath(path)
+    sampler = _VIDEO_CACHE.get(full_path)
+    if sampler is not None:
+        return sampler
+    try:
+        from liberadronecore.system.video.cvcache import FrameSampler
+        import numpy as np
+    except Exception:
+        return None
+    try:
+        sampler = FrameSampler(
+            path=full_path,
+            cache_mode="lru",
+            lru_max=64,
+            resize_to=None,
+            output_dtype=np.float32,
+            store_rgba=True,
+        )
+    except Exception:
+        return None
+    _VIDEO_CACHE[full_path] = sampler
+    return sampler
+
+
+def _sample_video(path: str, frame: float, u: float, v: float) -> Tuple[float, float, float, float]:
+    sampler = _get_video_sampler(path)
+    if sampler is None:
+        return 0.0, 0.0, 0.0, 1.0
+    try:
+        rgba = sampler.sample_uv(int(frame), float(u), float(v))
+    except Exception:
+        return 0.0, 0.0, 0.0, 1.0
+    if hasattr(rgba, "__len__") and len(rgba) >= 4:
+        return float(rgba[0]), float(rgba[1]), float(rgba[2]), float(rgba[3])
+    return 0.0, 0.0, 0.0, 1.0
 
 
 _CAT_CACHE: Dict[str, Tuple[Tuple[float, float, float, float], float]] = {}
@@ -611,7 +725,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         lines.append("    for _ in range(int(_entry_count_{0})):".format(out_id))
         lines.append("        color = _alpha_over(color, _src_color, _src_alpha)")
 
-    body = ["def _led_effect(idx, pos, frame, random_seq):", "    color = [0.0, 0.0, 0.0, 1.0]"]
+    body = ["def _led_effect(idx, pos, frame):", "    color = [0.0, 0.0, 0.0, 1.0]"]
     body.extend([f"    {line}" for line in lines])
     body.append("    return color")
 
@@ -635,6 +749,8 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         "_collection_nearest_uv": _collection_nearest_uv,
         "_formation_bbox_uv": _formation_bbox_uv,
         "_sample_image": _sample_image,
+        "_sample_video": _sample_video,
+        "_color_ramp_eval": _color_ramp_eval,
         "_cat_cache_write": _cat_cache_write,
         "_cat_cache_read": _cat_cache_read,
         "_entry_empty": _entry_empty,
@@ -655,16 +771,71 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
     return env["_led_effect"]
 
 
-_TREE_CACHE: Dict[int, Callable] = {}
+_TREE_CACHE: Dict[int, Tuple[Callable, Any]] = {}
+
+
+def _to_hashable(value):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, bpy.types.ID):
+        return value.name
+    if isinstance(value, (list, tuple, mathutils.Vector, mathutils.Color)):
+        return tuple(_to_hashable(v) for v in value)
+    if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
+        try:
+            return tuple(_to_hashable(v) for v in value)
+        except Exception:
+            return repr(value)
+    return repr(value)
+
+
+def _node_signature(node: bpy.types.Node):
+    props = []
+    for prop in node.bl_rna.properties:
+        ident = prop.identifier
+        if ident == "rna_type":
+            continue
+        try:
+            val = getattr(node, ident)
+        except Exception:
+            continue
+        props.append((ident, _to_hashable(val)))
+    inputs = []
+    for sock in getattr(node, "inputs", []):
+        try:
+            val = sock.default_value if hasattr(sock, "default_value") else None
+        except Exception:
+            val = None
+        inputs.append((sock.name, getattr(sock, "bl_idname", ""), _to_hashable(val)))
+    return (node.bl_idname, node.name, node.label, tuple(props), tuple(inputs))
+
+
+def _tree_signature(tree: bpy.types.NodeTree):
+    nodes = sorted(getattr(tree, "nodes", []), key=lambda n: n.name)
+    links = []
+    for link in getattr(tree, "links", []):
+        if not getattr(link, "is_valid", True):
+            continue
+        from_node = getattr(link, "from_node", None)
+        to_node = getattr(link, "to_node", None)
+        from_socket = getattr(link, "from_socket", None)
+        to_socket = getattr(link, "to_socket", None)
+        if not (from_node and to_node and from_socket and to_socket):
+            continue
+        links.append((from_node.name, from_socket.name, to_node.name, to_socket.name))
+    links.sort()
+    return (tuple(_node_signature(n) for n in nodes), tuple(links))
 
 
 def get_compiled_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
     key = tree.as_pointer()
-    if key in _TREE_CACHE and not tree.is_updated:
-        return _TREE_CACHE[key]
+    sig = _tree_signature(tree)
+    cached = _TREE_CACHE.get(key)
+    if cached and cached[1] == sig:
+        return cached[0]
     compiled = compile_led_effect(tree)
     if compiled is not None:
-        _TREE_CACHE[key] = compiled
+        _TREE_CACHE[key] = (compiled, sig)
     return compiled
 
 

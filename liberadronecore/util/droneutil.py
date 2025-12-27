@@ -2,7 +2,7 @@ import bpy
 
 
 def _get_drone_system_object():
-    obj = bpy.data.objects.get("DroneSystem")
+    obj = bpy.data.objects.get("ProxyPoints")
     if obj and obj.type == 'MESH':
         return obj
     return None

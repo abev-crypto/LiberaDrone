@@ -5,17 +5,15 @@ TODO LedEffectsをドローンへ反映するタスク
 フォーメーションを跨げない　正しく跨ぐには、、、
 """
 
-from typing import MutableSequence
-
 import bpy
 from bpy.app.handlers import persistent
 
 import liberadronecore.util.droneutil as du
 from liberadronecore.ledeffects import led_codegen_runtime as le_codegen
+import numpy as np
 
 
-
-_color_column_cache: dict[int, list[MutableSequence[float]]] = {}
+_color_column_cache: dict[int, list[list[float]]] = {}
 
 def _is_any_viewport_wireframe() -> bool:
     wm = getattr(bpy.context, "window_manager", None)
@@ -37,39 +35,50 @@ def _is_any_viewport_wireframe() -> bool:
                     return True
     return False
 
-def _write_column_to_cache(column: int, colors: list[MutableSequence[float]]) -> None:
+def _write_column_to_cache(column: int, colors) -> None:
     _color_column_cache[column] = [list(color) for color in colors]
 
 
-def _write_led_color_attribute(colors: list[MutableSequence[float]]) -> None:
-    system_obj = bpy.data.objects.get("DroneSystem")
+def _write_led_color_attribute(colors) -> None:
+    system_obj = bpy.data.objects.get("ProxyPoints")
     if system_obj is None or system_obj.type != 'MESH':
         return
 
     mesh = system_obj.data
-    if mesh is None:
-        return
-
-    point_count = len(colors)
-
-    if len(mesh.vertices) != point_count:
-        mesh.clear_geometry()
-        mesh.vertices.add(point_count)
-
-    attr = mesh.color_attributes.get("LEDColor")
+    attr = mesh.color_attributes.get("color")
     if attr is None or attr.domain != 'POINT' or attr.data_type != 'BYTE_COLOR':
         if attr is not None:
             mesh.color_attributes.remove(attr)
         attr = mesh.color_attributes.new(
-            name="LEDColor", domain='POINT', type='BYTE_COLOR'
+            name="color", domain='POINT', type='BYTE_COLOR'
         )
 
-    for idx, color in enumerate(colors):
-        if idx >= len(attr.data):
-            break
-        attr.data[idx].color = color
+    expected = len(attr.data)
+    if expected <= 0:
+        return
 
-    mesh.update()
+    flat: list[float]
+
+    if hasattr(colors, "shape"):
+        arr = np.asarray(colors, dtype=np.float32)
+        if arr.ndim == 1:
+            arr = arr.reshape((-1, 4))
+        elif arr.ndim >= 2:
+            arr = arr.reshape((-1, arr.shape[-1]))
+        if arr.shape[1] < 4:
+            pad = np.zeros((arr.shape[0], 4 - arr.shape[1]), dtype=arr.dtype)
+            arr = np.concatenate([arr, pad], axis=1)
+        elif arr.shape[1] > 4:
+            arr = arr[:, :4]
+        arr = arr[:expected]
+        if arr.shape[0] < expected:
+            pad = np.zeros((expected - arr.shape[0], 4), dtype=arr.dtype)
+            arr = np.concatenate([arr, pad], axis=0)
+        arr = np.clip(arr, 0.0, 1.0)
+        flat = arr.reshape(-1).tolist()
+        attr.data.foreach_set("color", flat)
+
+    #mesh.update()
 
 
 @persistent
@@ -96,18 +105,16 @@ def update_led_effects(scene):
         return
 
     positions = [du.get_position_of_object(drone) for drone in drones]
-    random_seq = getattr(scene.skybrush.settings, "random_sequence_root", None)
 
-    colors: list[MutableSequence[float]] = []
+    colors = np.zeros((len(positions), 4), dtype=np.float32)
     for idx, pos in enumerate(positions):
-        color = effect_fn(idx, pos, frame, random_seq)
+        color = effect_fn(idx, pos, frame)
         if not color:
-            color = [0.0, 0.0, 0.0, 1.0]
-        elif len(color) < 4:
-            color = list(color) + [1.0] * (4 - len(color))
-        colors.append(color)
+            continue
+        for chan in range(min(4, len(color))):
+            colors[idx, chan] = float(color[chan])
 
-    _write_column_to_cache(frame - frame_start, colors)
+    #_write_column_to_cache(frame - frame_start, colors)
     _write_led_color_attribute(colors)
 
 

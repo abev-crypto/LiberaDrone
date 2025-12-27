@@ -7,7 +7,7 @@ class LDLEDSplitNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     bl_idname = "LDLEDSplitNode"
     bl_label = "LED Split"
-    bl_icon = "SEQUENCECOLOR"
+    bl_icon = "SEQUENCE_COLOR_01"
 
     mode_items = [
         ("RGB", "RGB", "Split into RGB channels"),
@@ -29,7 +29,6 @@ class LDLEDSplitNode(bpy.types.Node, LDLED_CodeNodeBase):
         self.outputs.new("NodeSocketFloat", "X")
         self.outputs.new("NodeSocketFloat", "Y")
         self.outputs.new("NodeSocketFloat", "Z")
-        self.outputs.new("NodeSocketFloat", "A")
 
     def draw_buttons(self, context, layout):
         layout.prop(self, "mode", text="")
@@ -39,7 +38,6 @@ class LDLEDSplitNode(bpy.types.Node, LDLED_CodeNodeBase):
         out_x = self.output_var("X")
         out_y = self.output_var("Y")
         out_z = self.output_var("Z")
-        out_a = self.output_var("A")
         if self.mode == "HSV":
             split_id = f"{self.codegen_id()}_{int(self.as_pointer())}"
             return "\n".join(
@@ -48,7 +46,6 @@ class LDLEDSplitNode(bpy.types.Node, LDLED_CodeNodeBase):
                     f"{out_x} = _hsv_{split_id}[0]",
                     f"{out_y} = _hsv_{split_id}[1]",
                     f"{out_z} = _hsv_{split_id}[2]",
-                    f"{out_a} = _hsv_{split_id}[3]",
                 ]
             )
         return "\n".join(
@@ -56,6 +53,5 @@ class LDLEDSplitNode(bpy.types.Node, LDLED_CodeNodeBase):
                 f"{out_x} = {color}[0]",
                 f"{out_y} = {color}[1]",
                 f"{out_z} = {color}[2]",
-                f"{out_a} = {color}[3]",
             ]
         )

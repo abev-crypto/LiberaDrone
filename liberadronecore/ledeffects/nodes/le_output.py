@@ -28,7 +28,8 @@ class LDLEDOutputNode(bpy.types.Node, LDLED_Node):
         intensity = self.inputs.new("NodeSocketFloat", "Intensity")
         alpha = self.inputs.new("NodeSocketFloat", "Alpha")
         entry = self.inputs.new("LDLEDEntrySocket", "Entry")
-        entry.is_multi_input = True
+        if hasattr(entry, "link_limit"):
+            entry.link_limit = 0
         intensity.default_value = 1.0
         alpha.default_value = 1.0
 

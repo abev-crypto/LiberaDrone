@@ -22,3 +22,29 @@ class LDLED_Node(AutoNode[LDLED_RegisterBase]):
     registry = LDLED_RegisterBase
     NODE_CATEGORY_ID: str = "LD_LED_NODES"
     NODE_CATEGORY_LABEL: str = "LD LED Effects"
+
+    def __init_subclass__(cls, **kwargs):
+        if getattr(cls, "NODE_CATEGORY_ID", None) in (None, "LD_LED_NODES"):
+            module = getattr(cls, "__module__", "")
+            if ".nodes.effect" in module:
+                cls.NODE_CATEGORY_ID = "LD_LED_EFFECT"
+                cls.NODE_CATEGORY_LABEL = "Effect"
+            elif ".nodes.entry" in module:
+                cls.NODE_CATEGORY_ID = "LD_LED_ENTRY"
+                cls.NODE_CATEGORY_LABEL = "Entry"
+            elif ".nodes.mask" in module:
+                cls.NODE_CATEGORY_ID = "LD_LED_MASK"
+                cls.NODE_CATEGORY_LABEL = "Mask"
+            elif ".nodes.position" in module:
+                cls.NODE_CATEGORY_ID = "LD_LED_POSITION"
+                cls.NODE_CATEGORY_LABEL = "Position"
+            elif ".nodes.sampler" in module:
+                cls.NODE_CATEGORY_ID = "LD_LED_SAMPLER"
+                cls.NODE_CATEGORY_LABEL = "Sampler"
+            elif ".nodes.util" in module:
+                cls.NODE_CATEGORY_ID = "LD_LED_UTIL"
+                cls.NODE_CATEGORY_LABEL = "Utility"
+            elif module.endswith(".nodes.le_output"):
+                cls.NODE_CATEGORY_ID = "LD_LED_OUTPUT"
+                cls.NODE_CATEGORY_LABEL = "Output"
+        super().__init_subclass__(**kwargs)

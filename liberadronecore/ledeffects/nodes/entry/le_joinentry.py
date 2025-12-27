@@ -15,7 +15,8 @@ class LDLEDJoinEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def init(self, context):
         sock = self.inputs.new("LDLEDEntrySocket", "Entries")
-        sock.is_multi_input = True
+        if hasattr(sock, "link_limit"):
+            sock.link_limit = 0
         self.outputs.new("LDLEDEntrySocket", "Entry")
 
     def build_code(self, inputs):
