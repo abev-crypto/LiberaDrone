@@ -106,13 +106,19 @@ def update_led_effects(scene):
 
     positions = [du.get_position_of_object(drone) for drone in drones]
 
+    le_codegen.begin_led_frame_cache(frame, positions)
     colors = np.zeros((len(positions), 4), dtype=np.float32)
-    for idx, pos in enumerate(positions):
-        color = effect_fn(idx, pos, frame)
-        if not color:
-            continue
-        for chan in range(min(4, len(color))):
-            colors[idx, chan] = float(color[chan])
+    try:
+        for idx, pos in enumerate(positions):
+            le_codegen.set_led_runtime_index(idx)
+            color = effect_fn(idx, pos, frame)
+            if not color:
+                continue
+            for chan in range(min(4, len(color))):
+                colors[idx, chan] = float(color[chan])
+    finally:
+        le_codegen.set_led_runtime_index(None)
+        le_codegen.end_led_frame_cache()
 
     #_write_column_to_cache(frame - frame_start, colors)
     _write_led_color_attribute(colors)

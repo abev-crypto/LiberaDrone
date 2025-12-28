@@ -130,8 +130,10 @@ def _collect_positions_for_collection(
             if require_pair_id:
                 raise RuntimeError(f"pair_id attribute missing on {obj.name}")
             continue
+        pair_ids = [0] * len(eval_mesh.vertices)
+        attr.data.foreach_get("value", pair_ids)
         for idx, vtx in enumerate(eval_mesh.vertices):
-            pid = attr.data[idx].value
+            pid = pair_ids[idx]
             if pid in positions:
                 continue
             positions[pid] = eval_obj.matrix_world @ vtx.co

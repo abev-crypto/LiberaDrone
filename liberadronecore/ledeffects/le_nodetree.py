@@ -13,3 +13,13 @@ class LD_LedEffectsTree(bpy.types.NodeTree, LDLED_Register):
     @classmethod
     def poll(cls, context):
         return True
+
+    def update(self):
+        try:
+            from liberadronecore.tasks import ledeffects_task
+        except Exception:
+            return
+        scene = getattr(bpy.context, "scene", None)
+        if scene is None:
+            return
+        ledeffects_task.update_led_effects(scene)

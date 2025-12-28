@@ -9,6 +9,9 @@ REQUIRED = [
     ("numpy", "numpy", None),
     ("scipy", "scipy", None),
     ("Pillow", "PIL", None),
+    ("opencv-python", "cv2", None),
+    ("PySide6", "PySide6", None),
+    ("matplotlib", "matplotlib", None),
 ]
 
 def deps_missing():

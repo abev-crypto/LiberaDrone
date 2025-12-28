@@ -31,9 +31,9 @@ def _assign_initial_ids(mesh: bpy.types.Mesh) -> None:
     if not form_attr or form_attr.domain != 'POINT' or form_attr.data_type != 'INT':
         form_attr = _ensure_int_attribute(mesh, FORMATION_ID_ATTR)
 
-    for idx in range(len(mesh.vertices)):
-        pair_attr.data[idx].value = idx
-        form_attr.data[idx].value = idx
+    values = list(range(len(mesh.vertices)))
+    pair_attr.data.foreach_set("value", values)
+    form_attr.data.foreach_set("value", values)
 
 
 def _pair_vertices(prev_obj: bpy.types.Object, cur_obj: bpy.types.Object) -> None:
@@ -44,6 +44,8 @@ def _pair_vertices(prev_obj: bpy.types.Object, cur_obj: bpy.types.Object) -> Non
 
     prev_pair = _ensure_int_attribute(prev_mesh, PAIR_ID_ATTR)
     cur_pair = _ensure_int_attribute(cur_mesh, PAIR_ID_ATTR)
+    prev_values = [0] * len(prev_mesh.vertices)
+    prev_pair.data.foreach_get("value", prev_values)
 
     prev_coords = [prev_obj.matrix_world @ v.co for v in prev_mesh.vertices]
     kd = KDTree(len(prev_coords))
@@ -52,6 +54,7 @@ def _pair_vertices(prev_obj: bpy.types.Object, cur_obj: bpy.types.Object) -> Non
     kd.balance()
 
     used: set[int] = set()
+    cur_values = [0] * len(cur_mesh.vertices)
     for idx, v in enumerate(cur_mesh.vertices):
         co = cur_obj.matrix_world @ v.co
         target_idx = None
@@ -62,7 +65,8 @@ def _pair_vertices(prev_obj: bpy.types.Object, cur_obj: bpy.types.Object) -> Non
         if target_idx is None:
             target_idx = idx
         used.add(target_idx)
-        cur_pair.data[idx].value = prev_pair.data[target_idx].value
+        cur_values[idx] = prev_values[target_idx]
+    cur_pair.data.foreach_set("value", cur_values)
 
 
 def _propagate_formation_ids(prev_mesh: bpy.types.Mesh, cur_mesh: bpy.types.Mesh) -> None:
@@ -74,13 +78,16 @@ def _propagate_formation_ids(prev_mesh: bpy.types.Mesh, cur_mesh: bpy.types.Mesh
     cur_pair = _ensure_int_attribute(cur_mesh, PAIR_ID_ATTR)
     cur_form = _ensure_int_attribute(cur_mesh, FORMATION_ID_ATTR)
 
-    mapping: Dict[int, int] = {}
-    for idx in range(len(prev_mesh.vertices)):
-        mapping[prev_pair.data[idx].value] = prev_form.data[idx].value
+    prev_pair_values = [0] * len(prev_mesh.vertices)
+    prev_form_values = [0] * len(prev_mesh.vertices)
+    prev_pair.data.foreach_get("value", prev_pair_values)
+    prev_form.data.foreach_get("value", prev_form_values)
+    mapping: Dict[int, int] = dict(zip(prev_pair_values, prev_form_values))
 
-    for idx in range(len(cur_mesh.vertices)):
-        pid = cur_pair.data[idx].value
-        cur_form.data[idx].value = mapping.get(pid, pid)
+    cur_pair_values = [0] * len(cur_mesh.vertices)
+    cur_pair.data.foreach_get("value", cur_pair_values)
+    cur_form_values = [mapping.get(pid, pid) for pid in cur_pair_values]
+    cur_form.data.foreach_set("value", cur_form_values)
 
 
 def _as_collection(value: Any) -> Optional[bpy.types.Collection]:
@@ -186,7 +193,9 @@ def _seed_pair_ids(meshes: List[bpy.types.Object]) -> None:
             form = _ensure_int_point_attr(mesh, FORMATION_ATTR_NAME)
             form.data.foreach_set("value", list(range(len(mesh.vertices))))
         pair_attr = _ensure_int_point_attr(mesh, PAIR_ATTR_NAME)
-        pair_attr.data.foreach_set("value", [val.value for val in form.data])
+        values = [0] * len(mesh.vertices)
+        form.data.foreach_get("value", values)
+        pair_attr.data.foreach_set("value", values)
 
 
 def _collect_meshes_from_cols(cols: Sequence[bpy.types.Collection]) -> List[bpy.types.Object]:
@@ -215,7 +224,9 @@ def _pair_from_previous(prev_meshes: List[bpy.types.Object], next_meshes: List[b
             if attr_name:
                 attr = mesh.attributes.get(attr_name)
                 if attr and attr.data_type == 'INT' and attr.domain == 'POINT' and len(attr.data) == len(mesh.vertices):
-                    ids.extend([val.value for val in attr.data])
+                    values = [0] * len(mesh.vertices)
+                    attr.data.foreach_get("value", values)
+                    ids.extend(values)
                     continue
             ids.extend(list(range(len(mesh.vertices))))
         return np.asarray(coords, dtype=np.float64), ids, spans

@@ -8,7 +8,9 @@ from typing import Callable, Dict, List, Optional, Tuple, Any
 import bpy
 
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
-
+from liberadronecore.system.video.cvcache import FrameSampler
+from liberadronecore.formation import fn_parse
+import numpy as np
 
 def _sanitize_identifier(text: str) -> str:
     safe = []
@@ -270,6 +272,90 @@ def _point_in_mesh_bbox(obj_name: str, pos: Tuple[float, float, float]) -> bool:
     return _point_in_bbox(pos, bounds)
 
 
+_LED_FRAME_CACHE: Dict[str, Any] = {"frame": None, "mesh": {}}
+_LED_CURRENT_INDEX: Optional[int] = None
+
+
+def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, float]]) -> None:
+    _LED_FRAME_CACHE["frame"] = float(frame)
+    _LED_FRAME_CACHE["mesh"] = {}
+
+
+def end_led_frame_cache() -> None:
+    _LED_FRAME_CACHE["frame"] = None
+    _LED_FRAME_CACHE["mesh"] = {}
+
+
+def set_led_runtime_index(idx: Optional[int]) -> None:
+    global _LED_CURRENT_INDEX
+    _LED_CURRENT_INDEX = None if idx is None else int(idx)
+
+
+def _build_mesh_cache(obj: bpy.types.Object) -> Optional[Dict[str, Any]]:
+    if obj is None or obj.type != 'MESH':
+        return None
+    mesh = obj.data
+    if not mesh.vertices:
+        return None
+    mw = obj.matrix_world
+    positions: List[Tuple[float, float, float]] = []
+    for v in mesh.vertices:
+        world = mw @ v.co
+        positions.append((float(world.x), float(world.y), float(world.z)))
+
+    uv_by_vertex: List[Optional[Tuple[float, float]]] = [None] * len(mesh.vertices)
+    if mesh.uv_layers:
+        uv_layer = mesh.uv_layers.active or mesh.uv_layers[0]
+        for loop in mesh.loops:
+            v_idx = loop.vertex_index
+            if uv_by_vertex[v_idx] is None:
+                uv = uv_layer.data[loop.index].uv
+                uv_by_vertex[v_idx] = (float(uv[0]), float(uv[1]))
+
+    color_by_vertex: List[Optional[Tuple[float, float, float, float]]] = [None] * len(mesh.vertices)
+    attr = mesh.color_attributes.active if hasattr(mesh, "color_attributes") else None
+    if attr is None and hasattr(mesh, "color_attributes"):
+        if mesh.color_attributes:
+            attr = mesh.color_attributes[0]
+    if attr is not None:
+        if attr.domain == 'POINT':
+            for idx in range(len(mesh.vertices)):
+                color = attr.data[idx].color
+                color_by_vertex[idx] = (float(color[0]), float(color[1]), float(color[2]), float(color[3]))
+        elif attr.domain == 'CORNER':
+            for loop in mesh.loops:
+                v_idx = loop.vertex_index
+                if color_by_vertex[v_idx] is None:
+                    color = attr.data[loop.index].color
+                    color_by_vertex[v_idx] = (float(color[0]), float(color[1]), float(color[2]), float(color[3]))
+
+    available_uv = list(range(len(mesh.vertices)))
+
+    return {
+        "positions": positions,
+        "uvs": uv_by_vertex,
+        "colors": color_by_vertex,
+        "available_uv_indices": available_uv,
+        "assigned_uv": {},
+        "assigned_uv_dist": {},
+        "assigned_color": {},
+    }
+
+
+def _get_mesh_cache(obj: bpy.types.Object) -> Optional[Dict[str, Any]]:
+    if _LED_FRAME_CACHE.get("frame") is None:
+        return None
+    if obj is None or obj.type != 'MESH':
+        return None
+    cache = _LED_FRAME_CACHE["mesh"].get(obj.name)
+    if cache is None:
+        cache = _build_mesh_cache(obj)
+        if cache is None:
+            return None
+        _LED_FRAME_CACHE["mesh"][obj.name] = cache
+    return cache
+
+
 def _nearest_vertex_color(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[float, float, float, float]:
     obj = _get_object(obj_name)
     if obj is None or obj.type != 'MESH':
@@ -277,6 +363,31 @@ def _nearest_vertex_color(obj_name: str, pos: Tuple[float, float, float]) -> Tup
     mesh = obj.data
     if not mesh.vertices:
         return 0.0, 0.0, 0.0, 1.0
+    cache = _get_mesh_cache(obj)
+    if cache is not None:
+        assigned = cache["assigned_color"].get(_LED_CURRENT_INDEX)
+        if assigned is not None:
+            return assigned
+        positions = cache["positions"]
+        colors = cache["colors"]
+        best_idx = None
+        best_dist = 1e30
+        for idx, world in enumerate(positions):
+            dx = world[0] - pos[0]
+            dy = world[1] - pos[1]
+            dz = world[2] - pos[2]
+            dist = dx * dx + dy * dy + dz * dz
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = idx
+        if best_idx is None:
+            return 0.0, 0.0, 0.0, 1.0
+        color = colors[best_idx]
+        if color is None:
+            return 0.0, 0.0, 0.0, 1.0
+        if _LED_CURRENT_INDEX is not None:
+            cache["assigned_color"][_LED_CURRENT_INDEX] = color
+        return color
     mw = obj.matrix_world
     best_idx = None
     best_dist = 1e30
@@ -315,6 +426,41 @@ def _nearest_vertex_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[
     mesh = obj.data
     if not mesh.vertices or not mesh.uv_layers:
         return 0.0, 0.0
+    cache = _get_mesh_cache(obj)
+    if cache is not None:
+        assigned = cache["assigned_uv"].get(_LED_CURRENT_INDEX)
+        if assigned is not None:
+            return assigned
+        positions = cache["positions"]
+        uvs = cache["uvs"]
+        available = cache["available_uv_indices"]
+        best_list_idx = None
+        best_idx = None
+        best_dist = 1e30
+        if _LED_CURRENT_INDEX is not None:
+            indices = available
+        else:
+            indices = range(len(positions))
+        for list_idx, v_idx in enumerate(indices):
+            world = positions[v_idx]
+            dx = world[0] - pos[0]
+            dy = world[1] - pos[1]
+            dz = world[2] - pos[2]
+            dist = dx * dx + dy * dy + dz * dz
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = v_idx
+                best_list_idx = list_idx
+        if best_idx is None:
+            return 0.0, 0.0
+        uv = uvs[best_idx]
+        if uv is None:
+            return 0.0, 0.0
+        if _LED_CURRENT_INDEX is not None and best_list_idx is not None:
+            available[best_list_idx] = available[-1]
+            available.pop()
+            cache["assigned_uv"][_LED_CURRENT_INDEX] = uv
+        return uv
     uv_layer = mesh.uv_layers.active or mesh.uv_layers[0]
     mw = obj.matrix_world
     best_idx = None
@@ -338,13 +484,49 @@ def _nearest_vertex_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[
 
 
 def _nearest_vertex_uv_with_dist(
-    obj: bpy.types.Object, pos: Tuple[float, float, float]
+    obj: bpy.types.Object, pos: Tuple[float, float, float], consume: bool = True
 ) -> Tuple[Tuple[float, float], float]:
     if obj is None or obj.type != 'MESH':
         return (0.0, 0.0), 1e30
     mesh = obj.data
     if not mesh.vertices or not mesh.uv_layers:
         return (0.0, 0.0), 1e30
+    cache = _get_mesh_cache(obj)
+    if cache is not None:
+        assigned = cache["assigned_uv_dist"].get(_LED_CURRENT_INDEX)
+        if assigned is not None:
+            return assigned
+        positions = cache["positions"]
+        uvs = cache["uvs"]
+        available = cache["available_uv_indices"]
+        best_list_idx = None
+        best_idx = None
+        best_dist = 1e30
+        if _LED_CURRENT_INDEX is not None and consume:
+            indices = available
+        else:
+            indices = range(len(positions))
+        for list_idx, v_idx in enumerate(indices):
+            world = positions[v_idx]
+            dx = world[0] - pos[0]
+            dy = world[1] - pos[1]
+            dz = world[2] - pos[2]
+            dist = dx * dx + dy * dy + dz * dz
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = v_idx
+                best_list_idx = list_idx
+        if best_idx is None:
+            return (0.0, 0.0), 1e30
+        uv = uvs[best_idx]
+        if uv is None:
+            return (0.0, 0.0), 1e30
+        if _LED_CURRENT_INDEX is not None and consume and best_list_idx is not None:
+            available[best_list_idx] = available[-1]
+            available.pop()
+            cache["assigned_uv"][_LED_CURRENT_INDEX] = uv
+            cache["assigned_uv_dist"][_LED_CURRENT_INDEX] = (uv, best_dist)
+        return uv, best_dist
     uv_layer = mesh.uv_layers.active or mesh.uv_layers[0]
     mw = obj.matrix_world
     best_idx = None
@@ -380,11 +562,15 @@ def _collection_nearest_uv(collection_name: str, pos: Tuple[float, float, float]
             stack.extend(list(current.children))
     best_uv = (0.0, 0.0)
     best_dist = 1e30
+    best_obj: Optional[bpy.types.Object] = None
     for obj in candidates:
-        uv, dist = _nearest_vertex_uv_with_dist(obj, pos)
+        uv, dist = _nearest_vertex_uv_with_dist(obj, pos, consume=False)
         if dist < best_dist:
             best_dist = dist
             best_uv = uv
+            best_obj = obj
+    if best_obj is not None:
+        best_uv, best_dist = _nearest_vertex_uv_with_dist(best_obj, pos, consume=True)
     return best_uv
 
 
@@ -434,22 +620,14 @@ def _get_video_sampler(path: str):
     sampler = _VIDEO_CACHE.get(full_path)
     if sampler is not None:
         return sampler
-    try:
-        from liberadronecore.system.video.cvcache import FrameSampler
-        import numpy as np
-    except Exception:
-        return None
-    try:
-        sampler = FrameSampler(
-            path=full_path,
-            cache_mode="lru",
-            lru_max=64,
-            resize_to=None,
-            output_dtype=np.float32,
-            store_rgba=True,
-        )
-    except Exception:
-        return None
+    sampler = FrameSampler(
+        path=full_path,
+        cache_mode="lru",
+        lru_max=64,
+        resize_to=None,
+        output_dtype=np.float32,
+        store_rgba=True,
+    )
     _VIDEO_CACHE[full_path] = sampler
     return sampler
 
@@ -458,10 +636,7 @@ def _sample_video(path: str, frame: float, u: float, v: float) -> Tuple[float, f
     sampler = _get_video_sampler(path)
     if sampler is None:
         return 0.0, 0.0, 0.0, 1.0
-    try:
-        rgba = sampler.sample_uv(int(frame), float(u), float(v))
-    except Exception:
-        return 0.0, 0.0, 0.0, 1.0
+    rgba = sampler.sample_uv(int(frame), float(u), float(v))
     if hasattr(rgba, "__len__") and len(rgba) >= 4:
         return float(rgba[0]), float(rgba[1]), float(rgba[2]), float(rgba[3])
     return 0.0, 0.0, 0.0, 1.0
@@ -526,10 +701,6 @@ def _entry_from_formation(
     duration: float,
     from_end: bool,
 ) -> Dict[str, List[Tuple[float, float]]]:
-    try:
-        from liberadronecore.formation import fn_parse
-    except Exception:
-        return {}
     scene = getattr(bpy.context, "scene", None)
     schedule = fn_parse.get_cached_schedule(scene)
     spans: List[Tuple[float, float]] = []

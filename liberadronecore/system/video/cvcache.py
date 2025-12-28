@@ -1,4 +1,4 @@
-import os
+﻿import os
 from collections import OrderedDict
 
 import numpy as np
@@ -204,18 +204,19 @@ class FrameSampler:
             x = 0 if x < 0 else (w - 1 if x >= w else x)
             y = 0 if y < 0 else (h - 1 if y >= h else y)
         return img[y, x]
-sampler = FrameSampler(
-    path="F:/footage/test.mp4",
-    cache_mode="lru",      # まずはこれが強い
-    lru_max=64,
-    resize_to=(640, 360),  # サンプリング用途なら縮小が超効く
-    output_dtype=np.uint8, # 省メモリ & 速い
-    store_rgba=True
-)
 
-# フレーム100のUV(0.2, 0.7)を読む
-rgba = sampler.sample_uv(100, 0.2, 0.7)
-print(rgba)
 
-# 終わったら
-sampler.close()
+if __name__ == "__main__":
+    demo_path = "F:/footage/test.mp4"
+    if os.path.exists(demo_path):
+        sampler = FrameSampler(
+            path=demo_path,
+            cache_mode="lru",
+            lru_max=64,
+            resize_to=(640, 360),
+            output_dtype=np.uint8,
+            store_rgba=True,
+        )
+        rgba = sampler.sample_uv(100, 0.2, 0.7)
+        print(rgba)
+        sampler.close()
