@@ -1,35 +1,35 @@
-import bpy
+﻿import bpy
 import bmesh
+from typing import Optional
 from mathutils import Vector
 
 # -----------------------------
-# 設定（必要ならここだけ変更）
+# 險ｭ螳夲ｼ亥ｿ・ｦ√↑繧峨％縺薙□縺大､画峩・・
 # -----------------------------
 ATTR_NAME = "color"
 
 MAT_NAME = "MAT_Emission_AttrColor"
-ICOSPHERE_NAME = "Iso"
-ICOSPHERE_SUBDIV = 2
-ICOSPHERE_RADIUS = 0.5
+MAT_RING_NAME = "MAT_Emission_AttrColor_Ring"
+IMG_CIRCLE_NAME = "PreviewDrone_Circle.png"
+IMG_RING_NAME = "PreviewDrone_Ring.png"
+IMG_SIZE = 64
+
+PREVIEW_NAME = "Iso"
+PREVIEW_PLANE_SIZE = 1.0
 
 ANY_MESH_NAME = "AnyMesh"
-ANY_MESH_VERTS = 1  # 任意の頂点数（ここを変える）
-
+ANY_MESH_VERTS = 1  # 莉ｻ諢上・鬆らせ謨ｰ・医％縺薙ｒ螟峨∴繧具ｼ・
 COLLECTION_NAMES = [
-    "COL_System",
     "COL_Geo",
-    "COL_Render",
-    "COL_Debug",
 ]
 
-# どのコレクションに何を入れるか
-COL_FOR_ICOSPHERE = "COL_Geo"
+# 縺ｩ縺ｮ繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｫ菴輔ｒ蜈･繧後ｋ縺・
+COL_FOR_PREVIEW = "COL_Geo"
 COL_FOR_ANYMESH   = "COL_Geo"
-COL_FOR_MATERIALS = "COL_Render"
 
 
 # -----------------------------
-# ユーティリティ
+# 繝ｦ繝ｼ繝・ぅ繝ｪ繝・ぅ
 # -----------------------------
 def get_or_create_collection(name, parent=None):
     col = bpy.data.collections.get(name)
@@ -42,31 +42,31 @@ def get_or_create_collection(name, parent=None):
     return col
 
 def move_object_to_collection(obj, target_col):
-    # 既存コレクションから外し、target だけに入れる
+    # 譌｢蟄倥さ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺九ｉ螟悶＠縲》arget 縺縺代↓蜈･繧後ｋ
     for c in list(obj.users_collection):
         c.objects.unlink(obj)
     target_col.objects.link(obj)
 
 def ensure_color_attribute(mesh, name=ATTR_NAME):
-    # Blenderのバージョン差を吸収して "color" カラー属性を用意する
-    # できれば POINT(=頂点) ドメインで作る
+    # Blender縺ｮ繝舌・繧ｸ繝ｧ繝ｳ蟾ｮ繧貞精蜿弱＠縺ｦ "color" 繧ｫ繝ｩ繝ｼ螻樊ｧ繧堤畑諢上☆繧・
+    # 縺ｧ縺阪ｌ縺ｰ POINT(=鬆らせ) 繝峨Γ繧､繝ｳ縺ｧ菴懊ｋ
     if hasattr(mesh, "color_attributes"):
         ca = mesh.color_attributes.get(name)
         if ca is None:
             ca = mesh.color_attributes.new(name=name, domain='POINT', type='BYTE_COLOR')
         return ca
 
-    # さらに古い/違うAPI向け（保険）
+    # 縺輔ｉ縺ｫ蜿､縺・驕輔≧API蜷代￠・井ｿ晞匱・・
     if hasattr(mesh, "attributes"):
         a = mesh.attributes.get(name)
         if a is None:
             a = mesh.attributes.new(name=name, type='FLOAT_COLOR', domain='POINT')
         return a
 
-    raise RuntimeError("このBlenderではカラー属性APIが見つかりませんでした。")
+    raise RuntimeError("Color attribute API not found for this Blender version.")
 
 def set_viewport_solid_attribute(attr_name=ATTR_NAME):
-    # 4つの領域: Viewport Shading を Solid + Attribute表示にする
+    # 4縺､縺ｮ鬆伜沺: Viewport Shading 繧・Solid + Attribute陦ｨ遉ｺ縺ｫ縺吶ｋ
     for area in bpy.context.window.screen.areas:
         if area.type != 'VIEW_3D':
             continue
@@ -75,7 +75,7 @@ def set_viewport_solid_attribute(attr_name=ATTR_NAME):
                 continue
             shading = space.shading
             shading.type = 'SOLID'
-            # Blenderのバージョンでプロパティ名が微妙に違うので分岐
+            # Blender縺ｮ繝舌・繧ｸ繝ｧ繝ｳ縺ｧ繝励Ο繝代ユ繧｣蜷阪′蠕ｮ螯吶↓驕輔≧縺ｮ縺ｧ蛻・ｲ・
             if hasattr(shading, "color_type"):
                 items = getattr(shading.bl_rna.properties.get("color_type"), "enum_items", None)
                 if items and "ATTRIBUTE" in items:
@@ -87,34 +87,105 @@ def set_viewport_solid_attribute(attr_name=ATTR_NAME):
             elif hasattr(shading, "attribute"):
                 shading.attribute = attr_name
 
-def get_or_create_emission_attr_material(mat_name=MAT_NAME, attr_name=ATTR_NAME):
+def _fill_preview_image(img: bpy.types.Image, ring: bool) -> None:
+    width, height = img.size
+    center_x = (width - 1) * 0.5
+    center_y = (height - 1) * 0.5
+    outer_radius = min(width, height) * 0.375
+    inner_radius = outer_radius * 0.4
+    outer_sq = outer_radius * outer_radius
+    inner_sq = inner_radius * inner_radius
+
+    pixels = [0.0] * (width * height * 4)
+    for y in range(height):
+        dy = y - center_y
+        for x in range(width):
+            dx = x - center_x
+            dist_sq = dx * dx + dy * dy
+            is_white = dist_sq <= outer_sq
+            if ring and dist_sq <= inner_sq:
+                is_white = False
+            idx = (y * width + x) * 4
+            if is_white:
+                pixels[idx:idx + 4] = (1.0, 1.0, 1.0, 1.0)
+            else:
+                pixels[idx:idx + 4] = (0.0, 0.0, 0.0, 1.0)
+    img.pixels = pixels
+
+
+def _ensure_preview_image(name: str, *, ring: bool) -> bpy.types.Image:
+    img = bpy.data.images.get(name)
+    if img is None:
+        img = bpy.data.images.new(name=name, width=IMG_SIZE, height=IMG_SIZE, alpha=True)
+    if img.size[0] != IMG_SIZE or img.size[1] != IMG_SIZE:
+        try:
+            img.scale(IMG_SIZE, IMG_SIZE)
+        except Exception:
+            pass
+    _fill_preview_image(img, ring)
+    img.use_fake_user = True
+    return img
+
+
+def get_or_create_emission_attr_material(mat_name=MAT_NAME, attr_name=ATTR_NAME, image_name: Optional[str] = None):
     mat = bpy.data.materials.get(mat_name)
     if mat is None:
         mat = bpy.data.materials.new(mat_name)
     mat.use_nodes = True
+    try:
+        mat.blend_method = 'HASHED'
+    except Exception:
+        pass
+    try:
+        mat.shadow_method = 'HASHED'
+    except Exception:
+        pass
 
     nt = mat.node_tree
     nodes = nt.nodes
     links = nt.links
 
-    # 既存を軽く整理（必要なら外してOK）
     for n in list(nodes):
         nodes.remove(n)
 
     out = nodes.new("ShaderNodeOutputMaterial")
-    out.location = (400, 0)
-
-    emission = nodes.new("ShaderNodeEmission")
-    emission.location = (150, 0)
-    emission.inputs["Strength"].default_value = 1.0
+    out.location = (560, 120)
 
     attr = nodes.new("ShaderNodeAttribute")
-    attr.location = (-200, 0)
+    attr.location = (-220, 0)
     attr.attribute_name = attr_name
 
-    # 接続：Attribute Color -> Emission Color -> Output
-    links.new(attr.outputs.get("Color"), emission.inputs.get("Color"))
-    links.new(emission.outputs.get("Emission"), out.inputs.get("Surface"))
+    image_tex = nodes.new("ShaderNodeTexImage")
+    image_tex.location = (-220, 240)
+    image_tex.extension = 'REPEAT'
+    image_tex.interpolation = 'Linear'
+    image_tex.projection = 'FLAT'
+    if image_name:
+        ring = image_name == IMG_RING_NAME
+        image_tex.image = _ensure_preview_image(image_name, ring=ring)
+
+    mix = nodes.new("ShaderNodeMix")
+    mix.location = (160, 120)
+    mix.blend_type = 'MULTIPLY'
+    mix.data_type = 'RGBA'
+    mix.factor_mode = 'UNIFORM'
+    mix.inputs[0].default_value = 1.0
+
+    principled = nodes.new("ShaderNodeBsdfPrincipled")
+    principled.location = (360, 120)
+    principled.inputs[1].default_value = 0.0
+    principled.inputs[2].default_value = 0.5
+    principled.inputs[13].default_value = 0.5
+    if principled.inputs.get("Emission Strength"):
+        principled.inputs["Emission Strength"].default_value = 1.0
+    elif len(principled.inputs) > 28:
+        principled.inputs[28].default_value = 1.0
+
+    links.new(image_tex.outputs[0], mix.inputs[6])
+    links.new(attr.outputs[0], mix.inputs[7])
+    links.new(mix.outputs[2], principled.inputs[0])
+    links.new(image_tex.outputs[0], principled.inputs[4])
+    links.new(principled.outputs[0], out.inputs[0])
 
     return mat
 
@@ -126,21 +197,21 @@ def assign_material(obj, mat):
     else:
         obj.data.materials.append(mat)
 
-def create_icosphere(name=ICOSPHERE_NAME, subdiv=ICOSPHERE_SUBDIV, radius=ICOSPHERE_RADIUS):
-    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=subdiv, radius=radius, location=(0, 0, 0))
+def create_preview_plane(name=PREVIEW_NAME, size=PREVIEW_PLANE_SIZE):
+    bpy.ops.mesh.primitive_plane_add(size=size, location=(0, 0, 0))
     obj = bpy.context.active_object
     obj.name = name
     obj.data.name = f"{name}_Mesh"
     return obj
 
 def create_any_mesh_points(name=ANY_MESH_NAME, n_verts=ANY_MESH_VERTS):
-    # 「任意頂点数のメッシュ」: ここでは “点だけ” のメッシュを作る（後で自由に編集しやすい）
+    # 縲御ｻｻ諢城らせ謨ｰ縺ｮ繝｡繝・す繝･縲・ 縺薙％縺ｧ縺ｯ 窶懃せ縺縺鯛・縺ｮ繝｡繝・す繝･繧剃ｽ懊ｋ・亥ｾ後〒閾ｪ逕ｱ縺ｫ邱ｨ髮・＠繧・☆縺・ｼ・
     mesh = bpy.data.meshes.new(f"{name}_Mesh")
     obj = bpy.data.objects.new(name, mesh)
     bpy.context.scene.collection.objects.link(obj)
 
     bm = bmesh.new()
-    # 適当に分布（X方向に並べる例）
+    # 驕ｩ蠖薙↓蛻・ｸ・ｼ・譁ｹ蜷代↓荳ｦ縺ｹ繧倶ｾ具ｼ・
     for i in range(n_verts):
         x = (i / max(1, n_verts - 1)) * 2.0 - 1.0
         bm.verts.new(Vector((x, 1.5, 0.0)))
@@ -153,7 +224,7 @@ def create_any_mesh_points(name=ANY_MESH_NAME, n_verts=ANY_MESH_VERTS):
 
 
 # -----------------------------
-# 実行本体
+# 螳溯｡梧悽菴・
 # -----------------------------
 def init_scene_env(n_verts=None):
     global ANY_MESH_VERTS
@@ -162,30 +233,33 @@ def init_scene_env(n_verts=None):
             ANY_MESH_VERTS = int(n_verts)
         except Exception:
             pass
-    # 5) 専用コレクション作成
+    # 5) 蟆ら畑繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ菴懈・
     root = None
     cols = {n: get_or_create_collection(n, parent=root) for n in COLLECTION_NAMES}
 
-    # 1) Emission + Attribute color のマテリアル
-    mat = get_or_create_emission_attr_material(MAT_NAME, ATTR_NAME)
+    # 1) Emission + Attribute color 縺ｮ繝槭ユ繝ｪ繧｢繝ｫ
+    mat = get_or_create_emission_attr_material(MAT_NAME, ATTR_NAME, image_name=IMG_CIRCLE_NAME)
+    get_or_create_emission_attr_material(MAT_RING_NAME, ATTR_NAME, image_name=IMG_RING_NAME)
 
-    # 2) Iso球体（Icosphere）Subdiv=2, radius=0.5, ColorAttribute "color"
-    iso = create_icosphere(ICOSPHERE_NAME, ICOSPHERE_SUBDIV, ICOSPHERE_RADIUS)
+    # 2) Iso逅・ｽ難ｼ・cosphere・唄ubdiv=2, radius=0.5, ColorAttribute "color"
+    iso = create_preview_plane(PREVIEW_NAME, PREVIEW_PLANE_SIZE)
     assign_material(iso, mat)
 
-    # 3) 任意頂点数メッシュ（点メッシュ）
+    # 3) 莉ｻ諢城らせ謨ｰ繝｡繝・す繝･・育せ繝｡繝・す繝･・・
     any_obj = create_any_mesh_points(ANY_MESH_NAME, ANY_MESH_VERTS)
     assign_material(any_obj, mat)
 
-    # コレクションへ配置
-    if COL_FOR_ICOSPHERE in cols:
-        move_object_to_collection(iso, cols[COL_FOR_ICOSPHERE])
+    # 繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｸ驟咲ｽｮ
+    if COL_FOR_PREVIEW in cols:
+        move_object_to_collection(iso, cols[COL_FOR_PREVIEW])
     if COL_FOR_ANYMESH in cols:
         move_object_to_collection(any_obj, cols[COL_FOR_ANYMESH])
 
-    # マテリアル自体はコレクションに入らないので、管理用にテキストで終わり
+    # 繝槭ユ繝ｪ繧｢繝ｫ閾ｪ菴薙・繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｫ蜈･繧峨↑縺・・縺ｧ縲∫ｮ｡逅・畑縺ｫ繝・く繧ｹ繝医〒邨ゅｏ繧・
     print("[Init] Done:",
-          f"Material={mat.name}, Icosphere={iso.name}, AnyMesh={any_obj.name}, Attr={ATTR_NAME}")
+          f"Material={mat.name}, Preview={iso.name}, AnyMesh={any_obj.name}, Attr={ATTR_NAME}")
 
 if __name__ == "__main__":
     init_scene_env()
+
+

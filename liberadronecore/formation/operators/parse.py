@@ -9,6 +9,8 @@ from liberadronecore.formation.fn_parse import (
     _ensure_geometry_node_group,
     compute_schedule,
     get_cached_schedule,
+    _flow_edges,
+    _flow_reachable,
 )
 from liberadronecore.formation.fn_parse_pairing import _count_collection_vertices
 
@@ -188,6 +190,9 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
         from liberadronecore.system.drone import proxy_points_gn, preview_drone_gn
 
         color_verts_obj = _ensure_color_verts(context.scene, drone_count)
+        if color_verts_obj:
+            geo_col = sence_setup.get_or_create_collection(sence_setup.COL_FOR_PREVIEW)
+            sence_setup.move_object_to_collection(color_verts_obj, geo_col)
         _ensure_proxy_single_vert(proxy_obj)
 
         proxy_builder = getattr(proxy_points_gn, "geometry_nodes_001_1_node_group", None)
@@ -218,14 +223,99 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
         if preview_obj and preview_group:
             _attach_node_group(preview_obj.name, preview_group, "PreviewDroneGN")
             mod = _get_nodes_modifier(preview_obj, "PreviewDroneGN")
-            mat = sence_setup.get_or_create_emission_attr_material(sence_setup.MAT_NAME, sence_setup.ATTR_NAME)
+            mat = sence_setup.get_or_create_emission_attr_material(
+                sence_setup.MAT_NAME,
+                sence_setup.ATTR_NAME,
+                image_name=sence_setup.IMG_CIRCLE_NAME,
+            )
+            ring_mat = sence_setup.get_or_create_emission_attr_material(
+                sence_setup.MAT_RING_NAME,
+                sence_setup.ATTR_NAME,
+                image_name=sence_setup.IMG_RING_NAME,
+            )
             _set_gn_input(mod, "Material", mat)
+            _set_gn_input(mod, "CircleMat", ring_mat)
             formation_col = _ensure_collection(context.scene, "Formation")
             _set_gn_input(mod, "Collection", formation_col)
             if color_verts_obj:
                 _set_gn_input(mod, "ColorVerts", color_verts_obj)
 
         self.report({'INFO'}, "Setup completed")
+        return {'FINISHED'}
+
+
+class FN_OT_create_node_chain(bpy.types.Operator, FN_Register):
+    bl_idname = "fn.create_node_chain"
+    bl_label = "Create Node"
+    bl_description = "Create a basic Start/Show chain or append a Transition before Show"
+
+    def execute(self, context):
+        def _ensure_tree():
+            tree = None
+            space = context.space_data
+            if space and getattr(space, "edit_tree", None):
+                tree = space.edit_tree
+            if tree is None or getattr(tree, "bl_idname", "") != "FN_FormationTree":
+                tree = next((ng for ng in bpy.data.node_groups if getattr(ng, "bl_idname", "") == "FN_FormationTree"), None)
+            if tree is None:
+                tree = bpy.data.node_groups.new("FormationTree", "FN_FormationTree")
+                if space and getattr(space, "type", "") == "NODE_EDITOR":
+                    try:
+                        space.tree_type = "FN_FormationTree"
+                        space.node_tree = tree
+                    except Exception:
+                        pass
+            return tree
+
+        def _first_flow_out(node):
+            for sock in getattr(node, "outputs", []):
+                if getattr(sock, "bl_idname", "") == "FN_SocketFlow":
+                    return sock
+            return None
+
+        def _first_flow_in(node):
+            for sock in getattr(node, "inputs", []):
+                if getattr(sock, "bl_idname", "") == "FN_SocketFlow":
+                    return sock
+            return None
+
+        def _link_flow(tree, from_node, to_node):
+            out_sock = _first_flow_out(from_node)
+            in_sock = _first_flow_in(to_node)
+            if out_sock and in_sock:
+                tree.links.new(out_sock, in_sock)
+
+        tree = _ensure_tree()
+        if tree is None:
+            self.report({'ERROR'}, "Formation node tree not available")
+            return {'CANCELLED'}
+
+        start_node = next((n for n in tree.nodes if getattr(n, "bl_idname", "") == "FN_StartNode"), None)
+        if start_node is None:
+            start_node = tree.nodes.new("FN_StartNode")
+            start_node.location = (-300, 0)
+            show_node = tree.nodes.new("FN_ShowNode")
+            show_node.location = (200, 0)
+            _link_flow(tree, start_node, show_node)
+            self.report({'INFO'}, "Created Start and Show nodes")
+            return {'FINISHED'}
+
+        edges = _flow_edges(tree)
+        reachable = _flow_reachable(start_node, edges)
+        last_nodes = [node for node in reachable if not edges.get(node)]
+        show_last = next((n for n in last_nodes if getattr(n, "bl_idname", "") == "FN_ShowNode"), None)
+        if show_last is None:
+            self.report({'INFO'}, "No terminal Show node found")
+            return {'CANCELLED'}
+
+        transition_node = tree.nodes.new("FN_TransitionNode")
+        transition_node.location = (show_last.location.x + 260, show_last.location.y)
+        new_show = tree.nodes.new("FN_ShowNode")
+        new_show.location = (transition_node.location.x + 260, transition_node.location.y)
+
+        _link_flow(tree, show_last, transition_node)
+        _link_flow(tree, transition_node, new_show)
+        self.report({'INFO'}, "Appended Transition and Show nodes")
         return {'FINISHED'}
 
 

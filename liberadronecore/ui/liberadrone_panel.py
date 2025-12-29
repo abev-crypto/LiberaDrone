@@ -141,18 +141,18 @@ def _set_proxy_min_distance(self, value):
 
 
 def _get_preview_gn_visible(self):
-    mod = _get_nodes_modifier(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME)
+    mod = _get_nodes_modifier(PROXY_OBJ_NAME, PROXY_MOD_NAME)
     if mod is None:
         return False
     return bool(getattr(mod, "show_viewport", True))
 
 
 def _set_preview_gn_visible(self, value):
-    mod = _get_nodes_modifier(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME)
+    mod = _get_nodes_modifier(PROXY_OBJ_NAME, PROXY_MOD_NAME)
     if mod is None:
         return
     mod.show_viewport = bool(value)
-    obj = bpy.data.objects.get(PREVIEW_OBJ_NAME)
+    obj = bpy.data.objects.get(PROXY_OBJ_NAME)
     if obj is not None:
         obj.update_tag()
 
@@ -171,6 +171,19 @@ def _get_checker_enabled(self):
 
 def _set_checker_enabled(self, value):
     checker.set_enabled(bool(value))
+
+
+def _apply_limit_profile(scene, profile: str) -> None:
+    if profile == "MODEL_X":
+        scene.ld_proxy_max_speed_up = 4.0
+        scene.ld_proxy_max_speed_down = 3.0
+        scene.ld_proxy_max_speed_horiz = 5.0
+        scene.ld_proxy_max_acc_vert = 3.0
+        scene.ld_proxy_min_distance = 1.5
+
+
+def _update_limit_profile(self, context):
+    _apply_limit_profile(self, getattr(self, "ld_limit_profile", ""))
 
 
 class LD_PT_libera_panel(bpy.types.Panel):
@@ -252,6 +265,7 @@ def register():
             ("CUSTOM", "Custom", "Custom limits"),
         ),
         default="MODEL_X",
+        update=_update_limit_profile,
     )
     bpy.types.Scene.ld_proxy_max_speed_up = bpy.props.FloatProperty(
         name="MaxSpeedUp",
@@ -321,17 +335,17 @@ def register():
     )
     bpy.types.Scene.ld_checker_range_width = bpy.props.FloatProperty(
         name="Range Width",
-        default=0.0,
+        default=100.0,
         min=0.0,
     )
     bpy.types.Scene.ld_checker_range_height = bpy.props.FloatProperty(
         name="Range Height",
-        default=0.0,
+        default=100.0,
         min=0.0,
     )
     bpy.types.Scene.ld_checker_range_depth = bpy.props.FloatProperty(
         name="Range Depth",
-        default=0.0,
+        default=100.0,
         min=0.0,
     )
 

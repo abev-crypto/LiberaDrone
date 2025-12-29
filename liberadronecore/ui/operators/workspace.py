@@ -1,4 +1,5 @@
 import bpy
+from pathlib import Path
 
 
 def _get_area_region(area, region_type: str = "WINDOW"):
@@ -24,14 +25,18 @@ def _split_area(context, screen, area, direction: str, factor: float):
 
 
 def _ensure_workspace(context, name: str):
-    bpy.ops.workspace.append_activate(
-        context,
-        idname=name,
-        filepath="",
+    ws_path = Path(__file__).resolve().parents[2] / "scene" / "ws.blend"
+    if not ws_path.exists():
+        return None
+
+    blend_path = ws_path.resolve()
+    workspace_dir = str(blend_path) + "/WorkSpace/"
+    bpy.ops.wm.append(
+        directory=workspace_dir,
+        filename=name,
+        filepath=workspace_dir + name,
     )
-    ws = context.workspace
-    ws.name = name
-    return ws
+    return bpy.data.workspaces.get(name)
 
 
 def _configure_workspace_screen(context, screen, tree_type: str):
@@ -95,10 +100,10 @@ class LD_OT_setup_workspace(bpy.types.Operator):
 
     def execute(self, context):
         if self.mode == "LED":
-            name = "LEDEffectNodeWindow"
+            name = "LED"
             tree_type = "LD_LedEffectsTree"
         else:
-            name = "FormationNodeWindow"
+            name = "Formation"
             tree_type = "FN_FormationTree"
 
         ws = _ensure_workspace(context, name)

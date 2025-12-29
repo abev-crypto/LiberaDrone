@@ -6,7 +6,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import bpy
 from mathutils import Vector
 
-from liberadronecore.formation import fn_parse
+from liberadronecore.formation import fn_parse, fn_parse_pairing
 from liberadronecore.formation.fn_parse_pairing import PAIR_ATTR_NAME, _collect_mesh_objects
 from liberadronecore.system.transition import bakedt, copyloc, vat_gn
 from liberadronecore.system.vat import create_vat
@@ -29,7 +29,7 @@ def _ensure_collection(scene: bpy.types.Scene, name: str) -> bpy.types.Collectio
     if col is None:
         col = bpy.data.collections.new(name)
         scene.collection.children.link(col)
-    elif col not in scene.collection.children:
+    elif col.name not in scene.collection.children:
         scene.collection.children.link(col)
     return col
 
@@ -81,6 +81,14 @@ def _create_point_mesh(name: str, positions: Sequence[Vector]) -> bpy.types.Mesh
     return mesh
 
 
+def _ensure_point_attributes(mesh: bpy.types.Mesh) -> None:
+    pair_attr = fn_parse_pairing._ensure_int_point_attr(mesh, fn_parse_pairing.PAIR_ATTR_NAME)
+    form_attr = fn_parse_pairing._ensure_int_point_attr(mesh, fn_parse_pairing.FORMATION_ATTR_NAME)
+    values = list(range(len(mesh.vertices)))
+    pair_attr.data.foreach_set("value", values)
+    form_attr.data.foreach_set("value", values)
+
+
 def _ensure_point_object(
     name: str,
     positions: Sequence[Vector],
@@ -91,17 +99,20 @@ def _ensure_point_object(
     obj = bpy.data.objects.get(name)
     if obj is None:
         mesh = _create_point_mesh(name, positions)
+        _ensure_point_attributes(mesh)
         obj = bpy.data.objects.new(name, mesh)
         collection.objects.link(obj)
         return obj
 
     if update:
         mesh = _create_point_mesh(name, positions)
+        _ensure_point_attributes(mesh)
         old_mesh = obj.data
         obj.data = mesh
         if old_mesh and old_mesh.users == 0:
             bpy.data.meshes.remove(old_mesh)
 
+    _ensure_point_attributes(obj.data)
     _link_object_to_collection(obj, collection)
     return obj
 

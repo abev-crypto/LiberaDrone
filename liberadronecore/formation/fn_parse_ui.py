@@ -20,6 +20,7 @@ class FN_PT_formation_panel(bpy.types.Panel, FN_Register):
     def draw(self, context):
         layout = self.layout
         layout.operator("fn.setup_scene", text="Setup")
+        layout.operator("fn.create_node_chain", text="CreateNode")
         layout.operator("fn.calculate_schedule", text="Calculate")
         layout.separator()
         row = layout.row(align=True)
