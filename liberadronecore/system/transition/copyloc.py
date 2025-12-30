@@ -4,6 +4,7 @@ TODO 縺ゅｌ縺ｧ縺ゅ▲縺櫃opyLocation繧剃ｽｿ縺｣縺溘す繝ｳ�
 """
 
 import bpy
+from mathutils import Vector
 
 # -----------------------------
 # Settings
@@ -13,6 +14,7 @@ COLLECTION_PREFIX = "PT_VGBlend_"
 CONTROLLER_NAME = "PT_VGBlend_CTRL"
 EMPTY_PREFIX = "PT_vtxNull_"
 PROP_NAME = "blend"                   # 0..1 : 0=A, 1=B
+BONE_PREFIX = "PT_Bone_"
 
 # -----------------------------
 # Helpers
@@ -50,6 +52,11 @@ def link_to_collection(obj, col):
     # 縺吶〒縺ｫ縺ｩ縺薙°縺ｫ繝ｪ繝ｳ繧ｯ縺輔ｌ縺ｦ縺・ｋ蜑肴署縺ｧ縲∫岼逧・さ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｫ繧ゅΜ繝ｳ繧ｯ
     if obj.name not in col.objects:
         col.objects.link(obj)
+
+def _link_only_to_collection(obj, col):
+    for c in list(obj.users_collection):
+        c.objects.unlink(obj)
+    col.objects.link(obj)
 
 def safe_remove_object(obj):
     # 蜈ｨ繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺九ｉ unlink 縺励※蜑企勁
@@ -98,6 +105,111 @@ def set_influence_driver(con, ctrl_obj, invert=False):
 # -----------------------------
 # Builder
 # -----------------------------
+def _create_point_mesh(name: str, positions):
+    mesh = bpy.data.meshes.new(f"{name}_Mesh")
+    verts = [(float(p.x), float(p.y), float(p.z)) for p in positions]
+    mesh.from_pydata(verts, [], [])
+    mesh.update()
+    return mesh
+
+
+def _ensure_armature(name: str, positions, collection):
+    arm_data = bpy.data.armatures.new(name)
+    arm_obj = bpy.data.objects.new(name, arm_data)
+    _link_only_to_collection(arm_obj, collection)
+
+    ensure_object_mode()
+    bpy.context.view_layer.objects.active = arm_obj
+    bpy.ops.object.mode_set(mode='EDIT')
+    for i, pos in enumerate(positions):
+        bone = arm_data.edit_bones.new(f"{BONE_PREFIX}{i:06d}")
+        head = Vector((float(pos.x), float(pos.y), float(pos.z)))
+        bone.head = head
+        bone.tail = head + Vector((0.0, 0.0, 0.1))
+    bpy.ops.object.mode_set(mode='OBJECT')
+    return arm_obj
+
+
+def _ensure_mesh(name: str, positions, collection):
+    mesh = _create_point_mesh(name, positions)
+    obj = bpy.data.objects.new(name, mesh)
+    _link_only_to_collection(obj, collection)
+    return obj
+
+
+def _ensure_armature_modifier(mesh_obj, arm_obj):
+    mod = mesh_obj.modifiers.get("Armature")
+    if mod is None or mod.type != 'ARMATURE':
+        mod = mesh_obj.modifiers.new(name="Armature", type='ARMATURE')
+    mod.object = arm_obj
+
+
+def _ensure_vertex_groups_for_bones(mesh_obj, count: int):
+    vgs = mesh_obj.vertex_groups
+    for vg in list(vgs):
+        vgs.remove(vg)
+    for i in range(count):
+        vg = vgs.new(name=f"{BONE_PREFIX}{i:06d}")
+        vg.add([i], 1.0, 'REPLACE')
+
+
+def _ensure_target_vertex_groups(target_obj, count: int):
+    remove_prefixed_vertex_groups(target_obj, VG_PREFIX)
+    for i in range(count):
+        vg = target_obj.vertex_groups.new(name=f"{VG_PREFIX}{i:06d}")
+        vg.add([i], 1.0, 'REPLACE')
+
+
+def build_armature_copyloc(
+    start_positions,
+    targets,
+    *,
+    collection_name: str,
+    armature_name: str,
+    mesh_name: str,
+    clear_old: bool = True,
+):
+    ensure_object_mode()
+    if not targets:
+        raise RuntimeError("No target objects provided.")
+
+    count = len(start_positions)
+    for obj in targets:
+        if obj.type != 'MESH':
+            raise RuntimeError("Target must be mesh objects.")
+        if len(obj.data.vertices) != count:
+            raise RuntimeError("Target vertex count mismatch.")
+
+    col = ensure_collection(collection_name)
+    if clear_old:
+        clear_old_objects_in_collection(col)
+
+    arm_obj = _ensure_armature(armature_name, start_positions, col)
+    mesh_obj = _ensure_mesh(mesh_name, start_positions, col)
+    _ensure_vertex_groups_for_bones(mesh_obj, count)
+    _ensure_armature_modifier(mesh_obj, arm_obj)
+
+    for obj in targets:
+        _ensure_target_vertex_groups(obj, count)
+
+    for i in range(count):
+        bone_name = f"{BONE_PREFIX}{i:06d}"
+        pose_bone = arm_obj.pose.bones.get(bone_name)
+        if pose_bone is None:
+            continue
+        for idx, target in enumerate(targets):
+            vg_name = f"{VG_PREFIX}{i:06d}"
+            con = pose_bone.constraints.new(type='COPY_LOCATION')
+            con.name = f"CopyLoc_{idx + 1}"
+            con.target = target
+            con.subtarget = vg_name
+            con.owner_space = 'WORLD'
+            con.target_space = 'WORLD'
+            con.influence = 0.0
+
+    return arm_obj, mesh_obj
+
+
 def build_copyloc(
     A,
     B,

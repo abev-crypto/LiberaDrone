@@ -197,55 +197,179 @@ class LD_PT_libera_panel(bpy.types.Panel):
         scene = context.scene
 
         box = layout.box()
-        box.label(text="PreviewDrone")
-        if _get_nodes_modifier(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME) is None:
-            box.label(text="PreviewDroneGN not found", icon='ERROR')
-        col = box.column(align=True)
-        col.prop(scene, "ld_preview_show_ring", text="ShowRing")
-        col.prop(scene, "ld_preview_scale", text="Scale")
-        col.prop(scene, "ld_proxy_skip_check", text="SkipCheck")
+        row = box.row()
+        row.prop(
+            scene,
+            "ld_ui_preview_open",
+            text="",
+            icon='TRIA_DOWN' if scene.ld_ui_preview_open else 'TRIA_RIGHT',
+            emboss=False,
+        )
+        row.label(text="PreviewDrone")
+        if scene.ld_ui_preview_open:
+            if _get_nodes_modifier(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME) is None:
+                box.label(text="PreviewDroneGN not found", icon='ERROR')
+            col = box.column(align=True)
+            col.prop(scene, "ld_preview_show_ring", text="ShowRing")
+            col.prop(scene, "ld_preview_scale", text="Scale")
 
         box = layout.box()
-        box.label(text="ProxyPoints")
-        if _get_nodes_modifier(PROXY_OBJ_NAME, PROXY_MOD_NAME) is None:
-            box.label(text="ProxyPointsGN not found", icon='ERROR')
-        col = box.column(align=True)
-        col.prop(scene, "ld_limit_profile", text="Limit Profile")
-        col.prop(scene, "ld_proxy_max_speed_up", text="MaxSpeedUp")
-        col.prop(scene, "ld_proxy_max_speed_down", text="MaxSpeedDown")
-        col.prop(scene, "ld_proxy_max_speed_horiz", text="MaxSpeedHoriz")
-        col.prop(scene, "ld_proxy_max_acc_vert", text="MaxAcc")
-        col.prop(scene, "ld_proxy_min_distance", text="MinDistance")
-        col.separator()
-        col.prop(scene, "ld_checker_range_enabled", text="Range Check")
-        col.prop(scene, "ld_checker_range_object", text="Range Object")
-        col.prop(scene, "ld_checker_range_width", text="Range Width")
-        col.prop(scene, "ld_checker_range_height", text="Range Height")
-        col.prop(scene, "ld_checker_range_depth", text="Range Depth")
+        row = box.row()
+        row.prop(
+            scene,
+            "ld_ui_proxy_open",
+            text="",
+            icon='TRIA_DOWN' if scene.ld_ui_proxy_open else 'TRIA_RIGHT',
+            emboss=False,
+        )
+        row.label(text="ProxyPoints")
+        if scene.ld_ui_proxy_open:
+            if _get_nodes_modifier(PROXY_OBJ_NAME, PROXY_MOD_NAME) is None:
+                box.label(text="ProxyPointsGN not found", icon='ERROR')
+            col = box.column(align=True)
+            col.prop(scene, "ld_limit_profile", text="Limit Profile")
+            col.prop(scene, "ld_proxy_max_speed_up", text="MaxSpeedUp")
+            col.prop(scene, "ld_proxy_max_speed_down", text="MaxSpeedDown")
+            col.prop(scene, "ld_proxy_max_speed_horiz", text="MaxSpeedHoriz")
+            col.prop(scene, "ld_proxy_max_acc_vert", text="MaxAcc")
+            col.prop(scene, "ld_proxy_min_distance", text="MinDistance")
+            col.separator()
+            col.prop(scene, "ld_checker_range_enabled", text="Range Check")
+            col.prop(scene, "ld_checker_range_object", text="Range Object")
+            col.prop(scene, "ld_checker_range_width", text="Range Width")
+            col.prop(scene, "ld_checker_range_height", text="Range Height")
+            col.prop(scene, "ld_checker_range_depth", text="Range Depth")
 
         box = layout.box()
-        box.label(text="Overlay")
-        box.prop(scene, "ld_checker_enabled", text="Show Checker")
-        col = box.column(align=True)
-        col.prop(scene, "ld_checker_show_speed", text="Speed")
-        col.prop(scene, "ld_checker_show_acc", text="Acc")
-        col.prop(scene, "ld_checker_show_distance", text="Distance")
-        col.prop(scene, "ld_checker_range_enabled", text="Range")
-        col.prop(scene, "ld_checker_size", text="Checker Size")
+        row = box.row()
+        row.prop(
+            scene,
+            "ld_ui_overlay_open",
+            text="",
+            icon='TRIA_DOWN' if scene.ld_ui_overlay_open else 'TRIA_RIGHT',
+            emboss=False,
+        )
+        row.label(text="Overlay")
+        if scene.ld_ui_overlay_open:
+            box.prop(scene, "ld_checker_enabled", text="Show Checker")
+            col = box.column(align=True)
+            col.prop(scene, "ld_checker_show_speed", text="Speed")
+            col.prop(scene, "ld_checker_show_acc", text="Acc")
+            col.prop(scene, "ld_checker_show_distance", text="Distance")
+            col.prop(scene, "ld_checker_range_enabled", text="Range")
+            col.prop(scene, "ld_checker_size", text="Checker Size")
 
         box = layout.box()
-        box.label(text="Graph")
-        box.operator("liberadrone.show_check_graph", text="Show Check Graph")
+        row = box.row()
+        row.prop(
+            scene,
+            "ld_ui_graph_open",
+            text="",
+            icon='TRIA_DOWN' if scene.ld_ui_graph_open else 'TRIA_RIGHT',
+            emboss=False,
+        )
+        row.label(text="Graph")
+        if scene.ld_ui_graph_open:
+            box.operator("liberadrone.show_check_graph", text="Show Check Graph")
 
         box = layout.box()
-        box.label(text="Workspace")
-        row = box.row(align=True)
-        row.operator("liberadrone.setup_workspace_formation", text="FormationNodeWindow")
-        row.operator("liberadrone.setup_workspace_led", text="LEDEffectNodeWindow")
+        row = box.row()
+        row.prop(
+            scene,
+            "ld_ui_view_setup_open",
+            text="",
+            icon='TRIA_DOWN' if scene.ld_ui_view_setup_open else 'TRIA_RIGHT',
+            emboss=False,
+        )
+        row.label(text="View Setup")
+        if scene.ld_ui_view_setup_open:
+            box.operator("liberadrone.setup_glare_compositor", text="Setup Glare")
+            row = box.row(align=True)
+            row.operator("liberadrone.frame_from_neg_y", text="Frame From -Y")
+            row.prop(scene, "ld_camera_margin", text="")
+
+        box = layout.box()
+        row = box.row()
+        row.prop(
+            scene,
+            "ld_ui_import_open",
+            text="",
+            icon='TRIA_DOWN' if scene.ld_ui_import_open else 'TRIA_RIGHT',
+            emboss=False,
+        )
+        row.label(text="Import")
+        if scene.ld_ui_import_open:
+            box.template_list(
+                "LD_UL_ImportList",
+                "",
+                scene,
+                "ld_import_items",
+                scene,
+                "ld_import_index",
+                rows=3,
+            )
+
+        box = layout.box()
+        row = box.row()
+        row.prop(
+            scene,
+            "ld_ui_export_open",
+            text="",
+            icon='TRIA_DOWN' if scene.ld_ui_export_open else 'TRIA_RIGHT',
+            emboss=False,
+        )
+        row.label(text="Export")
+        if scene.ld_ui_export_open:
+            box.template_list(
+                "LD_UL_ExportList",
+                "",
+                scene,
+                "ld_export_items",
+                scene,
+                "ld_export_index",
+                rows=3,
+            )
+
+        box = layout.box()
+        row = box.row()
+        row.prop(
+            scene,
+            "ld_ui_workspace_open",
+            text="",
+            icon='TRIA_DOWN' if scene.ld_ui_workspace_open else 'TRIA_RIGHT',
+            emboss=False,
+        )
+        row.label(text="Workspace")
+        if scene.ld_ui_workspace_open:
+            row = box.row(align=True)
+            row.operator("liberadrone.setup_workspace_formation", text="FormationNodeWindow")
+            row.operator("liberadrone.setup_workspace_led", text="LEDEffectNodeWindow")
+
+
+class LD_ImportItem(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="Import Item")
+
+
+class LD_ExportItem(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="Export Item")
+
+
+class LD_UL_ImportList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        layout.prop(item, "name", text="", emboss=False, icon='IMPORT')
+
+
+class LD_UL_ExportList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        layout.prop(item, "name", text="", emboss=False, icon='EXPORT')
 
 
 classes = (
     LD_PT_libera_panel,
+    LD_ImportItem,
+    LD_ExportItem,
+    LD_UL_ImportList,
+    LD_UL_ExportList,
 )
 
 
@@ -298,11 +422,6 @@ def register():
         set=_set_preview_scale,
         min=0.0,
     )
-    bpy.types.Scene.ld_proxy_skip_check = bpy.props.BoolProperty(
-        name="SkipCheck",
-        get=_get_preview_gn_visible,
-        set=_set_preview_gn_visible,
-    )
     bpy.types.Scene.ld_checker_enabled = bpy.props.BoolProperty(
         name="Show Checker",
         get=_get_checker_enabled,
@@ -348,6 +467,18 @@ def register():
         default=100.0,
         min=0.0,
     )
+    bpy.types.Scene.ld_import_items = bpy.props.CollectionProperty(type=LD_ImportItem)
+    bpy.types.Scene.ld_export_items = bpy.props.CollectionProperty(type=LD_ExportItem)
+    bpy.types.Scene.ld_import_index = bpy.props.IntProperty(name="Import Index", default=0)
+    bpy.types.Scene.ld_export_index = bpy.props.IntProperty(name="Export Index", default=0)
+    bpy.types.Scene.ld_ui_preview_open = bpy.props.BoolProperty(name="UI Preview Open", default=True)
+    bpy.types.Scene.ld_ui_proxy_open = bpy.props.BoolProperty(name="UI Proxy Open", default=True)
+    bpy.types.Scene.ld_ui_overlay_open = bpy.props.BoolProperty(name="UI Overlay Open", default=True)
+    bpy.types.Scene.ld_ui_graph_open = bpy.props.BoolProperty(name="UI Graph Open", default=True)
+    bpy.types.Scene.ld_ui_view_setup_open = bpy.props.BoolProperty(name="UI View Setup Open", default=True)
+    bpy.types.Scene.ld_ui_import_open = bpy.props.BoolProperty(name="UI Import Open", default=True)
+    bpy.types.Scene.ld_ui_export_open = bpy.props.BoolProperty(name="UI Export Open", default=True)
+    bpy.types.Scene.ld_ui_workspace_open = bpy.props.BoolProperty(name="UI Workspace Open", default=True)
 
 
 def unregister():
@@ -367,14 +498,36 @@ def unregister():
         del bpy.types.Scene.ld_checker_range_height
     if hasattr(bpy.types.Scene, "ld_checker_range_depth"):
         del bpy.types.Scene.ld_checker_range_depth
+    if hasattr(bpy.types.Scene, "ld_import_index"):
+        del bpy.types.Scene.ld_import_index
+    if hasattr(bpy.types.Scene, "ld_export_index"):
+        del bpy.types.Scene.ld_export_index
+    if hasattr(bpy.types.Scene, "ld_import_items"):
+        del bpy.types.Scene.ld_import_items
+    if hasattr(bpy.types.Scene, "ld_export_items"):
+        del bpy.types.Scene.ld_export_items
+    if hasattr(bpy.types.Scene, "ld_ui_workspace_open"):
+        del bpy.types.Scene.ld_ui_workspace_open
+    if hasattr(bpy.types.Scene, "ld_ui_export_open"):
+        del bpy.types.Scene.ld_ui_export_open
+    if hasattr(bpy.types.Scene, "ld_ui_import_open"):
+        del bpy.types.Scene.ld_ui_import_open
+    if hasattr(bpy.types.Scene, "ld_ui_view_setup_open"):
+        del bpy.types.Scene.ld_ui_view_setup_open
+    if hasattr(bpy.types.Scene, "ld_ui_graph_open"):
+        del bpy.types.Scene.ld_ui_graph_open
+    if hasattr(bpy.types.Scene, "ld_ui_overlay_open"):
+        del bpy.types.Scene.ld_ui_overlay_open
+    if hasattr(bpy.types.Scene, "ld_ui_proxy_open"):
+        del bpy.types.Scene.ld_ui_proxy_open
+    if hasattr(bpy.types.Scene, "ld_ui_preview_open"):
+        del bpy.types.Scene.ld_ui_preview_open
     if hasattr(bpy.types.Scene, "ld_checker_range_object"):
         del bpy.types.Scene.ld_checker_range_object
     if hasattr(bpy.types.Scene, "ld_checker_size"):
         del bpy.types.Scene.ld_checker_size
     if hasattr(bpy.types.Scene, "ld_checker_enabled"):
         del bpy.types.Scene.ld_checker_enabled
-    if hasattr(bpy.types.Scene, "ld_proxy_skip_check"):
-        del bpy.types.Scene.ld_proxy_skip_check
     if hasattr(bpy.types.Scene, "ld_proxy_min_distance"):
         del bpy.types.Scene.ld_proxy_min_distance
     if hasattr(bpy.types.Scene, "ld_proxy_max_acc_vert"):

@@ -1,4 +1,5 @@
 from typing import Iterable, Sequence
+import os
 
 import numpy as np
 
@@ -40,6 +41,23 @@ def _create_image(
         except Exception:
             pass
     return img
+
+
+def _save_image_to_blend_dir(img: bpy.types.Image) -> None:
+    filepath = getattr(bpy.data, "filepath", "")
+    if not filepath:
+        return
+    dirpath = os.path.dirname(filepath)
+    if not dirpath:
+        return
+    filename = f"{img.name}.png"
+    path = os.path.join(dirpath, filename)
+    try:
+        img.filepath_raw = path
+        img.file_format = "PNG"
+        img.save()
+    except Exception:
+        pass
 
 def _row_frame(row: dict, fps: float) -> float:
     if "frame" in row:
@@ -178,6 +196,9 @@ def build_vat_images_from_tracks(
 
     pos_img.pixels[:] = pos_pixels.ravel()
     col_img.pixels[:] = col_pixels.ravel()
+
+    _save_image_to_blend_dir(pos_img)
+    _save_image_to_blend_dir(col_img)
 
     return pos_img, col_img, pos_min, pos_max, duration, drone_count
 

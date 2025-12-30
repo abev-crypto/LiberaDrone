@@ -1,5 +1,6 @@
 ﻿import bpy
 import bmesh
+import os
 from typing import Optional
 from mathutils import Vector
 
@@ -102,15 +103,33 @@ def _fill_preview_image(img: bpy.types.Image, ring: bool) -> None:
         for x in range(width):
             dx = x - center_x
             dist_sq = dx * dx + dy * dy
-            is_white = dist_sq <= outer_sq
-            if ring and dist_sq <= inner_sq:
-                is_white = False
+            if ring:
+                is_white = inner_sq < dist_sq <= outer_sq
+            else:
+                is_white = dist_sq <= outer_sq
             idx = (y * width + x) * 4
             if is_white:
                 pixels[idx:idx + 4] = (1.0, 1.0, 1.0, 1.0)
             else:
                 pixels[idx:idx + 4] = (0.0, 0.0, 0.0, 1.0)
     img.pixels = pixels
+
+
+def _save_image_to_blend_dir(img: bpy.types.Image) -> None:
+    filepath = getattr(bpy.data, "filepath", "")
+    if not filepath:
+        return
+    dirpath = os.path.dirname(filepath)
+    if not dirpath:
+        return
+    filename = f"{img.name}.png"
+    path = os.path.join(dirpath, filename)
+    try:
+        img.filepath_raw = path
+        img.file_format = "PNG"
+        img.save()
+    except Exception:
+        pass
 
 
 def _ensure_preview_image(name: str, *, ring: bool) -> bpy.types.Image:
@@ -124,6 +143,7 @@ def _ensure_preview_image(name: str, *, ring: bool) -> bpy.types.Image:
             pass
     _fill_preview_image(img, ring)
     img.use_fake_user = True
+    _save_image_to_blend_dir(img)
     return img
 
 
@@ -261,5 +281,6 @@ def init_scene_env(n_verts=None):
 
 if __name__ == "__main__":
     init_scene_env()
+
 
 

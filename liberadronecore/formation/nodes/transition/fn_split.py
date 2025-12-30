@@ -17,7 +17,7 @@ class FN_SplitTransitionNode(Node, FN_Node, FN_TransitionBase):
         num = self.inputs.new("FN_SocketInt", "Num")
         num.value = 2
         duration = self.inputs.new("FN_SocketFloat", "Duration")
-        duration.value = 1.0
+        duration.value = 480.0
         self._update_dynamic_sockets()
 
     def _get_num_value(self) -> int:

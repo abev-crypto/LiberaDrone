@@ -11,8 +11,10 @@ from liberadronecore.formation.fn_parse import (
     get_cached_schedule,
     _flow_edges,
     _flow_reachable,
+    _is_transition_node,
 )
 from liberadronecore.formation.fn_parse_pairing import _count_collection_vertices
+from liberadronecore.system.transition.transition_apply import apply_transition
 
 
 def _render_end_for_range(start: int, end: int) -> int:
@@ -48,15 +50,44 @@ def _find_active_entry(entries, frame: int):
 class FN_OT_calculate_schedule(bpy.types.Operator, FN_Register):
     bl_idname = "fn.calculate_schedule"
     bl_label = "Calculate Formation"
-    bl_description = "Assign PairID/FormationID and build schedule from Formation nodes"
+    bl_description = "Assign formation_id/pair_id and build schedule from Formation nodes"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         schedule = compute_schedule(context)
+        applied = 0
+        errors = []
+        trees = [ng for ng in bpy.data.node_groups if getattr(ng, "bl_idname", "") == "FN_FormationTree"]
+        for tree in trees:
+            start_nodes = [n for n in tree.nodes if n.bl_idname == "FN_StartNode"]
+            if not start_nodes:
+                continue
+            edges = _flow_edges(tree)
+            reachable = _flow_reachable(start_nodes[0], edges)
+            for node in reachable:
+                if not _is_transition_node(node):
+                    continue
+                if not hasattr(node, "collection"):
+                    continue
+                if getattr(node, "collection", None) is not None:
+                    continue
+                try:
+                    ok, message = apply_transition(node, context)
+                except Exception as exc:
+                    ok = False
+                    message = str(exc)
+                if ok:
+                    applied += 1
+                else:
+                    errors.append(message)
+        if applied:
+            schedule = compute_schedule(context)
         entries = _formation_entries(schedule)
         overall = _overall_range(entries)
         if overall and context.scene:
             _set_render_range(context.scene, overall[0], overall[1])
+        if errors:
+            self.report({'WARNING'}, f"Transition apply failed: {errors[0]}")
         self.report({'INFO'}, f"Schedule entries: {len(schedule)}")
         return {'FINISHED'}
 
@@ -134,13 +165,14 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
                 scene.collection.objects.link(obj)
             return obj
 
-        def _ensure_proxy_single_vert(obj: Optional[bpy.types.Object]) -> None:
-            if obj is None or obj.type != 'MESH':
+        def _ensure_proxy_verts(obj: Optional[bpy.types.Object], count: Optional[int]) -> None:
+            if obj is None or obj.type != 'MESH' or count is None:
                 return
+            count = max(1, int(count))
             mesh = obj.data
-            if len(mesh.vertices) != 1:
+            if len(mesh.vertices) != count:
                 mesh.clear_geometry()
-                mesh.vertices.add(1)
+                mesh.vertices.add(count)
                 mesh.update()
 
         tree = None
@@ -160,6 +192,12 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
         if drone_count is not None:
             drone_count = max(1, int(drone_count))
 
+        try:
+            from liberadronecore.ui import liberadrone_panel
+            liberadrone_panel._apply_limit_profile(context.scene, "MODEL_X")
+        except Exception:
+            pass
+
         proxy_obj = bpy.data.objects.get("ProxyPoints")
         preview_obj = bpy.data.objects.get("PreviewDrone")
         legacy_proxy = bpy.data.objects.get("AnyMesh")
@@ -173,8 +211,8 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
 
         if proxy_obj is None or preview_obj is None:
             if drone_count is not None:
-                sence_setup.ANY_MESH_VERTS = 1
-                sence_setup.init_scene_env(n_verts=1)
+                sence_setup.ANY_MESH_VERTS = max(1, int(drone_count))
+                sence_setup.init_scene_env(n_verts=max(1, int(drone_count)))
             else:
                 sence_setup.init_scene_env()
 
@@ -193,7 +231,7 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
         if color_verts_obj:
             geo_col = sence_setup.get_or_create_collection(sence_setup.COL_FOR_PREVIEW)
             sence_setup.move_object_to_collection(color_verts_obj, geo_col)
-        _ensure_proxy_single_vert(proxy_obj)
+        _ensure_proxy_verts(proxy_obj, drone_count)
 
         proxy_builder = getattr(proxy_points_gn, "geometry_nodes_001_1_node_group", None)
         if proxy_builder is None:

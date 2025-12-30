@@ -14,7 +14,7 @@ class FN_ShowNode(bpy.types.Node, FN_Node):
         self.inputs.new("FN_SocketFlow", "In")
         self.inputs.new("FN_SocketCollection", "Collection")
         duration = self.inputs.new("FN_SocketFloat", "Duration")
-        duration.value = 5.0
+        duration.value = 480.0
         self.outputs.new("FN_SocketFlow", "Next")
 
     def draw_buttons(self, context, layout):

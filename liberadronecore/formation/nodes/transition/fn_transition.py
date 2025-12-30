@@ -15,5 +15,5 @@ class FN_TransitionNode(Node, FN_Node, FN_TransitionBase):
     def init(self, context):
         self.inputs.new("FN_SocketFlow", "In")
         duration = self.inputs.new("FN_SocketFloat", "Duration")
-        duration.value = 1.0
+        duration.value = 480.0
         self.outputs.new("FN_SocketFlow", "Out")

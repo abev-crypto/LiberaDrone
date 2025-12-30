@@ -1,4 +1,4 @@
-import bpy
+﻿import bpy
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 
@@ -10,6 +10,53 @@ A_MAX = 8.0        # 最大加速度 (m/s^2)
 J_MAX = 60.0       # 最大ジャーク (m/s^3)  小さいほど滑らか
 
 D_MIN = 0.30       # 最小距離 (m)
+
+# =========================================================
+# Limits from ProxyPoints (scene)
+# =========================================================
+def _max_positive(values, default):
+    vals = [v for v in values if v > 0.0]
+    return max(vals) if vals else default
+
+
+def _limit_positive(value, default):
+    return value if value > 0.0 else default
+
+
+def _get_proxy_limits(scene):
+    if scene is None:
+        return V_MAX, V_MAX, V_MAX, V_MAX, A_MAX, J_MAX, D_MIN
+    max_up = float(getattr(scene, "ld_proxy_max_speed_up", 0.0))
+    max_down = float(getattr(scene, "ld_proxy_max_speed_down", 0.0))
+    max_horiz = float(getattr(scene, "ld_proxy_max_speed_horiz", 0.0))
+    max_acc = float(getattr(scene, "ld_proxy_max_acc_vert", 0.0))
+    min_dist = float(getattr(scene, "ld_proxy_min_distance", 0.0))
+    v_max_up = _limit_positive(max_up, V_MAX)
+    v_max_down = _limit_positive(max_down, V_MAX)
+    v_max_horiz = _limit_positive(max_horiz, V_MAX)
+    v_max = _max_positive([v_max_up, v_max_down, v_max_horiz], V_MAX)
+    a_max = _limit_positive(max_acc, A_MAX)
+    d_min = _limit_positive(min_dist, D_MIN)
+    return v_max_up, v_max_down, v_max_horiz, v_max, a_max, J_MAX, d_min
+
+
+def _expand_distance_limit(value: float, scale: float) -> float:
+    return value * scale if value > 0.0 else value
+
+
+def _clamp_velocity(v: Vector, *, v_max: float, v_max_up: float, v_max_down: float, v_max_horiz: float) -> Vector:
+    if v.length > 1e-12 and v.length > v_max:
+        v = v * (v_max / v.length)
+    if v.z > v_max_up:
+        v.z = v_max_up
+    elif v.z < -v_max_down:
+        v.z = -v_max_down
+    horiz_len = (v.x * v.x + v.y * v.y) ** 0.5
+    if horiz_len > 1e-12 and horiz_len > v_max_horiz:
+        scale = v_max_horiz / horiz_len
+        v.x *= scale
+        v.y *= scale
+    return v
 
 # 仮想ポーズ（適応分割）
 MAX_SUBDIV = 6               # 再帰分割の最大深さ
@@ -369,11 +416,19 @@ def build_tracks_from_positions(
     frame_start: int,
     frame_end: int,
     fps: float,
+    *,
+    scene=None,
 ):
     if fps <= 0.0:
         raise RuntimeError("Invalid FPS")
     if len(start_positions) != len(end_positions):
         raise RuntimeError("Start/End vertex counts do not match")
+
+    if scene is None:
+        scene = getattr(bpy, "context", None).scene if getattr(bpy, "context", None) else None
+    v_max_up, v_max_down, v_max_horiz, v_max, a_max, j_max, d_min = _get_proxy_limits(scene)
+    d_min_relax = _expand_distance_limit(d_min, 1.15)
+    d_min_relax = _expand_distance_limit(d_min, 1.15)
 
     start_f = int(frame_start)
     end_f = int(frame_end)
@@ -411,12 +466,12 @@ def build_tracks_from_positions(
     dists = [(Ew[i] - Aw[i]).length for i in range(N)]
     L_base = max(dists) if N else 0.0
 
-    table = build_scurve_table(L_base, T_total, V_MAX, A_MAX, J_MAX, samples=2048)
+    table = build_scurve_table(L_base, T_total, v_max, a_max, j_max, samples=2048)
 
     poses_t = build_adaptive_poses(
         Aw, Ew, L_base, table,
         t0=0.0, t1=T_total,
-        d_min=D_MIN,
+        d_min=d_min_relax,
         pre_iters=PRE_RELAX_ITERS,
         tether=TETHER_PRE,
         max_shift=MAX_SHIFT_PER_POSE,
@@ -442,7 +497,7 @@ def build_tracks_from_positions(
     cur_pos = [poses[0][i].copy() for i in range(N)]
     prev_vel = [Vector((0.0, 0.0, 0.0)) for _ in range(N)]
 
-    max_shift_run = (D_MIN * 0.75) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
+    max_shift_run = (d_min_relax * 0.75) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
 
     tracks = [{"name": f"Drone_{i:04d}", "data": []} for i in range(N)]
 
@@ -465,28 +520,32 @@ def build_tracks_from_positions(
         relax_pose(
             next_pos,
             base=target,
-            d_min=D_MIN,
+            d_min=d_min_relax,
             iters=RUN_RELAX_ITERS,
             max_neighbors=MAX_NEIGHBORS,
             tether=TETHER_RUN,
             max_shift=max_shift_run
         )
 
-        v_allow = min(V_MAX, max(0.0, v_allow))
+        v_allow = min(v_max, max(0.0, v_allow))
 
         for i in range(N):
             dp = next_pos[i] - cur_pos[i]
             v = dp / (1.0 / fps)
 
-            spd = v.length
-            if spd > 1e-12 and spd > v_allow:
-                v = v * (v_allow / spd)
-                next_pos[i] = cur_pos[i] + v * (1.0 / fps)
+            v = _clamp_velocity(
+                v,
+                v_max=v_allow,
+                v_max_up=v_max_up,
+                v_max_down=v_max_down,
+                v_max_horiz=v_max_horiz,
+            )
+            next_pos[i] = cur_pos[i] + v * (1.0 / fps)
 
             dv = v - prev_vel[i]
             acc = dv.length / (1.0 / fps)
-            if acc > 1e-12 and acc > A_MAX:
-                dv = dv * (A_MAX / acc)
+            if acc > 1e-12 and acc > a_max:
+                dv = dv * (a_max / acc)
                 v2 = prev_vel[i] + dv
                 spd2 = v2.length
                 if spd2 > 1e-12 and spd2 > v_allow:
@@ -495,6 +554,10 @@ def build_tracks_from_positions(
                 v = v2
 
             prev_vel[i] = v
+
+        if f == end_f:
+            # Ensure exact end formation at the final frame.
+            next_pos = [p.copy() for p in Ew]
 
         for i, pos in enumerate(next_pos):
             cur_pos[i] = pos
@@ -519,6 +582,7 @@ def main():
     scene = bpy.context.scene
     fps = scene.render.fps / scene.render.fps_base
     dt = 1.0 / fps
+    v_max_up, v_max_down, v_max_horiz, v_max, a_max, j_max, d_min = _get_proxy_limits(scene)
 
     start_f = scene.frame_start
     end_f = scene.frame_end
@@ -540,13 +604,13 @@ def main():
     L_base = max(dists) if N else 0.0
 
     # 速度テーブル（Sカーブ）
-    table = build_scurve_table(L_base, T_total, V_MAX, A_MAX, J_MAX, samples=2048)
+    table = build_scurve_table(L_base, T_total, v_max, a_max, j_max, samples=2048)
 
     # 適応仮想ポーズ生成
     poses_t = build_adaptive_poses(
         Aw, Ew, L_base, table,
         t0=0.0, t1=T_total,
-        d_min=D_MIN,
+        d_min=d_min_relax,
         pre_iters=PRE_RELAX_ITERS,
         tether=TETHER_PRE,
         max_shift=MAX_SHIFT_PER_POSE,
@@ -589,7 +653,7 @@ def main():
     cur_pos = [poses[0][i].copy() for i in range(N)]
     prev_vel = [Vector((0.0,0.0,0.0)) for _ in range(N)]
 
-    max_shift_run = (D_MIN * 0.75) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
+    max_shift_run = (d_min_relax * 0.75) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
 
     # Bake
     for f in range(start_f, end_f + 1):
@@ -613,7 +677,7 @@ def main():
         relax_pose(
             next_pos,
             base=target,
-            d_min=D_MIN,
+            d_min=d_min_relax,
             iters=RUN_RELAX_ITERS,
             max_neighbors=MAX_NEIGHBORS,
             tether=TETHER_RUN,
@@ -621,21 +685,25 @@ def main():
         )
 
         # 速度・加速度制限（暴れ止め）
-        v_allow = min(V_MAX, max(0.0, v_allow))
+        v_allow = min(v_max, max(0.0, v_allow))
 
         for i in range(N):
             dp = next_pos[i] - cur_pos[i]
             v = dp / dt
 
-            spd = v.length
-            if spd > 1e-12 and spd > v_allow:
-                v = v * (v_allow / spd)
-                next_pos[i] = cur_pos[i] + v * dt
+            v = _clamp_velocity(
+                v,
+                v_max=v_allow,
+                v_max_up=v_max_up,
+                v_max_down=v_max_down,
+                v_max_horiz=v_max_horiz,
+            )
+            next_pos[i] = cur_pos[i] + v * dt
 
             dv = v - prev_vel[i]
             acc = dv.length / dt
-            if acc > 1e-12 and acc > A_MAX:
-                dv = dv * (A_MAX / acc)
+            if acc > 1e-12 and acc > a_max:
+                dv = dv * (a_max / acc)
                 v2 = prev_vel[i] + dv
                 spd2 = v2.length
                 if spd2 > 1e-12 and spd2 > v_allow:
@@ -659,3 +727,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

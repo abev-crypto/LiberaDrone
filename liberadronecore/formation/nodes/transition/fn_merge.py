@@ -13,7 +13,7 @@ class FN_MergeTransitionNode(Node, FN_Node, FN_TransitionBase):
 
     def init(self, context):
         duration = self.inputs.new("FN_SocketFloat", "Duration")
-        duration.value = 1.0
+        duration.value = 480.0
         num = self.inputs.new("FN_SocketInt", "Num")
         num.value = 2
         self.outputs.new("FN_SocketFlow", "Out")

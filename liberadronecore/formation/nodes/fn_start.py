@@ -7,12 +7,12 @@ class FN_StartNode(bpy.types.Node, FN_Node):
     bl_icon = "ACTION"
 
     computed_start_frame: bpy.props.IntProperty(name="Computed Start", default=-1, options={'SKIP_SAVE'})
-    drone_count: bpy.props.IntProperty(name="Drone Count", default=200, min=1)
+    drone_count: bpy.props.IntProperty(name="Drone Count", default=1000, min=1)
     error_message: bpy.props.StringProperty(name="Error", default="", options={'SKIP_SAVE'})
 
     def init(self, context):
         sock = self.inputs.new("FN_SocketInt", "Start Frame")
-        sock.value = 1
+        sock.value = 0
         self.outputs.new("FN_SocketFlow", "Next")
 
     def draw_buttons(self, context, layout):

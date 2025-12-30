@@ -45,9 +45,9 @@ class LDLEDRandomNode(bpy.types.Node, LDLED_CodeNodeBase):
             color_assign = f"    {legacy_color} = ({out_var}, {out_var}, {out_var}, 1.0)"
         return "\n".join(
             [
-                f"_rand_{rand_id} = _rand01(idx, frame, {seed})",
+                f"_rand_{rand_id} = _rand01_static(idx, {seed})",
                 f"if _rand_{rand_id} < ({chance}):",
-                f"    {out_var} = _rand01(idx, frame, {seed} + 1.0)",
+                f"    {out_var} = _rand01_static(idx, {seed} + 1.0)",
                 color_assign,
                 "else:",
                 f"    {out_var} = {value}",

@@ -85,6 +85,11 @@ def _rand01(idx: int, frame: float, seed: float) -> float:
     return value - math.floor(value)
 
 
+def _rand01_static(idx: int, seed: float) -> float:
+    value = math.sin(idx * 12.9898 + seed * 78.233)
+    return value - math.floor(value)
+
+
 def _rgb_to_hsv(color: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
     r, g, b, a = color
     h, s, v = colorsys.rgb_to_hsv(r, g, b)
@@ -215,6 +220,10 @@ def _get_object(name: str) -> Optional[bpy.types.Object]:
 def _object_world_bbox(obj: bpy.types.Object) -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
     if obj is None:
         return None
+    if _LED_FRAME_CACHE.get("frame") is not None:
+        cached = _LED_FRAME_CACHE["bbox"].get(obj.name)
+        if cached is not None:
+            return cached
     bbox = obj.bound_box
     if not bbox:
         return None
@@ -227,7 +236,10 @@ def _object_world_bbox(obj: bpy.types.Object) -> Optional[Tuple[Tuple[float, flo
         xs.append(world.x)
         ys.append(world.y)
         zs.append(world.z)
-    return (min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs))
+    bounds = (min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs))
+    if _LED_FRAME_CACHE.get("frame") is not None:
+        _LED_FRAME_CACHE["bbox"][obj.name] = bounds
+    return bounds
 
 
 def _point_in_bbox(pos: Tuple[float, float, float], bounds) -> bool:
@@ -272,18 +284,22 @@ def _point_in_mesh_bbox(obj_name: str, pos: Tuple[float, float, float]) -> bool:
     return _point_in_bbox(pos, bounds)
 
 
-_LED_FRAME_CACHE: Dict[str, Any] = {"frame": None, "mesh": {}}
+_LED_FRAME_CACHE: Dict[str, Any] = {"frame": None, "mesh": {}, "collection": {}, "bbox": {}}
 _LED_CURRENT_INDEX: Optional[int] = None
 
 
 def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, float]]) -> None:
     _LED_FRAME_CACHE["frame"] = float(frame)
     _LED_FRAME_CACHE["mesh"] = {}
+    _LED_FRAME_CACHE["collection"] = {}
+    _LED_FRAME_CACHE["bbox"] = {}
 
 
 def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["frame"] = None
     _LED_FRAME_CACHE["mesh"] = {}
+    _LED_FRAME_CACHE["collection"] = {}
+    _LED_FRAME_CACHE["bbox"] = {}
 
 
 def set_led_runtime_index(idx: Optional[int]) -> None:
@@ -354,6 +370,31 @@ def _get_mesh_cache(obj: bpy.types.Object) -> Optional[Dict[str, Any]]:
             return None
         _LED_FRAME_CACHE["mesh"][obj.name] = cache
     return cache
+
+
+def _get_collection_cache(collection_name: str, use_children: bool) -> Optional[List[str]]:
+    if _LED_FRAME_CACHE.get("frame") is None:
+        return None
+    key = (collection_name, bool(use_children))
+    cached = _LED_FRAME_CACHE["collection"].get(key)
+    if cached is not None:
+        return cached
+    col = bpy.data.collections.get(collection_name)
+    if col is None:
+        _LED_FRAME_CACHE["collection"][key] = []
+        return []
+    candidates: List[bpy.types.Object] = []
+    stack = [col]
+    while stack:
+        current = stack.pop()
+        candidates.extend([obj for obj in current.objects if obj.type == 'MESH'])
+        if use_children:
+            stack.extend(list(current.children))
+    names = [obj.name for obj in candidates]
+    for obj in candidates:
+        _get_mesh_cache(obj)
+    _LED_FRAME_CACHE["collection"][key] = names
+    return names
 
 
 def _nearest_vertex_color(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[float, float, float, float]:
@@ -550,16 +591,23 @@ def _nearest_vertex_uv_with_dist(
 
 
 def _collection_nearest_uv(collection_name: str, pos: Tuple[float, float, float], use_children: bool) -> Tuple[float, float]:
-    col = bpy.data.collections.get(collection_name)
-    if col is None:
-        return 0.0, 0.0
     candidates: List[bpy.types.Object] = []
-    stack = [col]
-    while stack:
-        current = stack.pop()
-        candidates.extend([obj for obj in current.objects if obj.type == 'MESH'])
-        if use_children:
-            stack.extend(list(current.children))
+    cached = _get_collection_cache(collection_name, use_children)
+    if cached is not None:
+        for name in cached:
+            obj = bpy.data.objects.get(name)
+            if obj is not None and obj.type == 'MESH':
+                candidates.append(obj)
+    else:
+        col = bpy.data.collections.get(collection_name)
+        if col is None:
+            return 0.0, 0.0
+        stack = [col]
+        while stack:
+            current = stack.pop()
+            candidates.extend([obj for obj in current.objects if obj.type == 'MESH'])
+            if use_children:
+                stack.extend(list(current.children))
     best_uv = (0.0, 0.0)
     best_dist = 1e30
     best_obj: Optional[bpy.types.Object] = None
@@ -575,7 +623,7 @@ def _collection_nearest_uv(collection_name: str, pos: Tuple[float, float, float]
 
 
 def _formation_bbox_uv(pos: Tuple[float, float, float]) -> Tuple[float, float]:
-    obj = bpy.data.objects.get("DroneSystem")
+    obj = bpy.data.objects.get("ProxyPoints")
     bounds = _object_world_bbox(obj) if obj else None
     if not bounds:
         return 0.0, 0.0
@@ -906,6 +954,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         "_clamp01": _clamp01,
         "_alpha_over": _alpha_over,
         "_rand01": _rand01,
+        "_rand01_static": _rand01_static,
         "_rgb_to_hsv": _rgb_to_hsv,
         "_hsv_to_rgb": _hsv_to_rgb,
         "_srgb_to_linear": _srgb_to_linear,
@@ -925,6 +974,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         "_cat_cache_write": _cat_cache_write,
         "_cat_cache_read": _cat_cache_read,
         "_entry_empty": _entry_empty,
+        "_rand01_static": _rand01_static,
         "_entry_is_empty": _entry_is_empty,
         "_entry_merge": _entry_merge,
         "_entry_from_range": _entry_from_range,
@@ -940,6 +990,106 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
     }
     exec(code, env)
     return env["_led_effect"]
+
+
+def get_output_activity(tree: bpy.types.NodeTree, frame: float) -> Dict[str, bool]:
+    outputs = _collect_outputs(tree)
+    if not outputs:
+        return {}
+
+    emitted: set[int] = set()
+    lines: List[str] = []
+
+    def emit_node(node: bpy.types.Node) -> None:
+        if node.as_pointer() in emitted:
+            return
+        if not isinstance(node, LDLED_CodeNodeBase):
+            return
+
+        inputs: Dict[str, str] = {}
+        for sock in getattr(node, "inputs", []):
+            inputs[sock.name] = resolve_input(sock)
+
+        output_vars = {
+            sock.name: f"{node.codegen_id()}_{_sanitize_identifier(sock.name)}"
+            for sock in getattr(node, "outputs", [])
+        }
+        node._set_codegen_output_vars(output_vars)
+
+        snippet = node.build_code(inputs) or ""
+        for line in snippet.splitlines():
+            lines.append(line)
+        emitted.add(node.as_pointer())
+
+    def resolve_input(socket: Optional[bpy.types.NodeSocket]) -> str:
+        if socket is None:
+            return "0.0"
+        is_entry = getattr(socket, "bl_idname", "") == "LDLEDEntrySocket"
+        if is_entry and socket.is_linked and socket.links:
+            entry_vars: List[str] = []
+            for link in socket.links:
+                if not getattr(link, "is_valid", True):
+                    continue
+                from_node = link.from_node
+                from_socket = link.from_socket
+                emit_node(from_node)
+                if isinstance(from_node, LDLED_CodeNodeBase):
+                    entry_vars.append(_get_output_var(from_node, from_socket))
+            if not entry_vars:
+                return "_entry_empty()"
+            if len(entry_vars) == 1:
+                return entry_vars[0]
+            merge_var = f"_entry_merge_{len(lines)}"
+            lines.append(f"{merge_var} = _entry_empty()")
+            for entry_var in entry_vars:
+                lines.append(f"{merge_var} = _entry_merge({merge_var}, {entry_var})")
+            return merge_var
+        if socket.is_linked and socket.links:
+            link = socket.links[0]
+            if not getattr(link, "is_valid", True):
+                return _default_for_input(socket)
+            from_node = link.from_node
+            from_socket = link.from_socket
+            emit_node(from_node)
+            if isinstance(from_node, LDLED_CodeNodeBase):
+                return _get_output_var(from_node, from_socket)
+            return _default_for_socket(from_socket)
+        if is_entry:
+            return "_entry_empty()"
+        return _default_for_input(socket)
+
+    for output in outputs:
+        entry_in = resolve_input(output.inputs.get("Entry"))
+        out_id = _sanitize_identifier(output.name)
+        lines.append(f"_entry_{out_id} = {entry_in}")
+        lines.append(f"_entry_count_{out_id} = _entry_active_count(_entry_{out_id}, frame)")
+        lines.append(f"if _entry_is_empty(_entry_{out_id}):")
+        lines.append(f"    _entry_count_{out_id} = 1")
+        lines.append(f"result[{output.name!r}] = int(_entry_count_{out_id})")
+
+    body = ["def _led_output_activity(frame):", "    result = {}"]
+    body.extend([f"    {line}" for line in lines])
+    body.append("    return result")
+
+    code = "\n".join(body)
+    env = {
+        "_entry_empty": _entry_empty,
+        "_entry_is_empty": _entry_is_empty,
+        "_entry_merge": _entry_merge,
+        "_entry_from_range": _entry_from_range,
+        "_entry_from_marker": _entry_from_marker,
+        "_entry_from_formation": _entry_from_formation,
+        "_entry_shift": _entry_shift,
+        "_entry_loop": _entry_loop,
+        "_entry_active_count": _entry_active_count,
+        "_entry_progress": _entry_progress,
+        "bpy": bpy,
+        "math": math,
+        "mathutils": mathutils,
+    }
+    exec(code, env)
+    counts = env["_led_output_activity"](float(frame))
+    return {name: bool(count) for name, count in counts.items()}
 
 
 _TREE_CACHE: Dict[int, Tuple[Callable, Any]] = {}

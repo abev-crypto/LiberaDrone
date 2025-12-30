@@ -259,21 +259,31 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
     )
 
 
-def _keyframe_blend(ctrl: bpy.types.Object, start_frame: int, end_frame: int) -> None:
-    ctrl[copyloc.PROP_NAME] = 0.0
-    ctrl.keyframe_insert(data_path=f'["{copyloc.PROP_NAME}"]', frame=start_frame)
-    ctrl[copyloc.PROP_NAME] = 1.0
-    ctrl.keyframe_insert(data_path=f'["{copyloc.PROP_NAME}"]', frame=end_frame)
+def _keyframe_constraint_influence(
+    con: bpy.types.Constraint,
+    bone_name: str,
+    start_frame: int,
+    end_frame: int,
+) -> None:
+    con.influence = 0.0
+    con.keyframe_insert(data_path="influence", frame=start_frame)
+    con.influence = 1.0
+    con.keyframe_insert(data_path="influence", frame=end_frame)
 
-    ad = ctrl.animation_data
+    fcurve = None
+    id_data = getattr(con, "id_data", None)
+    ad = getattr(id_data, "animation_data", None) if id_data else None
     if ad and ad.action:
+        data_path = f'pose.bones["{bone_name}"].constraints["{con.name}"].influence'
         for fc in ad.action.fcurves:
-            if fc.data_path != f'["{copyloc.PROP_NAME}"]':
-                continue
-            for kp in fc.keyframe_points:
-                kp.interpolation = 'LINEAR'
-                kp.handle_left_type = 'VECTOR'
-                kp.handle_right_type = 'VECTOR'
+            if fc.data_path == data_path:
+                fcurve = fc
+                break
+    if fcurve:
+        for kp in fcurve.keyframe_points:
+            kp.interpolation = 'LINEAR'
+            kp.handle_left_type = 'VECTOR'
+            kp.handle_right_type = 'VECTOR'
 
 
 def _grid_positions(
@@ -343,6 +353,7 @@ def _apply_auto(ctx: TransitionContext) -> str:
         ctx.start_frame,
         ctx.end_frame,
         ctx.fps,
+        scene=ctx.scene,
     )
 
     prefix = f"Transition_{ctx.node.name}"
@@ -376,18 +387,13 @@ def _apply_auto(ctx: TransitionContext) -> str:
 
 
 def _apply_copyloc(ctx: TransitionContext, *, mode: str, split_count: int, grid_spacing: float) -> str:
-    col = _ensure_collection(ctx.scene, f"Transition_{ctx.node.name}")
+    output_col = _ensure_collection(ctx.scene, f"Transition_{ctx.node.name}")
+    targets_col = _ensure_collection(ctx.scene, f"PT_{ctx.node.name}_Targets")
 
-    start_obj = _ensure_point_object(
-        f"{ctx.node.name}_Start",
-        ctx.prev_positions,
-        col,
-        update=True,
-    )
     end_obj = _ensure_point_object(
         f"{ctx.node.name}_End",
         ctx.next_positions,
-        col,
+        targets_col,
         update=True,
     )
 
@@ -402,7 +408,7 @@ def _apply_copyloc(ctx: TransitionContext, *, mode: str, split_count: int, grid_
             obj = _ensure_point_object(
                 f"{ctx.node.name}_Split_{idx + 1}",
                 positions,
-                col,
+                targets_col,
                 update=False,
             )
             mid_objects.append(obj)
@@ -411,26 +417,45 @@ def _apply_copyloc(ctx: TransitionContext, *, mode: str, split_count: int, grid_
         obj = _ensure_point_object(
             f"{ctx.node.name}_Grid",
             positions,
-            col,
+            targets_col,
             update=False,
         )
         mid_objects.append(obj)
 
-    chain = [start_obj] + mid_objects + [end_obj]
+    targets = mid_objects + [end_obj]
+    steps = len(targets)
+    if steps <= 0:
+        raise RuntimeError("No target meshes for CopyLoc.")
 
-    for idx in range(len(chain) - 1):
-        a = chain[idx]
-        b = chain[idx + 1]
-        ctrl, _ = copyloc.build_copyloc(
-            a,
-            b,
-            collection_name=f"PT_{ctx.node.name}_{idx + 1}",
-            controller_name=f"PT_CTRL_{ctx.node.name}_{idx + 1}",
-            clear_old=True,
-        )
-        _keyframe_blend(ctrl, ctx.start_frame, ctx.end_frame)
+    arm_name = f"Transition_{ctx.node.name}_Armature"
+    mesh_name = f"Transition_{ctx.node.name}_Mesh"
+    arm_obj, mesh_obj = copyloc.build_armature_copyloc(
+        ctx.prev_positions,
+        targets,
+        collection_name=output_col.name,
+        armature_name=arm_name,
+        mesh_name=mesh_name,
+        clear_old=True,
+    )
+    _ensure_point_attributes(mesh_obj.data)
 
-    return f"CopyLoc transition created: steps={len(chain) - 1}"
+    frame_span = max(0, ctx.end_frame - ctx.start_frame)
+    segment_frames = []
+    for i in range(steps):
+        seg_start = ctx.start_frame + int(round(i * frame_span / steps))
+        seg_end = ctx.start_frame + int(round((i + 1) * frame_span / steps))
+        seg_end = max(seg_end, seg_start)
+        segment_frames.append((seg_start, seg_end))
+
+    for bone in arm_obj.pose.bones:
+        for idx in range(steps):
+            con = bone.constraints.get(f"CopyLoc_{idx + 1}")
+            if con is None:
+                continue
+            seg_start, seg_end = segment_frames[idx]
+            _keyframe_constraint_influence(con, bone.name, seg_start, seg_end)
+
+    return f"CopyLoc transition created: steps={steps}"
 
 
 def apply_transition_by_node_name(node_name: str, context=None) -> Tuple[bool, str]:
@@ -455,6 +480,7 @@ def apply_transition(node: bpy.types.Node, context=None) -> Tuple[bool, str]:
     if mode == "AUTO":
         message = _apply_auto(ctx)
         _set_transition_collection(node, ctx.scene)
+        fn_parse.compute_schedule(context)
         return True, message
 
     copyloc_mode = getattr(node, "copyloc_mode", "NORMAL")
@@ -467,4 +493,5 @@ def apply_transition(node: bpy.types.Node, context=None) -> Tuple[bool, str]:
         grid_spacing=grid_spacing,
     )
     _set_transition_collection(node, ctx.scene)
+    fn_parse.compute_schedule(context)
     return True, message

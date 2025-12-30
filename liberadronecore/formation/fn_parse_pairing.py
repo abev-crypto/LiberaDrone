@@ -148,7 +148,7 @@ def _ensure_int_point_attr(mesh: bpy.types.Mesh, name: str) -> bpy.types.Attribu
 
 
 def _assign_formation_ids(col: bpy.types.Collection, drone_count: Optional[int]) -> bool:
-    """Assign formation_id (and PairID/FormationID legacy) once per collection if missing."""
+    """Assign formation_id/pair_id once per collection if missing."""
     meshes = _collect_mesh_objects(col)
     if not meshes:
         return False
@@ -167,8 +167,7 @@ def _assign_formation_ids(col: bpy.types.Collection, drone_count: Optional[int])
     for obj in meshes:
         mesh = obj.data
         form_attr = _ensure_int_point_attr(mesh, FORMATION_ATTR_NAME)
-        legacy_form = _ensure_int_attribute(mesh, FORMATION_ID_ATTR)
-        legacy_pair = _ensure_int_attribute(mesh, PAIR_ID_ATTR)
+        pair_attr = _ensure_int_point_attr(mesh, PAIR_ATTR_NAME)
         vert_len = len(mesh.vertices)
         values = []
         for i in range(vert_len):
@@ -180,8 +179,7 @@ def _assign_formation_ids(col: bpy.types.Collection, drone_count: Optional[int])
             next_id += 1
         # bulk write
         form_attr.data.foreach_set("value", values)
-        legacy_form.data.foreach_set("value", values)
-        legacy_pair.data.foreach_set("value", values)
+        pair_attr.data.foreach_set("value", values)
     return True
 
 
