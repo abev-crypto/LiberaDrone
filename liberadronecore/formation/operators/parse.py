@@ -54,7 +54,7 @@ class FN_OT_calculate_schedule(bpy.types.Operator, FN_Register):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        schedule = compute_schedule(context)
+        schedule = compute_schedule(context, assign_pairs=False)
         applied = 0
         errors = []
         trees = [ng for ng in bpy.data.node_groups if getattr(ng, "bl_idname", "") == "FN_FormationTree"]
@@ -72,7 +72,7 @@ class FN_OT_calculate_schedule(bpy.types.Operator, FN_Register):
                 if getattr(node, "collection", None) is not None:
                     continue
                 try:
-                    ok, message = apply_transition(node, context)
+                    ok, message = apply_transition(node, context, assign_pairs_after=False)
                 except Exception as exc:
                     ok = False
                     message = str(exc)
@@ -80,8 +80,7 @@ class FN_OT_calculate_schedule(bpy.types.Operator, FN_Register):
                     applied += 1
                 else:
                     errors.append(message)
-        if applied:
-            schedule = compute_schedule(context)
+        schedule = compute_schedule(context, assign_pairs=True)
         entries = _formation_entries(schedule)
         overall = _overall_range(entries)
         if overall and context.scene:
@@ -523,4 +522,40 @@ class FN_OT_render_range_next(bpy.types.Operator, FN_Register):
 
         _set_render_range(context.scene, int(target.start), int(target.end))
         context.scene.frame_set(int(target.start))
+        return {'FINISHED'}
+
+
+class FN_OT_create_markers(bpy.types.Operator, FN_Register):
+    bl_idname = "fn.create_formation_markers"
+    bl_label = "Create Formation Markers"
+    bl_description = "Create timeline markers at each formation start frame"
+
+    def execute(self, context):
+        schedule = get_cached_schedule(context.scene)
+        if not schedule:
+            schedule = compute_schedule(context, assign_pairs=False)
+        entries = _formation_entries(schedule)
+        if not entries:
+            self.report({'ERROR'}, "No formation entries found.")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        markers = scene.timeline_markers
+        created = 0
+        updated = 0
+
+        for entry in entries:
+            name = entry.collection.name if entry.collection else entry.node_name
+            if not name:
+                continue
+            marker = markers.get(name)
+            frame = int(entry.start)
+            if marker is None:
+                markers.new(name=name, frame=frame)
+                created += 1
+            else:
+                marker.frame = frame
+                updated += 1
+
+        self.report({'INFO'}, f"Markers created: {created}, updated: {updated}")
         return {'FINISHED'}

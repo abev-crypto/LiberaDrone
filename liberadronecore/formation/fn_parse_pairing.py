@@ -204,7 +204,7 @@ def _collect_meshes_from_cols(cols: Sequence[bpy.types.Collection]) -> List[bpy.
 
 
 def _pair_from_previous(prev_meshes: List[bpy.types.Object], next_meshes: List[bpy.types.Object]) -> bool:
-    """Assign pair_id on next_meshes based on Hungarian match to prev_meshes."""
+    """Assign pair_id on next_meshes as mapping from previous formation_id to next formation_id."""
     if not prev_meshes or not next_meshes:
         return False
     from liberadronecore.system.drone import calculate_mapping
@@ -229,15 +229,15 @@ def _pair_from_previous(prev_meshes: List[bpy.types.Object], next_meshes: List[b
             ids.extend(list(range(len(mesh.vertices))))
         return np.asarray(coords, dtype=np.float64), ids, spans
 
-    pts_prev, prev_ids, prev_spans = _flatten(prev_meshes, PAIR_ATTR_NAME)
-    pts_next, _, next_spans = _flatten(next_meshes, None)
+    pts_prev, _prev_ids, _prev_spans = _flatten(prev_meshes, FORMATION_ATTR_NAME)
+    pts_next, next_ids, next_spans = _flatten(next_meshes, FORMATION_ATTR_NAME)
     if len(pts_prev) != len(pts_next) or len(pts_prev) == 0:
         return False
 
-    _, pairB = calculate_mapping.hungarian_from_points(pts_prev, pts_next)
+    pairA, _ = calculate_mapping.hungarian_from_points(pts_prev, pts_next)
 
-    # Build flat array of mapped ids for next
-    mapped_ids = [prev_ids[p] for p in pairB]
+    # Build flat array of mapped ids for next (prev formation_id -> next formation_id)
+    mapped_ids = [next_ids[p] for p in pairA]
 
     offset = 0
     for mesh, span in next_spans:

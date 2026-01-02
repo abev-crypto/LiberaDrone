@@ -92,8 +92,8 @@ def _fill_preview_image(img: bpy.types.Image, ring: bool) -> None:
     width, height = img.size
     center_x = (width - 1) * 0.5
     center_y = (height - 1) * 0.5
-    outer_radius = min(width, height) * 0.375
-    inner_radius = outer_radius * 0.4
+    outer_radius = 32.0
+    inner_radius = 30.0
     outer_sq = outer_radius * outer_radius
     inner_sq = inner_radius * inner_radius
 

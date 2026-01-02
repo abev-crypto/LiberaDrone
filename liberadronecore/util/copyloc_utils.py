@@ -49,3 +49,33 @@ def shape_copyloc_influence_curve(fcurve, handle_frames: float, key_filter=None)
     if updated:
         fcurve.keyframe_points.update()
     return updated
+
+
+def shape_copyloc_influence_handles(
+    arm_obj,
+    handle_frames: float,
+    *,
+    constraint_prefix: str = "CopyLoc_",
+) -> int:
+    """Apply handle shaping to CopyLoc influence curves on an armature action."""
+    if arm_obj is None:
+        return 0
+    ad = getattr(arm_obj, "animation_data", None)
+    action = getattr(ad, "action", None) if ad else None
+    if action is None:
+        return 0
+
+    handle_frames = max(0.0, float(handle_frames))
+    updated = 0
+    token = f'constraints["{constraint_prefix}' if constraint_prefix else None
+    for fcurve in action.fcurves:
+        data_path = getattr(fcurve, "data_path", "")
+        if not data_path.endswith('"].influence'):
+            continue
+        if ".constraints[" not in data_path:
+            continue
+        if token and token not in data_path:
+            continue
+        if shape_copyloc_influence_curve(fcurve, handle_frames):
+            updated += 1
+    return updated

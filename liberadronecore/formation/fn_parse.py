@@ -375,7 +375,7 @@ def _attach_node_group(obj_name: str, node_group: Optional[bpy.types.NodeTree], 
         return False
 
 
-def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[ScheduleEntry]:
+def compute_schedule(context: Optional[bpy.types.Context] = None, *, assign_pairs: bool = True) -> List[ScheduleEntry]:
     global COMPUTED_SCHEDULE, _CACHED_SCENE_ID, _CACHED_SCENE_VERSION
 
     schedule: List[ScheduleEntry] = []
@@ -521,7 +521,7 @@ def compute_schedule(context: Optional[bpy.types.Context] = None) -> List[Schedu
                 if hasattr(node, "error_message"):
                     node.error_message = f"Vertex count mismatch: {sum(prev_counts)} != {sum(next_counts)}"
 
-        if formation_cols:
+        if formation_cols and assign_pairs:
             seen_cols: set[bpy.types.Collection] = set()
             ordered_unique: List[bpy.types.Collection] = []
             for col in formation_cols:

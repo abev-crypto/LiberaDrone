@@ -50,11 +50,17 @@ def _save_image_to_blend_dir(img: bpy.types.Image) -> None:
     dirpath = os.path.dirname(filepath)
     if not dirpath:
         return
-    filename = f"{img.name}.png"
+    is_pos = img.name.endswith("_Pos")
+    filename = f"{img.name}.exr" if is_pos else f"{img.name}.png"
     path = os.path.join(dirpath, filename)
     try:
         img.filepath_raw = path
-        img.file_format = "PNG"
+        if is_pos:
+            img.file_format = "OPEN_EXR"
+            if hasattr(img, "use_float"):
+                img.use_float = True
+        else:
+            img.file_format = "PNG"
         img.save()
     except Exception:
         pass

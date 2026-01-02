@@ -72,6 +72,7 @@ MAX_SHIFT_PER_POSE = 0.25    # baseから許容する最大ずれ (m)
 RUN_RELAX_ITERS = 6          # 本番近接解消反復
 TETHER_RUN = 0.15            # 本番は弱め（強すぎると離れない）
 MAX_SHIFT_RUN = None         # Noneなら D_MIN*0.75 を使用
+JERK_SCALE = 0.6             # Start/Endの急加速を緩める
 
 MAX_NEIGHBORS = 12           # KDTreeで見る近傍数
 
@@ -307,16 +308,18 @@ def build_adaptive_poses(
     max_subdiv,
     max_neighbors=12,
     check_relax_iters=4,
-    samples_in_interval=2
+    samples_in_interval=2,
+    relax_endpoints=True
 ):
     base0 = base_pose_at_time(Aw, Ew, L_base, table, t0)
     base1 = base_pose_at_time(Aw, Ew, L_base, table, t1)
     pose0 = [p.copy() for p in base0]
     pose1 = [p.copy() for p in base1]
 
-    # 端点も軽く整える（ここでズレるのが嫌なら iters=0 にしてOK）
-    relax_pose(pose0, base0, d_min, pre_iters, max_neighbors, tether, max_shift)
-    relax_pose(pose1, base1, d_min, pre_iters, max_neighbors, tether, max_shift)
+    # 端点の距離制限を無視する場合はリラックスしない
+    if relax_endpoints:
+        relax_pose(pose0, base0, d_min, pre_iters, max_neighbors, tether, max_shift)
+        relax_pose(pose1, base1, d_min, pre_iters, max_neighbors, tether, max_shift)
 
     poses = [(t0, pose0), (t1, pose1)]
 
@@ -427,7 +430,7 @@ def build_tracks_from_positions(
     if scene is None:
         scene = getattr(bpy, "context", None).scene if getattr(bpy, "context", None) else None
     v_max_up, v_max_down, v_max_horiz, v_max, a_max, j_max, d_min = _get_proxy_limits(scene)
-    d_min_relax = _expand_distance_limit(d_min, 1.15)
+    j_max = max(1e-6, j_max * JERK_SCALE)
     d_min_relax = _expand_distance_limit(d_min, 1.15)
 
     start_f = int(frame_start)
@@ -478,7 +481,8 @@ def build_tracks_from_positions(
         max_subdiv=MAX_SUBDIV,
         max_neighbors=MAX_NEIGHBORS,
         check_relax_iters=CHECK_RELAX_ITERS,
-        samples_in_interval=SAMPLES_IN_INTERVAL
+        samples_in_interval=SAMPLES_IN_INTERVAL,
+        relax_endpoints=False
     )
 
     K = len(poses_t)
@@ -517,15 +521,16 @@ def build_tracks_from_positions(
 
         next_pos = [p.copy() for p in target]
 
-        relax_pose(
-            next_pos,
-            base=target,
-            d_min=d_min_relax,
-            iters=RUN_RELAX_ITERS,
-            max_neighbors=MAX_NEIGHBORS,
-            tether=TETHER_RUN,
-            max_shift=max_shift_run
-        )
+        if f != start_f and f != end_f:
+            relax_pose(
+                next_pos,
+                base=target,
+                d_min=d_min_relax,
+                iters=RUN_RELAX_ITERS,
+                max_neighbors=MAX_NEIGHBORS,
+                tether=TETHER_RUN,
+                max_shift=max_shift_run
+            )
 
         v_allow = min(v_max, max(0.0, v_allow))
 
@@ -583,6 +588,8 @@ def main():
     fps = scene.render.fps / scene.render.fps_base
     dt = 1.0 / fps
     v_max_up, v_max_down, v_max_horiz, v_max, a_max, j_max, d_min = _get_proxy_limits(scene)
+    j_max = max(1e-6, j_max * JERK_SCALE)
+    d_min_relax = _expand_distance_limit(d_min, 1.15)
 
     start_f = scene.frame_start
     end_f = scene.frame_end

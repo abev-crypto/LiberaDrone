@@ -7,7 +7,8 @@ import bpy
 from mathutils import Vector
 
 from liberadronecore.formation import fn_parse, fn_parse_pairing
-from liberadronecore.formation.fn_parse_pairing import PAIR_ATTR_NAME, _collect_mesh_objects
+from liberadronecore.formation.fn_parse_pairing import _collect_mesh_objects
+from liberadronecore.system.drone import calculate_mapping
 from liberadronecore.system.transition import bakedt, copyloc, vat_gn
 from liberadronecore.system.vat import create_vat
 
@@ -22,6 +23,7 @@ class TransitionContext:
     fps: float
     prev_positions: List[Vector]
     next_positions: List[Vector]
+    pair_ids: List[int]
 
 
 def _ensure_collection(scene: bpy.types.Scene, name: str) -> bpy.types.Collection:
@@ -89,6 +91,13 @@ def _ensure_point_attributes(mesh: bpy.types.Mesh) -> None:
     form_attr.data.foreach_set("value", values)
 
 
+def _set_pair_ids(mesh: bpy.types.Mesh, pair_ids: Sequence[int]) -> None:
+    attr = fn_parse_pairing._ensure_int_point_attr(mesh, fn_parse_pairing.PAIR_ATTR_NAME)
+    if len(attr.data) != len(pair_ids):
+        return
+    attr.data.foreach_set("value", list(pair_ids))
+
+
 def _ensure_point_object(
     name: str,
     positions: Sequence[Vector],
@@ -126,30 +135,40 @@ def _collect_positions_for_collection(
     col: bpy.types.Collection,
     frame: int,
     depsgraph: bpy.types.Depsgraph,
-    *,
-    require_pair_id: bool,
-) -> Dict[int, Vector]:
-    positions: Dict[int, Vector] = {}
+) -> Tuple[List[Vector], Optional[List[int]]]:
+    positions: List[Vector] = []
+    pair_ids: List[int] | None = []
+    pairs_ok = True
     meshes = _collect_mesh_objects(col)
     for obj in meshes:
         eval_obj = obj.evaluated_get(depsgraph)
         eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-        attr = eval_mesh.attributes.get(PAIR_ATTR_NAME) if eval_mesh else None
-        if not attr or attr.domain != 'POINT' or attr.data_type != 'INT':
-            if eval_obj and eval_mesh:
-                eval_obj.to_mesh_clear()
-            if require_pair_id:
-                raise RuntimeError(f"pair_id attribute missing on {obj.name}")
-            continue
-        pair_ids = [0] * len(eval_mesh.vertices)
-        attr.data.foreach_get("value", pair_ids)
         for idx, vtx in enumerate(eval_mesh.vertices):
-            pid = pair_ids[idx]
-            if pid in positions:
-                continue
-            positions[pid] = eval_obj.matrix_world @ vtx.co
+            positions.append(eval_obj.matrix_world @ vtx.co)
+        if pairs_ok and pair_ids is not None:
+            attr = eval_mesh.attributes.get(fn_parse_pairing.PAIR_ATTR_NAME)
+            if (
+                attr is None
+                or attr.data_type != 'INT'
+                or attr.domain != 'POINT'
+                or len(attr.data) != len(eval_mesh.vertices)
+            ):
+                attr = obj.data.attributes.get(fn_parse_pairing.PAIR_ATTR_NAME)
+            if (
+                attr is None
+                or attr.data_type != 'INT'
+                or attr.domain != 'POINT'
+                or len(attr.data) != len(eval_mesh.vertices)
+            ):
+                pairs_ok = False
+            else:
+                values = [0] * len(eval_mesh.vertices)
+                attr.data.foreach_get("value", values)
+                pair_ids.extend(values)
         eval_obj.to_mesh_clear()
-    return positions
+    if not pairs_ok:
+        pair_ids = None
+    return positions, pair_ids
 
 
 def _collect_positions_for_nodes(
@@ -158,16 +177,41 @@ def _collect_positions_for_nodes(
     frame_selector,
     scene: bpy.types.Scene,
     depsgraph: bpy.types.Depsgraph,
-) -> Dict[int, Vector]:
-    positions: Dict[int, Vector] = {}
+) -> Tuple[List[Vector], Optional[List[int]]]:
+    positions: List[Vector] = []
+    pair_ids: List[int] | None = []
+    pairs_ok = True
     for node in nodes:
         entry = entry_map.get(node.name)
         if not entry or not entry.collection:
             continue
         frame = frame_selector(entry)
         scene.frame_set(frame)
-        positions.update(_collect_positions_for_collection(entry.collection, frame, depsgraph, require_pair_id=True))
-    return positions
+        pos, pairs = _collect_positions_for_collection(entry.collection, frame, depsgraph)
+        positions.extend(pos)
+        if pairs_ok:
+            if pairs is None:
+                pairs_ok = False
+            elif pair_ids is not None:
+                pair_ids.extend(pairs)
+    if not pairs_ok:
+        pair_ids = None
+    return positions, pair_ids
+
+
+def _valid_pair_ids(pair_ids: Optional[Sequence[int]], count: int) -> bool:
+    if pair_ids is None or len(pair_ids) != count or count <= 0:
+        return False
+    seen = set()
+    for pid in pair_ids:
+        if pid < 0 or pid >= count or pid in seen:
+            return False
+        seen.add(pid)
+    return True
+
+
+def _apply_pair_id_order(positions: Sequence[Vector], pair_ids: Sequence[int]) -> List[Vector]:
+    return [positions[idx] for idx in pair_ids]
 
 
 def _node_tree_from_context(context, node_name: str) -> Tuple[Optional[bpy.types.NodeTree], Optional[bpy.types.Node]]:
@@ -195,7 +239,7 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
     scene = context.scene if context else bpy.context.scene
     depsgraph = context.evaluated_depsgraph_get() if context else bpy.context.evaluated_depsgraph_get()
 
-    schedule = fn_parse.compute_schedule(context)
+    schedule = fn_parse.compute_schedule(context, assign_pairs=False)
     if getattr(node, "error_message", ""):
         raise RuntimeError(node.error_message)
     entry_map = {entry.node_name: entry for entry in schedule if entry.tree_name == tree.name}
@@ -214,14 +258,14 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
             return max(entry.start, entry.end - 1)
         return entry.start
 
-    prev_positions = _collect_positions_for_nodes(
+    prev_positions, prev_pair_ids = _collect_positions_for_nodes(
         prev_nodes,
         entry_map,
         _prev_frame,
         scene,
         depsgraph,
     )
-    next_positions = _collect_positions_for_nodes(
+    next_positions, next_pair_ids = _collect_positions_for_nodes(
         next_nodes,
         entry_map,
         lambda entry: entry.start,
@@ -231,12 +275,28 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
 
     scene.frame_set(original_frame)
 
-    common_ids = sorted(set(prev_positions) & set(next_positions))
-    if not common_ids:
-        raise RuntimeError("No matching pair_id vertices found")
+    if len(prev_positions) != len(next_positions):
+        raise RuntimeError("Start/End vertex counts do not match")
+    if not prev_positions:
+        raise RuntimeError("No vertices found for transition")
 
-    prev_list = [prev_positions[i] for i in common_ids]
-    next_list = [next_positions[i] for i in common_ids]
+    prev_list = list(prev_positions)
+    next_list = list(next_positions)
+
+    use_prev_pairs = _valid_pair_ids(prev_pair_ids, len(prev_list))
+    use_next_pairs = _valid_pair_ids(next_pair_ids, len(next_list))
+    if use_prev_pairs:
+        prev_list = _apply_pair_id_order(prev_list, prev_pair_ids or [])
+    if use_next_pairs:
+        next_list = _apply_pair_id_order(next_list, next_pair_ids or [])
+
+    if not (use_prev_pairs and use_next_pairs):
+        import numpy as np
+
+        pts_prev = np.asarray([[p.x, p.y, p.z] for p in prev_list], dtype=np.float64)
+        pts_next = np.asarray([[p.x, p.y, p.z] for p in next_list], dtype=np.float64)
+        pairA, _ = calculate_mapping.hungarian_from_points(pts_prev, pts_next)
+        next_list = [next_list[idx] for idx in pairA]
 
     start_frame = int(getattr(node, "computed_start_frame", 0) or 0)
     duration_value = fn_parse._resolve_input_value(node, "Duration", 0.0, "duration")
@@ -256,6 +316,7 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
         fps=fps,
         prev_positions=prev_list,
         next_positions=next_list,
+        pair_ids=list(range(len(prev_list))),
     )
 
 
@@ -371,6 +432,7 @@ def _apply_auto(ctx: TransitionContext) -> str:
         col,
         update=True,
     )
+    _set_pair_ids(obj.data, ctx.pair_ids)
 
     frame_count = max(int(duration) + 1, 1)
     group = vat_gn._create_gn_vat_group(
@@ -438,6 +500,7 @@ def _apply_copyloc(ctx: TransitionContext, *, mode: str, split_count: int, grid_
         clear_old=True,
     )
     _ensure_point_attributes(mesh_obj.data)
+    _set_pair_ids(mesh_obj.data, ctx.pair_ids)
 
     frame_span = max(0, ctx.end_frame - ctx.start_frame)
     segment_frames = []
@@ -468,7 +531,7 @@ def apply_transition_by_node_name(node_name: str, context=None) -> Tuple[bool, s
         return False, str(exc)
 
 
-def apply_transition(node: bpy.types.Node, context=None) -> Tuple[bool, str]:
+def apply_transition(node: bpy.types.Node, context=None, *, assign_pairs_after: bool = True) -> Tuple[bool, str]:
     ctx = _build_transition_context(node, context)
     _purge_transition_collections(node.name)
     if hasattr(node, "collection"):
@@ -480,7 +543,7 @@ def apply_transition(node: bpy.types.Node, context=None) -> Tuple[bool, str]:
     if mode == "AUTO":
         message = _apply_auto(ctx)
         _set_transition_collection(node, ctx.scene)
-        fn_parse.compute_schedule(context)
+        fn_parse.compute_schedule(context, assign_pairs=assign_pairs_after)
         return True, message
 
     copyloc_mode = getattr(node, "copyloc_mode", "NORMAL")
@@ -493,5 +556,5 @@ def apply_transition(node: bpy.types.Node, context=None) -> Tuple[bool, str]:
         grid_spacing=grid_spacing,
     )
     _set_transition_collection(node, ctx.scene)
-    fn_parse.compute_schedule(context)
+    fn_parse.compute_schedule(context, assign_pairs=assign_pairs_after)
     return True, message

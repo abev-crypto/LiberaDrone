@@ -22,6 +22,7 @@ class FN_PT_formation_panel(bpy.types.Panel, FN_Register):
         layout.operator("fn.setup_scene", text="Setup")
         layout.operator("fn.create_node_chain", text="CreateNode")
         layout.operator("fn.calculate_schedule", text="Calculate")
+        layout.operator("fn.create_formation_markers", text="CreateMarker")
         layout.separator()
         row = layout.row(align=True)
         row.operator("fn.render_range_current", text="CurrentFormation")

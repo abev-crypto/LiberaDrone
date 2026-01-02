@@ -181,6 +181,32 @@ def _ease(t: float) -> float:
     return t * t * (3.0 - 2.0 * t)
 
 
+def _ease_in(t: float) -> float:
+    t = _clamp01(t)
+    return t * t
+
+
+def _ease_out(t: float) -> float:
+    t = _clamp01(t)
+    inv = 1.0 - t
+    return 1.0 - inv * inv
+
+
+def _ease_in_out(t: float) -> float:
+    t = _clamp01(t)
+    return _ease(t)
+
+
+def _apply_ease(t: float, mode: str) -> float:
+    mode = (mode or "LINEAR").upper()
+    if mode in {"EASEIN", "EASE_IN"}:
+        return _ease_in(t)
+    if mode in {"EASEOUT", "EASE_OUT"}:
+        return _ease_out(t)
+    if mode in {"EASEINOUT", "EASE_IN_OUT"}:
+        return _ease_in_out(t)
+    return _clamp01(t)
+
 def _color_ramp_eval(
     elements: List[Tuple[float, Tuple[float, float, float, float]]],
     interpolation: str,
@@ -818,7 +844,11 @@ def _entry_active_count(entry: Optional[Dict[str, List[Tuple[float, float]]]], f
     return count
 
 
-def _entry_progress(entry: Optional[Dict[str, List[Tuple[float, float]]]], frame: float) -> float:
+def _entry_progress(
+    entry: Optional[Dict[str, List[Tuple[float, float]]]],
+    frame: float,
+    mode: str = "LINEAR",
+) -> float:
     if not entry:
         return 0.0
     fr = float(frame)
@@ -833,7 +863,7 @@ def _entry_progress(entry: Optional[Dict[str, List[Tuple[float, float]]]], frame
                 t = (fr - start_f) / (end_f - start_f)
                 if t > best:
                     best = t
-    return _clamp01(best)
+    return _apply_ease(best, mode)
 
 
 def _get_output_var(node: bpy.types.Node, socket: bpy.types.NodeSocket) -> str:
