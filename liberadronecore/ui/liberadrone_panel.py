@@ -308,6 +308,7 @@ class LD_PT_libera_panel(bpy.types.Panel):
                 "ld_import_index",
                 rows=3,
             )
+            box.operator("liberadrone.show_import_sheet", text="Import Sheet (Test)")
 
         box = layout.box()
         row = box.row()

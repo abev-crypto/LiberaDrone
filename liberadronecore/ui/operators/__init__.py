@@ -5,6 +5,7 @@ from .workspace import (
     LD_OT_setup_workspace_led,
 )
 from .graph import LD_OT_show_check_graph
+from .import_sheet import LD_OT_show_import_sheet
 
 
 _classes = (
@@ -12,6 +13,7 @@ _classes = (
     LD_OT_setup_workspace_formation,
     LD_OT_setup_workspace_led,
     LD_OT_show_check_graph,
+    LD_OT_show_import_sheet,
 )
 
 

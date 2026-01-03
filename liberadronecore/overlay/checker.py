@@ -1,20 +1,17 @@
 """
-Viewport overlay for GN error attributes.
+Viewport overlay for checker status derived from formation meshes.
 """
 
 import bpy
 import blf
 import gpu
+import numpy as np
 from bpy_extras import view3d_utils
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
+from mathutils.kdtree import KDTree
 
-TARGET_OBJ_NAME = "ProxyPoints"
-ATTR_NAMES = (
-    "err_speed",
-    "err_acc",
-    "err_close",
-)
+FORMATION_ROOT = "Formation"
 ATTR_COLORS = {
     "speed": (1.0, 1.0, 0.2, 1.0),
     "acc": (1.0, 0.2, 1.0, 1.0),
@@ -24,40 +21,215 @@ ATTR_COLORS = {
 
 _handler = None
 _text_handler = None
+_CHECK_CACHE = {
+    "scene_id": None,
+    "frame": None,
+    "prev_frame": None,
+    "signature": None,
+    "positions": [],
+    "positions_np": None,
+    "prev_positions": [],
+    "prev_positions_np": None,
+    "prev_vel": [],
+    "prev_vel_np": None,
+    "speed_vert": [],
+    "speed_horiz": [],
+    "acc": [],
+    "min_distance": [],
+}
 
 
-def _get_attr(mesh, name: str):
-    attr = mesh.attributes.get(name)
-    return attr if attr is not None else None
+def _scene_id(scene) -> int | None:
+    if scene is None:
+        return None
+    try:
+        return int(scene.as_pointer())
+    except Exception:
+        return None
 
 
-def _get_attr_flags(attr) -> list[bool]:
-    flags: list[bool] = []
-    if attr is None:
-        return flags
-    for data in attr.data:
-        val = getattr(data, "value", None)
-        if isinstance(val, bool):
-            flags.append(val)
-        else:
-            try:
-                flags.append(float(val) > 0.5)
-            except Exception:
-                flags.append(False)
-    return flags
+def _get_fps(scene: bpy.types.Scene) -> float:
+    fps = float(getattr(scene.render, "fps", 0.0))
+    base = float(getattr(scene.render, "fps_base", 1.0) or 1.0)
+    if base <= 0.0:
+        base = 1.0
+    if fps <= 0.0:
+        fps = 24.0
+    return fps / base
 
 
-def _get_attr_values(attr) -> list[float]:
-    values: list[float] = []
-    if attr is None:
-        return values
-    for data in attr.data:
-        val = getattr(data, "value", 0.0)
-        try:
-            values.append(float(val))
-        except Exception:
-            values.append(0.0)
-    return values
+def _collect_formation_positions(scene: bpy.types.Scene, depsgraph) -> tuple[list[Vector], tuple[tuple[str, int], ...]]:
+    col = bpy.data.collections.get(FORMATION_ROOT)
+    if col is None:
+        return [], ()
+    meshes = [obj for obj in col.all_objects if obj.type == 'MESH']
+    meshes.sort(key=lambda o: o.name)
+
+    positions: list[Vector] = []
+    signature: list[tuple[str, int]] = []
+    for obj in meshes:
+        eval_obj = obj.evaluated_get(depsgraph)
+        eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+        if eval_mesh is None:
+            continue
+        signature.append((obj.name, len(eval_mesh.vertices)))
+        mw = eval_obj.matrix_world
+        positions.extend([mw @ v.co for v in eval_mesh.vertices])
+        eval_obj.to_mesh_clear()
+    return positions, tuple(signature)
+
+
+def _positions_to_numpy(positions: list[Vector]) -> np.ndarray:
+    if not positions:
+        return np.zeros((0, 3), dtype=np.float64)
+    return np.asarray([[p.x, p.y, p.z] for p in positions], dtype=np.float64)
+
+
+def _compute_min_distances(positions: list[Vector]) -> list[float]:
+    count = len(positions)
+    if count < 2:
+        return [0.0] * count
+    kd = KDTree(count)
+    for idx, pos in enumerate(positions):
+        kd.insert(pos, idx)
+    kd.balance()
+    distances = [0.0] * count
+    for idx, pos in enumerate(positions):
+        nearest = None
+        for _co, other_idx, dist in kd.find_n(pos, 2):
+            if other_idx == idx:
+                continue
+            nearest = dist
+            break
+        distances[idx] = float(nearest) if nearest is not None else 0.0
+    return distances
+
+
+def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dict | None:
+    cache = _CHECK_CACHE
+    if scene is None:
+        return None
+
+    scene_id = _scene_id(scene)
+    frame = int(getattr(scene, "frame_current", 0))
+    if cache["scene_id"] == scene_id and cache["frame"] == frame and cache["positions"]:
+        if need_distance and not cache["min_distance"]:
+            cache["min_distance"] = _compute_min_distances(cache["positions"])
+        return cache
+
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    positions, signature = _collect_formation_positions(scene, depsgraph)
+    if not positions:
+        cache.update(
+            {
+                "scene_id": scene_id,
+                "frame": frame,
+                "prev_frame": None,
+                "signature": signature,
+                "positions": [],
+                "positions_np": None,
+                "prev_positions": [],
+                "prev_positions_np": None,
+                "prev_vel": [],
+                "prev_vel_np": None,
+                "speed_vert": [],
+                "speed_horiz": [],
+                "acc": [],
+                "min_distance": [],
+            }
+        )
+        return None
+
+    reset = cache["scene_id"] != scene_id or cache["signature"] != signature
+
+    if reset:
+        positions_np = _positions_to_numpy(positions)
+        zeros = [0.0] * len(positions)
+        cache.update(
+            {
+                "scene_id": scene_id,
+                "frame": frame,
+                "prev_frame": None,
+                "signature": signature,
+                "positions": list(positions),
+                "positions_np": positions_np,
+                "prev_positions": list(positions),
+                "prev_positions_np": positions_np.copy(),
+                "prev_vel": [],
+                "prev_vel_np": np.zeros_like(positions_np),
+                "speed_vert": list(zeros),
+                "speed_horiz": list(zeros),
+                "acc": list(zeros),
+                "min_distance": _compute_min_distances(positions) if need_distance else [],
+            }
+        )
+        return cache
+
+    if cache["frame"] == frame and cache["positions"]:
+        if need_distance and not cache["min_distance"]:
+            cache["min_distance"] = _compute_min_distances(cache["positions"])
+        return cache
+
+    prev_positions_np = cache.get("prev_positions_np")
+    prev_vel_np = cache.get("prev_vel_np")
+    if prev_positions_np is None or prev_positions_np.shape[0] != len(positions):
+        positions_np = _positions_to_numpy(positions)
+        zeros = [0.0] * len(positions)
+        cache.update(
+            {
+                "scene_id": scene_id,
+                "frame": frame,
+                "prev_frame": None,
+                "signature": signature,
+                "positions": list(positions),
+                "positions_np": positions_np,
+                "prev_positions": list(positions),
+                "prev_positions_np": positions_np.copy(),
+                "prev_vel": [],
+                "prev_vel_np": np.zeros_like(positions_np),
+                "speed_vert": list(zeros),
+                "speed_horiz": list(zeros),
+                "acc": list(zeros),
+                "min_distance": _compute_min_distances(positions) if need_distance else [],
+            }
+        )
+        return cache
+
+    prev_frame = cache.get("frame")
+    fps = _get_fps(scene)
+    frame_delta = frame - prev_frame if prev_frame is not None else 1
+    if frame_delta == 0:
+        frame_delta = 1
+    dt = (frame_delta / fps) if fps > 0.0 else 1.0
+    positions_np = _positions_to_numpy(positions)
+    if prev_vel_np is None or prev_vel_np.shape[0] != positions_np.shape[0]:
+        prev_vel_np = np.zeros_like(positions_np)
+
+    vel = (positions_np - prev_positions_np) / dt
+    speed_vert = vel[:, 2].tolist()
+    speed_horiz = np.linalg.norm(vel[:, :2], axis=1).tolist()
+    acc_vec = (vel - prev_vel_np) / dt
+    acc = np.linalg.norm(acc_vec, axis=1).tolist()
+
+    cache.update(
+        {
+            "scene_id": scene_id,
+            "frame": frame,
+            "prev_frame": prev_frame,
+            "signature": signature,
+            "positions": list(positions),
+            "positions_np": positions_np,
+            "prev_positions": list(positions),
+            "prev_positions_np": positions_np.copy(),
+            "prev_vel": [],
+            "prev_vel_np": vel,
+            "speed_vert": speed_vert,
+            "speed_horiz": speed_horiz,
+            "acc": acc,
+            "min_distance": _compute_min_distances(positions) if need_distance else [],
+        }
+    )
+    return cache
 
 
 def _draw_points_2d(coords, color, size):
@@ -103,22 +275,25 @@ def _get_range_bounds(scene):
     return min_v, max_v
 
 
-def _draw_stats(mesh, font_id: int = 0):
-    speed_vert = _get_attr_values(_get_attr(mesh, "speed_vert"))
-    speed_horiz = _get_attr_values(_get_attr(mesh, "speed_horiz"))
-    acc = _get_attr_values(_get_attr(mesh, "acc"))
-    min_dist = _get_attr_values(_get_attr(mesh, "min_distance"))
+def _draw_stats(scene: bpy.types.Scene, font_id: int = 0):
+    show_speed = bool(getattr(scene, "ld_checker_show_speed", True))
+    show_acc = bool(getattr(scene, "ld_checker_show_acc", True))
+    show_distance = bool(getattr(scene, "ld_checker_show_distance", True))
 
-    scene = bpy.context.scene
+    cache = _update_checker_cache(scene, need_distance=show_distance)
+    if not cache:
+        return
+
+    speed_vert = cache.get("speed_vert", [])
+    speed_horiz = cache.get("speed_horiz", [])
+    acc = cache.get("acc", [])
+    min_dist = cache.get("min_distance", [])
+
     limit_up = float(getattr(scene, "ld_proxy_max_speed_up", 0.0))
     limit_down = float(getattr(scene, "ld_proxy_max_speed_down", 0.0))
     limit_horiz = float(getattr(scene, "ld_proxy_max_speed_horiz", 0.0))
     limit_acc = float(getattr(scene, "ld_proxy_max_acc_vert", 0.0))
     limit_dist = float(getattr(scene, "ld_proxy_min_distance", 0.0))
-
-    show_speed = bool(getattr(scene, "ld_checker_show_speed", True))
-    show_acc = bool(getattr(scene, "ld_checker_show_acc", True))
-    show_distance = bool(getattr(scene, "ld_checker_show_distance", True))
 
     lines = []
     if show_speed and (speed_vert or speed_horiz):
@@ -183,20 +358,10 @@ def _draw_stats(mesh, font_id: int = 0):
 
 
 def draw_gn_vertex_markers():
-    obj = bpy.data.objects.get(TARGET_OBJ_NAME)
-    if obj is None:
-        return
-
     context = bpy.context
     region = context.region
     rv3d = context.region_data
     if region is None or rv3d is None:
-        return
-
-    depsgraph = context.evaluated_depsgraph_get()
-    eval_obj = obj.evaluated_get(depsgraph)
-    mesh = getattr(eval_obj, "data", None)
-    if mesh is None:
         return
 
     show_speed = bool(getattr(context.scene, "ld_checker_show_speed", True))
@@ -204,9 +369,22 @@ def draw_gn_vertex_markers():
     show_distance = bool(getattr(context.scene, "ld_checker_show_distance", True))
     show_range = bool(getattr(context.scene, "ld_checker_range_enabled", True))
 
-    err_speed = _get_attr_flags(_get_attr(mesh, "err_speed")) if show_speed else []
-    err_acc = _get_attr_flags(_get_attr(mesh, "err_acc")) if show_acc else []
-    err_close = _get_attr_flags(_get_attr(mesh, "err_close")) if show_distance else []
+    cache = _update_checker_cache(context.scene, need_distance=show_distance)
+    if not cache:
+        return
+
+    positions = cache.get("positions", [])
+    speed_vert = cache.get("speed_vert", [])
+    speed_horiz = cache.get("speed_horiz", [])
+    acc = cache.get("acc", [])
+    min_dist = cache.get("min_distance", [])
+
+    limit_up = float(getattr(context.scene, "ld_proxy_max_speed_up", 0.0))
+    limit_down = float(getattr(context.scene, "ld_proxy_max_speed_down", 0.0))
+    limit_horiz = float(getattr(context.scene, "ld_proxy_max_speed_horiz", 0.0))
+    limit_acc = float(getattr(context.scene, "ld_proxy_max_acc_vert", 0.0))
+    limit_dist = float(getattr(context.scene, "ld_proxy_min_distance", 0.0))
+
     range_bounds = _get_range_bounds(context.scene) if show_range else None
 
     size = float(getattr(context.scene, "ld_checker_size", 6.0))
@@ -220,18 +398,22 @@ def draw_gn_vertex_markers():
         "range": [],
     }
 
-    for i, v in enumerate(mesh.vertices):
-        world_co = eval_obj.matrix_world @ v.co
+    for i, world_co in enumerate(positions):
         pos_2d = view3d_utils.location_3d_to_region_2d(region, rv3d, world_co)
         if pos_2d is None:
             continue
 
         flags = []
-        if show_speed and i < len(err_speed) and err_speed[i]:
-            flags.append("speed")
-        if show_acc and i < len(err_acc) and err_acc[i]:
+        if show_speed and i < len(speed_vert) and i < len(speed_horiz):
+            if (
+                speed_vert[i] > limit_up
+                or speed_vert[i] < -limit_down
+                or speed_horiz[i] > limit_horiz
+            ):
+                flags.append("speed")
+        if show_acc and i < len(acc) and acc[i] > limit_acc:
             flags.append("acc")
-        if show_distance and i < len(err_close) and err_close[i]:
+        if show_distance and i < len(min_dist) and min_dist[i] < limit_dist:
             flags.append("distance")
         if show_range and range_bounds is not None:
             min_v, max_v = range_bounds
@@ -256,17 +438,7 @@ def draw_gn_vertex_markers():
 
 
 def draw_gn_stats():
-    obj = bpy.data.objects.get(TARGET_OBJ_NAME)
-    if obj is None:
-        return
-
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    eval_obj = obj.evaluated_get(depsgraph)
-    mesh = getattr(eval_obj, "data", None)
-    if mesh is None:
-        return
-
-    _draw_stats(mesh)
+    _draw_stats(bpy.context.scene)
 
 
 def is_enabled() -> bool:

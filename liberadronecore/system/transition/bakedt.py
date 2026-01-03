@@ -1,4 +1,5 @@
 ﻿import bpy
+import numpy as np
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 
@@ -58,8 +59,37 @@ def _clamp_velocity(v: Vector, *, v_max: float, v_max_up: float, v_max_down: flo
         v.y *= scale
     return v
 
+
+def _clamp_velocity_array(
+    v: np.ndarray,
+    *,
+    v_max: float,
+    v_max_up: float,
+    v_max_down: float,
+    v_max_horiz: float,
+) -> np.ndarray:
+    if v.size == 0:
+        return v
+    speed = np.linalg.norm(v, axis=1)
+    mask = speed > v_max
+    if np.any(mask):
+        scale = np.ones_like(speed)
+        scale[mask] = v_max / speed[mask]
+        v = v * scale[:, None]
+
+    v[:, 2] = np.clip(v[:, 2], -v_max_down, v_max_up)
+
+    horiz = np.linalg.norm(v[:, :2], axis=1)
+    mask = horiz > v_max_horiz
+    if np.any(mask):
+        scale = np.ones_like(horiz)
+        scale[mask] = v_max_horiz / horiz[mask]
+        v[:, 0] *= scale
+        v[:, 1] *= scale
+    return v
+
 # 仮想ポーズ（適応分割）
-MAX_SUBDIV = 6               # 再帰分割の最大深さ
+MAX_SUBDIV = 3               # 再帰分割の最大深さ
 SAMPLES_IN_INTERVAL = 2      # 区間チェックのサンプル数（1/3,2/3…）
 CHECK_RELAX_ITERS = 4        # 判定用の軽いリラックス反復
 PRE_RELAX_ITERS = 12         # 仮想ポーズ生成時の本気リラックス反復
@@ -73,8 +103,10 @@ RUN_RELAX_ITERS = 6          # 本番近接解消反復
 TETHER_RUN = 0.15            # 本番は弱め（強すぎると離れない）
 MAX_SHIFT_RUN = None         # Noneなら D_MIN*0.75 を使用
 JERK_SCALE = 0.6             # Start/Endの急加速を緩める
+RELAX_DMIN_SCALE = 1.05      # Relax d_min scale at full strength
+RELAX_EDGE_FRAMES = 24       # Frames to ramp up from 1.0 at start/end
 
-MAX_NEIGHBORS = 12           # KDTreeで見る近傍数
+MAX_NEIGHBORS = 25           # KDTreeで見る近傍数
 
 # Bake先
 COLLECTION_NAME = "Drones_Empties"
@@ -431,7 +463,7 @@ def build_tracks_from_positions(
         scene = getattr(bpy, "context", None).scene if getattr(bpy, "context", None) else None
     v_max_up, v_max_down, v_max_horiz, v_max, a_max, j_max, d_min = _get_proxy_limits(scene)
     j_max = max(1e-6, j_max * JERK_SCALE)
-    d_min_relax = _expand_distance_limit(d_min, 1.15)
+    d_min_relax = _expand_distance_limit(d_min, 1.25)
 
     start_f = int(frame_start)
     end_f = int(frame_end)
@@ -487,19 +519,20 @@ def build_tracks_from_positions(
 
     K = len(poses_t)
     poses = [pose for (t, pose) in poses_t]
+    pose_times_np = np.asarray([t for (t, pose) in poses_t], dtype=np.float64)
+    pose_s_np = np.asarray([table_lookup(table, t, key="s") for t in pose_times_np], dtype=np.float64)
 
-    seglens = [[0.0]*(K-1) for _ in range(N)]
-    total_len = [0.0]*N
-    for i in range(N):
-        L = 0.0
-        for k in range(K-1):
-            d = (poses[k+1][i] - poses[k][i]).length
-            seglens[i][k] = d
-            L += d
-        total_len[i] = L
+    poses_np = np.asarray(
+        [[(p.x, p.y, p.z) for p in pose] for pose in poses],
+        dtype=np.float64,
+    ) if N else np.zeros((0, 0, 3), dtype=np.float64)
 
-    cur_pos = [poses[0][i].copy() for i in range(N)]
-    prev_vel = [Vector((0.0, 0.0, 0.0)) for _ in range(N)]
+    cur_pos_np = np.asarray(
+        [[p.x, p.y, p.z] for p in poses[0]],
+        dtype=np.float64,
+    ) if N else np.zeros((0, 3), dtype=np.float64)
+    prev_vel_np = np.zeros_like(cur_pos_np)
+    dt = 1.0 / fps
 
     max_shift_run = (d_min_relax * 0.75) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
 
@@ -510,68 +543,99 @@ def build_tracks_from_positions(
 
         s_base = table_lookup(table, t, key="s")
         v_allow = table_lookup(table, t, key="v")
-        u = 0.0 if L_base <= 1e-12 else min(1.0, max(0.0, s_base / L_base))
+        if K <= 1:
+            target_np = poses_np[0] if K else np.zeros((0, 3), dtype=np.float64)
+        else:
+            seg_idx = np.searchsorted(pose_times_np, t, side="right") - 1
+            seg_idx = int(np.clip(seg_idx, 0, K - 2))
+            s0 = pose_s_np[seg_idx]
+            s1 = pose_s_np[seg_idx + 1]
+            denom = s1 - s0
+            if abs(denom) <= 1e-12:
+                t0 = pose_times_np[seg_idx]
+                t1 = pose_times_np[seg_idx + 1]
+                denom_t = t1 - t0
+                alpha = (t - t0) / denom_t if denom_t > 1e-12 else 0.0
+            else:
+                alpha = (s_base - s0) / denom
+            if alpha < 0.0:
+                alpha = 0.0
+            elif alpha > 1.0:
+                alpha = 1.0
+            p0 = poses_np[seg_idx]
+            p1 = poses_np[seg_idx + 1]
+            target_np = p0 + (p1 - p0) * alpha
 
-        target = [None]*N
-        for i in range(N):
-            Li = total_len[i]
-            si = u * Li
-            per_points = [poses[k][i] for k in range(K)]
-            target[i] = position_along_polyline(per_points, seglens[i], si)
-
+        target = [Vector((float(x), float(y), float(z))) for x, y, z in target_np]
         next_pos = [p.copy() for p in target]
 
-        if f != start_f and f != end_f:
-            relax_pose(
-                next_pos,
-                base=target,
-                d_min=d_min_relax,
-                iters=RUN_RELAX_ITERS,
-                max_neighbors=MAX_NEIGHBORS,
-                tether=TETHER_RUN,
-                max_shift=max_shift_run
-            )
+        edge_frames = max(1, int(RELAX_EDGE_FRAMES))
+        edge_dist = min(f - start_f, end_f - f)
+        if edge_dist <= 0:
+            d_min_scale = 1.0
+        else:
+            ramp = edge_dist / edge_frames
+            if ramp > 1.0:
+                ramp = 1.0
+            d_min_scale = 1.0 + (RELAX_DMIN_SCALE - 1.0) * ramp
+        d_min_run = d_min * d_min_scale
+
+        relax_pose(
+            next_pos,
+            base=target,
+            d_min=d_min_run,
+            iters=RUN_RELAX_ITERS,
+            max_neighbors=MAX_NEIGHBORS,
+            tether=TETHER_RUN,
+            max_shift=max_shift_run,
+        )
 
         v_allow = min(v_max, max(0.0, v_allow))
 
+        next_pos_np = np.asarray(
+            [[p.x, p.y, p.z] for p in next_pos],
+            dtype=np.float64,
+        ) if N else np.zeros((0, 3), dtype=np.float64)
+
+        v = (next_pos_np - cur_pos_np) / dt
+        v = _clamp_velocity_array(
+            v,
+            v_max=v_allow,
+            v_max_up=v_max_up,
+            v_max_down=v_max_down,
+            v_max_horiz=v_max_horiz,
+        )
+        next_pos_np = cur_pos_np + v * dt
+
+        dv = v - prev_vel_np
+        acc = np.linalg.norm(dv, axis=1) / dt
+        acc_limit = max(a_max, 1e-12)
+        acc_mask = acc > acc_limit
+        if np.any(acc_mask):
+            scale = np.ones_like(acc)
+            scale[acc_mask] = a_max / acc[acc_mask]
+            dv = dv * scale[:, None]
+            v2 = prev_vel_np + dv
+            spd2 = np.linalg.norm(v2, axis=1)
+            spd_mask = (spd2 > v_allow) & (spd2 > 1e-12)
+            if np.any(spd_mask):
+                scale2 = np.ones_like(spd2)
+                scale2[spd_mask] = v_allow / spd2[spd_mask]
+                v2 = v2 * scale2[:, None]
+            v = v2
+            next_pos_np = cur_pos_np + v * dt
+
+        prev_vel_np = v
+
+        cur_pos_np = next_pos_np
         for i in range(N):
-            dp = next_pos[i] - cur_pos[i]
-            v = dp / (1.0 / fps)
-
-            v = _clamp_velocity(
-                v,
-                v_max=v_allow,
-                v_max_up=v_max_up,
-                v_max_down=v_max_down,
-                v_max_horiz=v_max_horiz,
-            )
-            next_pos[i] = cur_pos[i] + v * (1.0 / fps)
-
-            dv = v - prev_vel[i]
-            acc = dv.length / (1.0 / fps)
-            if acc > 1e-12 and acc > a_max:
-                dv = dv * (a_max / acc)
-                v2 = prev_vel[i] + dv
-                spd2 = v2.length
-                if spd2 > 1e-12 and spd2 > v_allow:
-                    v2 = v2 * (v_allow / spd2)
-                next_pos[i] = cur_pos[i] + v2 * (1.0 / fps)
-                v = v2
-
-            prev_vel[i] = v
-
-        if f == end_f:
-            # Ensure exact end formation at the final frame.
-            next_pos = [p.copy() for p in Ew]
-
-        for i, pos in enumerate(next_pos):
-            cur_pos[i] = pos
+            pos = next_pos_np[i]
             tracks[i]["data"].append(
                 {
                     "frame": float(f),
-                    "x": float(pos.x),
-                    "y": float(pos.y),
-                    "z": float(pos.z),
+                    "x": float(pos[0]),
+                    "y": float(pos[1]),
+                    "z": float(pos[2]),
                     "r": 255,
                     "g": 255,
                     "b": 255,
