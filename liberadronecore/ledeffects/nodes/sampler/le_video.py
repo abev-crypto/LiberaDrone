@@ -6,7 +6,7 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Sample a video frame (uses image data for now) based on entry progress."""
 
     bl_idname = "LDLEDVideoSamplerNode"
-    bl_label = "LED Video Sampler"
+    bl_label = "Video Sampler"
     bl_icon = "SEQUENCE"
 
     filepath: bpy.props.StringProperty(

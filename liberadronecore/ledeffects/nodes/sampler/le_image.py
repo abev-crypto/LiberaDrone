@@ -6,7 +6,7 @@ class LDLEDImageSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Sample a Blender image by UV."""
 
     bl_idname = "LDLEDImageSamplerNode"
-    bl_label = "LED Image Sampler"
+    bl_label = "Image Sampler"
     bl_icon = "IMAGE_DATA"
 
     image: bpy.props.PointerProperty(

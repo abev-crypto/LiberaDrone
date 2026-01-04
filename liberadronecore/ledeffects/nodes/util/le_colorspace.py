@@ -6,7 +6,7 @@ class LDLEDColorSpaceNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Convert between color spaces or to grayscale."""
 
     bl_idname = "LDLEDColorSpaceNode"
-    bl_label = "LED Color Space"
+    bl_label = "Color Space"
     bl_icon = "IMAGE"
 
     mode_items = [

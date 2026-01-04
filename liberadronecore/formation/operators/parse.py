@@ -14,7 +14,7 @@ from liberadronecore.formation.fn_parse import (
     _is_transition_node,
 )
 from liberadronecore.formation.fn_parse_pairing import _count_collection_vertices
-from liberadronecore.system.transition.transition_apply import apply_transition
+from liberadronecore.system.transition.transition_apply import apply_transition, purge_transition_nodes
 
 
 def _render_end_for_range(start: int, end: int) -> int:
@@ -81,6 +81,61 @@ class FN_OT_calculate_schedule(bpy.types.Operator, FN_Register):
                 else:
                     errors.append(message)
         schedule = compute_schedule(context, assign_pairs=True)
+        try:
+            from liberadronecore.formation import fn_parse_ui
+            fn_parse_ui.sync_transition_items(context, allow_index_update=True)
+        except Exception:
+            pass
+        entries = _formation_entries(schedule)
+        overall = _overall_range(entries)
+        if overall and context.scene:
+            _set_render_range(context.scene, overall[0], overall[1])
+        if errors:
+            self.report({'WARNING'}, f"Transition apply failed: {errors[0]}")
+        self.report({'INFO'}, f"Schedule entries: {len(schedule)}")
+        return {'FINISHED'}
+
+
+class FN_OT_force_calculate_schedule(bpy.types.Operator, FN_Register):
+    bl_idname = "fn.force_calculate_schedule"
+    bl_label = "Force Calculate Formation"
+    bl_description = "Clear Transition outputs before recalculating schedule"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        schedule = compute_schedule(context, assign_pairs=False)
+        applied = 0
+        errors = []
+        trees = [ng for ng in bpy.data.node_groups if getattr(ng, "bl_idname", "") == "FN_FormationTree"]
+        for tree in trees:
+            transition_nodes = [n for n in tree.nodes if _is_transition_node(n)]
+            if transition_nodes:
+                purge_transition_nodes(transition_nodes)
+            start_nodes = [n for n in tree.nodes if n.bl_idname == "FN_StartNode"]
+            if not start_nodes:
+                continue
+            edges = _flow_edges(tree)
+            reachable = _flow_reachable(start_nodes[0], edges)
+            for node in reachable:
+                if not _is_transition_node(node):
+                    continue
+                if not hasattr(node, "collection"):
+                    continue
+                try:
+                    ok, message = apply_transition(node, context, assign_pairs_after=False)
+                except Exception as exc:
+                    ok = False
+                    message = str(exc)
+                if ok:
+                    applied += 1
+                else:
+                    errors.append(message)
+        schedule = compute_schedule(context, assign_pairs=True)
+        try:
+            from liberadronecore.formation import fn_parse_ui
+            fn_parse_ui.sync_transition_items(context, allow_index_update=True)
+        except Exception:
+            pass
         entries = _formation_entries(schedule)
         overall = _overall_range(entries)
         if overall and context.scene:
@@ -197,50 +252,37 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
         except Exception:
             pass
 
-        proxy_obj = bpy.data.objects.get("ProxyPoints")
+        # ProxyPoints setup disabled.
+        proxy_obj = None
+        # proxy_obj = bpy.data.objects.get("ProxyPoints")
+        # legacy_proxy = bpy.data.objects.get("AnyMesh")
+        # if proxy_obj is None and legacy_proxy is not None:
+        #     legacy_proxy.name = "ProxyPoints"
+        #     proxy_obj = legacy_proxy
         preview_obj = bpy.data.objects.get("PreviewDrone")
-        legacy_proxy = bpy.data.objects.get("AnyMesh")
         legacy_preview = bpy.data.objects.get("Iso")
-        if proxy_obj is None and legacy_proxy is not None:
-            legacy_proxy.name = "ProxyPoints"
-            proxy_obj = legacy_proxy
         if preview_obj is None and legacy_preview is not None:
             legacy_preview.name = "PreviewDrone"
             preview_obj = legacy_preview
 
-        if proxy_obj is None or preview_obj is None:
+        if preview_obj is None:
             if drone_count is not None:
                 sence_setup.ANY_MESH_VERTS = max(1, int(drone_count))
-                sence_setup.init_scene_env(n_verts=max(1, int(drone_count)))
+                sence_setup.init_scene_env(n_verts=max(1, int(drone_count)), create_any_mesh=False)
             else:
-                sence_setup.init_scene_env()
+                sence_setup.init_scene_env(create_any_mesh=False)
 
-            proxy_obj = bpy.data.objects.get("AnyMesh")
             preview_obj = bpy.data.objects.get("Iso")
-            if proxy_obj:
-                proxy_obj.name = "ProxyPoints"
             if preview_obj:
                 preview_obj.name = "PreviewDrone"
 
-        proxy_group = None
         preview_group = None
-        from liberadronecore.system.drone import proxy_points_gn, preview_drone_gn
+        from liberadronecore.system.drone import preview_drone_gn
 
         color_verts_obj = _ensure_color_verts(context.scene, drone_count)
         if color_verts_obj:
             geo_col = sence_setup.get_or_create_collection(sence_setup.COL_FOR_PREVIEW)
             sence_setup.move_object_to_collection(color_verts_obj, geo_col)
-        _ensure_proxy_verts(proxy_obj, drone_count)
-
-        proxy_builder = getattr(proxy_points_gn, "geometry_nodes_001_1_node_group", None)
-        if proxy_builder is None:
-            proxy_builder = getattr(proxy_points_gn, "geometry_nodes_002_1_node_group", None)
-        if proxy_builder is not None:
-            proxy_group = _ensure_geometry_node_group(
-                proxy_points_gn,
-                proxy_builder,
-                "GN_ProxyPoints",
-            )
 
         preview_builder = getattr(preview_drone_gn, "geometry_nodes_001_1_node_group", None)
         if preview_builder is None:
@@ -252,11 +294,6 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
                 "GN_PreviewDrone",
             )
 
-        if proxy_obj and proxy_group:
-            _attach_node_group(proxy_obj.name, proxy_group, "ProxyPointsGN")
-            mod = _get_nodes_modifier(proxy_obj, "ProxyPointsGN")
-            formation_col = _ensure_collection(context.scene, "Formation")
-            _set_gn_input(mod, "Formation", formation_col)
         if preview_obj and preview_group:
             _attach_node_group(preview_obj.name, preview_group, "PreviewDroneGN")
             mod = _get_nodes_modifier(preview_obj, "PreviewDroneGN")

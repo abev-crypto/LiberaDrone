@@ -72,6 +72,44 @@ def _alpha_over(dst: List[float], src: List[float], alpha: float) -> List[float]
     ]
 
 
+def _blend_over(dst: List[float], src: List[float], alpha: float, mode: str) -> List[float]:
+    alpha = _clamp01(float(alpha))
+    if alpha <= 0.0:
+        return [dst[0], dst[1], dst[2], 1.0]
+    mode = (mode or "MIX").upper()
+    if mode == "MIX":
+        return _alpha_over(dst, src, alpha)
+
+    def blend_channel(a: float, b: float) -> float:
+        if mode == "ADD":
+            return a + b
+        if mode == "MULTIPLY":
+            return a * b
+        if mode == "SCREEN":
+            return 1.0 - (1.0 - a) * (1.0 - b)
+        if mode == "OVERLAY":
+            return (2.0 * a * b) if (a < 0.5) else (1.0 - 2.0 * (1.0 - a) * (1.0 - b))
+        if mode == "HARD_LIGHT":
+            return (2.0 * a * b) if (b < 0.5) else (1.0 - 2.0 * (1.0 - a) * (1.0 - b))
+        if mode == "SOFT_LIGHT":
+            return (a - (1.0 - 2.0 * b) * a * (1.0 - a)) if (b < 0.5) else (
+                a + (2.0 * b - 1.0) * (_clamp01(a) ** 0.5 - a)
+            )
+        if mode == "BURN":
+            return _clamp01(1.0 - (1.0 - a) / (b if b > 0.0 else 1e-5))
+        if mode == "SUBTRACT":
+            return a - b
+        if mode == "MAX":
+            return a if a > b else b
+        return b
+
+    inv = 1.0 - alpha
+    r = dst[0] * inv + blend_channel(dst[0], src[0]) * alpha
+    g = dst[1] * inv + blend_channel(dst[1], src[1]) * alpha
+    b = dst[2] * inv + blend_channel(dst[2], src[2]) * alpha
+    return [r, g, b, 1.0]
+
+
 def _clamp(x: float, low: float, high: float) -> float:
     if x < low:
         return low
@@ -266,6 +304,51 @@ def _object_world_bbox(obj: bpy.types.Object) -> Optional[Tuple[Tuple[float, flo
     if _LED_FRAME_CACHE.get("frame") is not None:
         _LED_FRAME_CACHE["bbox"][obj.name] = bounds
     return bounds
+
+
+def _collection_world_bbox(
+    collection_name: str,
+    *,
+    use_children: bool = True,
+) -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
+    if not collection_name:
+        return None
+    names = _get_collection_cache(collection_name, use_children)
+    if names is None:
+        col = bpy.data.collections.get(collection_name)
+        if col is None:
+            return None
+        candidates: List[bpy.types.Object] = []
+        stack = [col]
+        while stack:
+            current = stack.pop()
+            candidates.extend([obj for obj in current.objects if obj.type == 'MESH'])
+            if use_children:
+                stack.extend(list(current.children))
+        names = [obj.name for obj in candidates]
+    min_v = None
+    max_v = None
+    for name in names:
+        obj = bpy.data.objects.get(name)
+        if obj is None or obj.type != 'MESH':
+            continue
+        bounds = _object_world_bbox(obj)
+        if not bounds:
+            continue
+        (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
+        if min_v is None:
+            min_v = [min_x, min_y, min_z]
+            max_v = [max_x, max_y, max_z]
+        else:
+            min_v[0] = min(min_v[0], min_x)
+            min_v[1] = min(min_v[1], min_y)
+            min_v[2] = min(min_v[2], min_z)
+            max_v[0] = max(max_v[0], max_x)
+            max_v[1] = max(max_v[1], max_y)
+            max_v[2] = max(max_v[2], max_z)
+    if min_v is None or max_v is None:
+        return None
+    return (min_v[0], min_v[1], min_v[2]), (max_v[0], max_v[1], max_v[2])
 
 
 def _point_in_bbox(pos: Tuple[float, float, float], bounds) -> bool:
@@ -649,8 +732,7 @@ def _collection_nearest_uv(collection_name: str, pos: Tuple[float, float, float]
 
 
 def _formation_bbox_uv(pos: Tuple[float, float, float]) -> Tuple[float, float]:
-    obj = bpy.data.objects.get("ProxyPoints")
-    bounds = _object_world_bbox(obj) if obj else None
+    bounds = _collection_world_bbox("Formation", use_children=True)
     if not bounds:
         return 0.0, 0.0
     (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
@@ -866,6 +948,27 @@ def _entry_progress(
     return _apply_ease(best, mode)
 
 
+def _entry_active_index(
+    entry: Optional[Dict[str, List[Tuple[float, float]]]],
+    frame: float,
+) -> int:
+    if not entry:
+        return -1
+    spans: List[Tuple[float, float]] = []
+    for span_list in entry.values():
+        for start, end in span_list:
+            spans.append((float(start), float(end)))
+    if not spans:
+        return -1
+    spans.sort(key=lambda item: (item[0], item[1]))
+    fr = float(frame)
+    active = -1
+    for idx, (start, end) in enumerate(spans):
+        if start <= fr < end:
+            active = idx
+    return active
+
+
 def _get_output_var(node: bpy.types.Node, socket: bpy.types.NodeSocket) -> str:
     mapping = getattr(node, "_codegen_output_vars", {})
     if socket.name in mapping:
@@ -880,10 +983,23 @@ def _collect_outputs(tree: bpy.types.NodeTree) -> List[bpy.types.Node]:
     return outputs
 
 
+def _output_seed(name: str) -> float:
+    seed = 0
+    for ch in name or "":
+        seed = (seed * 131 + ord(ch)) % 100000
+    return float(seed)
+
+
 def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
     outputs = _collect_outputs(tree)
     if not outputs:
         return None
+
+    output_counts: Dict[int, int] = {}
+    for output in outputs:
+        priority = int(getattr(output, "priority", 0))
+        output_counts[priority] = output_counts.get(priority, 0) + 1
+    output_indices = {priority: 0 for priority in output_counts}
 
     emitted: set[int] = set()
     lines: List[str] = []
@@ -946,33 +1062,60 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
             return "_entry_empty()"
         return _default_for_input(socket)
 
+    lines.append("_output_items = []")
+
     for output in outputs:
         color_in = resolve_input(output.inputs.get("Color"))
         intensity_in = resolve_input(output.inputs.get("Intensity"))
         alpha_in = resolve_input(output.inputs.get("Alpha"))
         entry_in = resolve_input(output.inputs.get("Entry"))
         out_id = _sanitize_identifier(output.name)
+        priority = int(getattr(output, "priority", 0))
+        group_index = output_indices[priority]
+        group_size = output_counts[priority]
+        output_indices[priority] = group_index + 1
+        blend_mode = getattr(output, "blend_mode", "MIX") or "MIX"
+        try:
+            random_weight = float(getattr(output, "random", 0.0))
+        except Exception:
+            random_weight = 0.0
+        random_weight = max(0.0, min(1.0, random_weight))
+        seed = _output_seed(output.name)
         lines.append(f"_color_{out_id} = {color_in}")
         lines.append(f"_intensity_{out_id} = {intensity_in}")
         lines.append(f"_alpha_{out_id} = {alpha_in}")
         lines.append(f"_entry_{out_id} = {entry_in}")
-        lines.append(f"_entry_count_{out_id} = _entry_active_count(_entry_{out_id}, frame)")
-        lines.append(f"if _entry_is_empty(_entry_{out_id}):")
-        lines.append(f"    _entry_count_{out_id} = 1")
-        lines.append(f"if _entry_count_{out_id} > 0:")
         lines.append(
-            "    _src_alpha = _clamp01(_alpha_{0} * ("
-            "_color_{0}[3] if len(_color_{0}) > 3 else 1.0))".format(out_id)
+            "_output_items.append(({0}, {1}, {2}, {3}, {4}, _color_{5}, _intensity_{5}, _alpha_{5}, _entry_{5}, {6}))"
+            .format(
+                priority,
+                group_index,
+                group_size,
+                repr(random_weight),
+                repr(blend_mode),
+                out_id,
+                repr(seed),
+            )
         )
-        lines.append(
-            "    _src_color = ["
-            "_color_{0}[0] * _intensity_{0}, "
-            "_color_{0}[1] * _intensity_{0}, "
-            "_color_{0}[2] * _intensity_{0}, "
-            "1.0]".format(out_id)
-        )
-        lines.append("    for _ in range(int(_entry_count_{0})):".format(out_id))
-        lines.append("        color = _alpha_over(color, _src_color, _src_alpha)")
+
+    lines.append("_ordered_outputs = []")
+    lines.append("for _prio, _group_idx, _group_size, _rand, _blend, _color, _intensity, _alpha, _entry, _seed in _output_items:")
+    lines.append("    _order = _group_idx")
+    lines.append("    if _rand > 0.0:")
+    lines.append("        _roll = _rand01_static(idx, _seed)")
+    lines.append("        if _roll < _rand:")
+    lines.append("            _order = _rand01_static(idx, _seed + 1.0) * _group_size")
+    lines.append("    _ordered_outputs.append((_prio, _order, _group_idx, _blend, _color, _intensity, _alpha, _entry))")
+    lines.append("_ordered_outputs.sort(key=lambda item: (item[0], item[1], item[2]))")
+    lines.append("for _prio, _order, _group_idx, _blend, _color, _intensity, _alpha, _entry in _ordered_outputs:")
+    lines.append("    _entry_count = _entry_active_count(_entry, frame)")
+    lines.append("    if _entry_is_empty(_entry):")
+    lines.append("        _entry_count = 1")
+    lines.append("    if _entry_count > 0:")
+    lines.append("        _src_alpha = _clamp01(_alpha * (_color[3] if len(_color) > 3 else 1.0))")
+    lines.append("        _src_color = [_color[0] * _intensity, _color[1] * _intensity, _color[2] * _intensity, 1.0]")
+    lines.append("        for _ in range(int(_entry_count)):")
+    lines.append("            color = _blend_over(color, _src_color, _src_alpha, _blend)")
 
     body = ["def _led_effect(idx, pos, frame):", "    color = [0.0, 0.0, 0.0, 1.0]"]
     body.extend([f"    {line}" for line in lines])
@@ -983,6 +1126,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         "_clamp": _clamp,
         "_clamp01": _clamp01,
         "_alpha_over": _alpha_over,
+        "_blend_over": _blend_over,
         "_rand01": _rand01,
         "_rand01_static": _rand01_static,
         "_rgb_to_hsv": _rgb_to_hsv,
@@ -1014,6 +1158,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         "_entry_loop": _entry_loop,
         "_entry_active_count": _entry_active_count,
         "_entry_progress": _entry_progress,
+        "_entry_active_index": _entry_active_index,
         "bpy": bpy,
         "math": math,
         "mathutils": mathutils,
@@ -1113,6 +1258,7 @@ def get_output_activity(tree: bpy.types.NodeTree, frame: float) -> Dict[str, boo
         "_entry_loop": _entry_loop,
         "_entry_active_count": _entry_active_count,
         "_entry_progress": _entry_progress,
+        "_entry_active_index": _entry_active_index,
         "bpy": bpy,
         "math": math,
         "mathutils": mathutils,

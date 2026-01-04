@@ -6,7 +6,7 @@ class LDLEDMeshUVNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Find UV from the nearest mesh vertex in a collection."""
 
     bl_idname = "LDLEDMeshUVNode"
-    bl_label = "LED Mesh UV"
+    bl_label = "Mesh UV"
     bl_icon = "UV"
 
     collection: bpy.props.PointerProperty(

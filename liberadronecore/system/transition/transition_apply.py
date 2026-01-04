@@ -65,6 +65,21 @@ def _purge_transition_collections(node_name: str) -> None:
             _remove_collection_recursive(col)
 
 
+def purge_transition_nodes(nodes: Sequence[bpy.types.Node]) -> None:
+    removed: set[str] = set()
+    for node in nodes:
+        _purge_transition_collections(node.name)
+        col = getattr(node, "collection", None)
+        if col and col.name not in removed:
+            _remove_collection_recursive(col)
+            removed.add(col.name)
+        if hasattr(node, "collection"):
+            try:
+                node.collection = None
+            except Exception:
+                pass
+
+
 def _set_transition_collection(node: bpy.types.Node, scene: bpy.types.Scene) -> None:
     if not hasattr(node, "collection"):
         return

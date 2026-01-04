@@ -6,7 +6,7 @@ class LDLEDCatCacheNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Cache LED colors by name."""
 
     bl_idname = "LDLEDCatCacheNode"
-    bl_label = "LED Category Cache"
+    bl_label = "Category Cache"
     bl_icon = "FILE_CACHE"
 
     cache_modes = [

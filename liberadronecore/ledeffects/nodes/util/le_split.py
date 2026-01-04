@@ -6,7 +6,7 @@ class LDLEDSplitNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Split a color into channels (RGB or HSV)."""
 
     bl_idname = "LDLEDSplitNode"
-    bl_label = "LED Split"
+    bl_label = "Split"
     bl_icon = "SEQUENCE_COLOR_01"
 
     mode_items = [

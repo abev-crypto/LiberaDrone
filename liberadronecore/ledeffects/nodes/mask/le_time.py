@@ -6,7 +6,7 @@ class LDLEDTimeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Output a 0-1 mask based on entry progress."""
 
     bl_idname = "LDLEDTimeMaskNode"
-    bl_label = "LED Time Mask"
+    bl_label = "Time"
     bl_icon = "TIME"
 
     mode_items = [

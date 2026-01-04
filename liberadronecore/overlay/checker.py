@@ -11,6 +11,8 @@ from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 
+from liberadronecore.formation import fn_parse_pairing
+
 FORMATION_ROOT = "Formation"
 ATTR_COLORS = {
     "speed": (1.0, 1.0, 0.2, 1.0),
@@ -22,7 +24,7 @@ ATTR_COLORS = {
 _handler = None
 _text_handler = None
 _CHECK_CACHE = {
-    "scene_id": None,
+    "scene_name": None,
     "frame": None,
     "prev_frame": None,
     "signature": None,
@@ -38,16 +40,6 @@ _CHECK_CACHE = {
     "min_distance": [],
 }
 
-
-def _scene_id(scene) -> int | None:
-    if scene is None:
-        return None
-    try:
-        return int(scene.as_pointer())
-    except Exception:
-        return None
-
-
 def _get_fps(scene: bpy.types.Scene) -> float:
     fps = float(getattr(scene.render, "fps", 0.0))
     base = float(getattr(scene.render, "fps_base", 1.0) or 1.0)
@@ -58,7 +50,28 @@ def _get_fps(scene: bpy.types.Scene) -> float:
     return fps / base
 
 
-def _collect_formation_positions(scene: bpy.types.Scene, depsgraph) -> tuple[list[Vector], tuple[tuple[str, int], ...]]:
+def _valid_pair_attr(attr, count: int) -> bool:
+    return bool(attr and attr.domain == 'POINT' and attr.data_type == 'INT' and len(attr.data) == count)
+
+
+def _collect_pair_ids(eval_mesh: bpy.types.Mesh, base_mesh: bpy.types.Mesh | None) -> list[int] | None:
+    if eval_mesh is None:
+        return None
+    count = len(eval_mesh.vertices)
+    attr = eval_mesh.attributes.get(fn_parse_pairing.PAIR_ATTR_NAME)
+    if not _valid_pair_attr(attr, count) and base_mesh is not None:
+        attr = base_mesh.attributes.get(fn_parse_pairing.PAIR_ATTR_NAME)
+    if not _valid_pair_attr(attr, count):
+        return None
+    values = [0] * count
+    attr.data.foreach_get("value", values)
+    return values
+
+
+def _collect_formation_positions(
+    scene: bpy.types.Scene,
+    depsgraph,
+) -> tuple[list[Vector], tuple[tuple[str, int | str], ...]]:
     col = bpy.data.collections.get(FORMATION_ROOT)
     if col is None:
         return [], ()
@@ -66,7 +79,10 @@ def _collect_formation_positions(scene: bpy.types.Scene, depsgraph) -> tuple[lis
     meshes.sort(key=lambda o: o.name)
 
     positions: list[Vector] = []
-    signature: list[tuple[str, int]] = []
+    signature: list[tuple[str, int | str]] = [("__scene__", scene.name if scene else "")]
+    pairs_ok = True
+    paired_positions: list[tuple[int, Vector]] = []
+    fallback_positions: list[Vector] = []
     for obj in meshes:
         eval_obj = obj.evaluated_get(depsgraph)
         eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
@@ -74,8 +90,24 @@ def _collect_formation_positions(scene: bpy.types.Scene, depsgraph) -> tuple[lis
             continue
         signature.append((obj.name, len(eval_mesh.vertices)))
         mw = eval_obj.matrix_world
-        positions.extend([mw @ v.co for v in eval_mesh.vertices])
+        obj_positions = [mw @ v.co for v in eval_mesh.vertices]
+        fallback_positions.extend(obj_positions)
+        pair_ids = _collect_pair_ids(eval_mesh, obj.data)
+        if pair_ids is None or len(pair_ids) != len(obj_positions):
+            pairs_ok = False
+        else:
+            paired_positions.extend(zip(pair_ids, obj_positions))
         eval_obj.to_mesh_clear()
+    if not fallback_positions:
+        signature.append(("__pair_sort__", 0))
+        return [], tuple(signature)
+    if pairs_ok and paired_positions:
+        paired_positions.sort(key=lambda item: item[0])
+        positions = [pos for _, pos in paired_positions]
+        signature.append(("__pair_sort__", 1))
+    else:
+        positions = fallback_positions
+        signature.append(("__pair_sort__", 0))
     return positions, tuple(signature)
 
 
@@ -110,9 +142,9 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
     if scene is None:
         return None
 
-    scene_id = _scene_id(scene)
+    scene_name = scene.name if scene else None
     frame = int(getattr(scene, "frame_current", 0))
-    if cache["scene_id"] == scene_id and cache["frame"] == frame and cache["positions"]:
+    if cache["scene_name"] == scene_name and cache["frame"] == frame and cache["positions"]:
         if need_distance and not cache["min_distance"]:
             cache["min_distance"] = _compute_min_distances(cache["positions"])
         return cache
@@ -122,7 +154,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
     if not positions:
         cache.update(
             {
-                "scene_id": scene_id,
+                "scene_name": scene_name,
                 "frame": frame,
                 "prev_frame": None,
                 "signature": signature,
@@ -140,14 +172,14 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
         )
         return None
 
-    reset = cache["scene_id"] != scene_id or cache["signature"] != signature
+    reset = cache["signature"] != signature
 
     if reset:
         positions_np = _positions_to_numpy(positions)
         zeros = [0.0] * len(positions)
         cache.update(
             {
-                "scene_id": scene_id,
+                "scene_name": scene_name,
                 "frame": frame,
                 "prev_frame": None,
                 "signature": signature,
@@ -177,7 +209,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
         zeros = [0.0] * len(positions)
         cache.update(
             {
-                "scene_id": scene_id,
+                "scene_name": scene_name,
                 "frame": frame,
                 "prev_frame": None,
                 "signature": signature,
@@ -213,7 +245,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
 
     cache.update(
         {
-            "scene_id": scene_id,
+            "scene_name": scene_name,
             "frame": frame,
             "prev_frame": prev_frame,
             "signature": signature,
@@ -258,21 +290,7 @@ def _get_range_bounds(scene):
         min_v = Vector((min(v.x for v in bounds), min(v.y for v in bounds), min(v.z for v in bounds)))
         max_v = Vector((max(v.x for v in bounds), max(v.y for v in bounds), max(v.z for v in bounds)))
         return min_v, max_v
-
-    width = float(getattr(scene, "ld_checker_range_width", 0.0))
-    height = float(getattr(scene, "ld_checker_range_height", 0.0))
-    depth = float(getattr(scene, "ld_checker_range_depth", 0.0))
-    if width <= 0.0:
-        return None
-    if height <= 0.0:
-        height = width
-    if depth <= 0.0:
-        depth = width
-    half_w = width * 0.5
-    half_d = depth * 0.5
-    min_v = Vector((-half_w, 0.0, -half_d))
-    max_v = Vector((half_w, height, half_d))
-    return min_v, max_v
+    return None
 
 
 def _draw_stats(scene: bpy.types.Scene, font_id: int = 0):

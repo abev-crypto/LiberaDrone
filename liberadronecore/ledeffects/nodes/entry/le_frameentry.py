@@ -6,7 +6,7 @@ class LDLEDFrameEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Entry active between start and duration frames."""
 
     bl_idname = "LDLEDFrameEntryNode"
-    bl_label = "LED Frame Entry"
+    bl_label = "Frame Entry"
     bl_icon = "TIME"
 
     start: bpy.props.IntProperty(

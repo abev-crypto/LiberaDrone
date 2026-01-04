@@ -6,7 +6,7 @@ class LDLEDCollectionInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Provides access to a Blender collection for LED assignment."""
 
     bl_idname = "LDLEDCollectionInfoNode"
-    bl_label = "LED Collection Info"
+    bl_label = "Collection Info"
     bl_icon = "OUTLINER_COLLECTION"
 
     collection: bpy.props.PointerProperty(

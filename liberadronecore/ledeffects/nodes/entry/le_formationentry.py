@@ -6,7 +6,7 @@ class LDLEDFormationEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Entry based on formation schedule."""
 
     bl_idname = "LDLEDFormationEntryNode"
-    bl_label = "LED Formation Entry"
+    bl_label = "Formation Entry"
     bl_icon = "OUTLINER_COLLECTION"
 
     formation_name: bpy.props.StringProperty(

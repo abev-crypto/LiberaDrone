@@ -6,7 +6,7 @@ class LDLEDBlendNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Blend two LED colors together."""
 
     bl_idname = "LDLEDBlendNode"
-    bl_label = "LED Blend"
+    bl_label = "Blend"
     bl_icon = "NODE_COMPOSITING"
 
     blend_modes = [

@@ -6,7 +6,7 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Mask by formation id (uses drone index)."""
 
     bl_idname = "LDLEDIDMaskNode"
-    bl_label = "LED ID Mask"
+    bl_label = "ID Mask"
     bl_icon = "SORTSIZE"
 
     formation_id: bpy.props.IntProperty(

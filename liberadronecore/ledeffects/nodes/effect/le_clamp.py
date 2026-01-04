@@ -6,7 +6,7 @@ class LDLEDClampNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Clamp a color between min and max values."""
 
     bl_idname = "LDLEDClampNode"
-    bl_label = "LED Clamp"
+    bl_label = "Clamp"
     bl_icon = "MODIFIER"
 
     @classmethod

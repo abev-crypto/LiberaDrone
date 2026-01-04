@@ -6,7 +6,7 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Basic math node for LED intensities."""
 
     bl_idname = "LDLEDMathNode"
-    bl_label = "LED Math"
+    bl_label = "Math"
     bl_icon = "MODIFIER"
 
     math_items = [

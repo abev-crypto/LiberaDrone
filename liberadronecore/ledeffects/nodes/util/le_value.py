@@ -6,7 +6,7 @@ class LDLEDValueNode(bpy.types.Node, LDLED_CodeNodeBase):
     """A minimal node to test the LED effects node tree."""
 
     bl_idname = "LDLEDValueNode"
-    bl_label = "LED Base Color"
+    bl_label = "Color"
     bl_icon = 'COLOR'
 
     color: bpy.props.FloatVectorProperty(

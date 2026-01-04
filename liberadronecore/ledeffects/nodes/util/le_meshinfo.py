@@ -6,7 +6,7 @@ class LDLEDMeshInfoNode(bpy.types.Node, LDLED_Node):
     """Exposes mesh information for LED sampling."""
 
     bl_idname = "LDLEDMeshInfoNode"
-    bl_label = "LED Mesh Info"
+    bl_label = "Mesh Info"
     bl_icon = "MESH_DATA"
 
     target_object: bpy.props.PointerProperty(

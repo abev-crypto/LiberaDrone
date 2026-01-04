@@ -6,7 +6,7 @@ class LDLEDEditEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Offset start and duration of an entry."""
 
     bl_idname = "LDLEDEditEntryNode"
-    bl_label = "LED Edit Entry"
+    bl_label = "Edit Entry"
     bl_icon = "MODIFIER"
 
     start_offset: bpy.props.IntProperty(

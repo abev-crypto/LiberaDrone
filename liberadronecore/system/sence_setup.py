@@ -21,12 +21,12 @@ PREVIEW_PLANE_SIZE = 1.0
 ANY_MESH_NAME = "AnyMesh"
 ANY_MESH_VERTS = 1  # 莉ｻ諢上・鬆らせ謨ｰ・医％縺薙ｒ螟峨∴繧具ｼ・
 COLLECTION_NAMES = [
-    "COL_Geo",
+    "LD_Objects",
 ]
 
 # 縺ｩ縺ｮ繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｫ菴輔ｒ蜈･繧後ｋ縺・
-COL_FOR_PREVIEW = "COL_Geo"
-COL_FOR_ANYMESH   = "COL_Geo"
+COL_FOR_PREVIEW = "LD_Objects"
+COL_FOR_ANYMESH   = "LD_Objects"
 
 
 # -----------------------------
@@ -246,7 +246,7 @@ def create_any_mesh_points(name=ANY_MESH_NAME, n_verts=ANY_MESH_VERTS):
 # -----------------------------
 # 螳溯｡梧悽菴・
 # -----------------------------
-def init_scene_env(n_verts=None):
+def init_scene_env(n_verts=None, *, create_any_mesh: bool = True):
     global ANY_MESH_VERTS
     if n_verts is not None:
         try:
@@ -266,18 +266,24 @@ def init_scene_env(n_verts=None):
     assign_material(iso, mat)
 
     # 3) 莉ｻ諢城らせ謨ｰ繝｡繝・す繝･・育せ繝｡繝・す繝･・・
-    any_obj = create_any_mesh_points(ANY_MESH_NAME, ANY_MESH_VERTS)
-    assign_material(any_obj, mat)
+    any_obj = None
+    if create_any_mesh:
+        any_obj = create_any_mesh_points(ANY_MESH_NAME, ANY_MESH_VERTS)
+        assign_material(any_obj, mat)
 
     # 繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｸ驟咲ｽｮ
     if COL_FOR_PREVIEW in cols:
         move_object_to_collection(iso, cols[COL_FOR_PREVIEW])
-    if COL_FOR_ANYMESH in cols:
+    if create_any_mesh and COL_FOR_ANYMESH in cols and any_obj is not None:
         move_object_to_collection(any_obj, cols[COL_FOR_ANYMESH])
 
     # 繝槭ユ繝ｪ繧｢繝ｫ閾ｪ菴薙・繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｫ蜈･繧峨↑縺・・縺ｧ縲∫ｮ｡逅・畑縺ｫ繝・く繧ｹ繝医〒邨ゅｏ繧・
-    print("[Init] Done:",
-          f"Material={mat.name}, Preview={iso.name}, AnyMesh={any_obj.name}, Attr={ATTR_NAME}")
+    if create_any_mesh and any_obj is not None:
+        print("[Init] Done:",
+              f"Material={mat.name}, Preview={iso.name}, AnyMesh={any_obj.name}, Attr={ATTR_NAME}")
+    else:
+        print("[Init] Done:",
+              f"Material={mat.name}, Preview={iso.name}, Attr={ATTR_NAME}")
 
 if __name__ == "__main__":
     init_scene_env()

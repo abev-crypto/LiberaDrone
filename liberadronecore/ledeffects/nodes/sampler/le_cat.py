@@ -6,7 +6,7 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Sample an image using frame progress and formation id."""
 
     bl_idname = "LDLEDCatSamplerNode"
-    bl_label = "LED CAT Sampler"
+    bl_label = "CAT Sampler"
     bl_icon = "IMAGE_ZDEPTH"
 
     image: bpy.props.PointerProperty(

@@ -6,7 +6,7 @@ class LDLEDCombineNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Combine channels into a color (RGB or HSV)."""
 
     bl_idname = "LDLEDCombineNode"
-    bl_label = "LED Combine"
+    bl_label = "Combine"
     bl_icon = "SEQ_CHROMA_SCOPE"
 
     mode_items = [

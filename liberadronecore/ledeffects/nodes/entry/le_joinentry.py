@@ -6,7 +6,7 @@ class LDLEDJoinEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Join multiple entry inputs into a single entry output."""
 
     bl_idname = "LDLEDJoinEntryNode"
-    bl_label = "LED Join Entry"
+    bl_label = "Join Entry"
     bl_icon = "NODETREE"
 
     @classmethod

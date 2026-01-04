@@ -6,7 +6,7 @@ class LDLEDMarkerEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Entry based on a timeline marker."""
 
     bl_idname = "LDLEDMarkerEntryNode"
-    bl_label = "LED Marker Entry"
+    bl_label = "Marker Entry"
     bl_icon = "MARKER"
 
     marker_name: bpy.props.StringProperty(

@@ -6,7 +6,7 @@ class LDLEDInsideMeshNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Mask based on whether a point is inside a mesh bounds."""
 
     bl_idname = "LDLEDInsideMeshNode"
-    bl_label = "LED Inside Mesh"
+    bl_label = "Inside Mesh"
     bl_icon = "MESH_CUBE"
 
     target_object: bpy.props.PointerProperty(

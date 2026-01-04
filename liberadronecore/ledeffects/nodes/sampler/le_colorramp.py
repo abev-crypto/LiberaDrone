@@ -6,7 +6,7 @@ class LDLEDColorRampNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Color ramp with Blender-style interpolation."""
 
     bl_idname = "LDLEDColorRampNode"
-    bl_label = "LED Color Ramp"
+    bl_label = "Color Ramp"
     bl_icon = "NODE_COMPOSITING"
 
     color_ramp_tex: bpy.props.PointerProperty(

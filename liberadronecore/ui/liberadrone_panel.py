@@ -4,8 +4,7 @@ from liberadronecore.overlay import checker
 
 PREVIEW_OBJ_NAME = "PreviewDrone"
 PREVIEW_MOD_NAME = "PreviewDroneGN"
-PROXY_OBJ_NAME = "ProxyPoints"
-PROXY_MOD_NAME = "ProxyPointsGN"
+RANGE_OBJ_NAME = "RangeObject"
 
 
 def _get_nodes_modifier(obj_name: str, mod_name: str) -> bpy.types.Modifier | None:
@@ -91,70 +90,23 @@ def _set_gn_input_value(obj_name: str, mod_name: str, socket_name: str, value) -
         obj.update_tag()
 
 
+def _touch_preview_object() -> None:
+    obj = bpy.data.objects.get(PREVIEW_OBJ_NAME)
+    if obj is None:
+        return
+    obj.update_tag()
+    view_layer = getattr(bpy.context, "view_layer", None)
+    if view_layer is not None:
+        view_layer.update()
+
+
 def _get_preview_show_ring(self):
     return bool(_get_gn_input_value(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME, "ShowRing", False))
 
 
 def _set_preview_show_ring(self, value):
     _set_gn_input_value(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME, "ShowRing", bool(value))
-
-
-def _get_proxy_max_speed_up(self):
-    return float(_get_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Max Speed Up", 0.0))
-
-
-def _set_proxy_max_speed_up(self, value):
-    _set_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Max Speed Up", float(value))
-
-
-def _get_proxy_max_speed_down(self):
-    return float(_get_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Max Speed Down", 0.0))
-
-
-def _set_proxy_max_speed_down(self, value):
-    _set_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Max Speed Down", float(value))
-
-
-def _get_proxy_max_speed_horiz(self):
-    return float(_get_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Max Speed Horiz", 0.0))
-
-
-def _set_proxy_max_speed_horiz(self, value):
-    _set_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Max Speed Horiz", float(value))
-
-
-def _get_proxy_max_acc_vert(self):
-    return float(_get_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Max Acc", 0.0))
-
-
-def _set_proxy_max_acc_vert(self, value):
-    value = float(value)
-    _set_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Max Acc", value)
-
-
-def _get_proxy_min_distance(self):
-    return float(_get_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Min Distance", 0.0))
-
-
-def _set_proxy_min_distance(self, value):
-    _set_gn_input_value(PROXY_OBJ_NAME, PROXY_MOD_NAME, "Min Distance", float(value))
-
-
-def _get_preview_gn_visible(self):
-    mod = _get_nodes_modifier(PROXY_OBJ_NAME, PROXY_MOD_NAME)
-    if mod is None:
-        return False
-    return bool(getattr(mod, "show_viewport", True))
-
-
-def _set_preview_gn_visible(self, value):
-    mod = _get_nodes_modifier(PROXY_OBJ_NAME, PROXY_MOD_NAME)
-    if mod is None:
-        return
-    mod.show_viewport = bool(value)
-    obj = bpy.data.objects.get(PROXY_OBJ_NAME)
-    if obj is not None:
-        obj.update_tag()
+    _touch_preview_object()
 
 
 def _get_preview_scale(self):
@@ -163,6 +115,72 @@ def _get_preview_scale(self):
 
 def _set_preview_scale(self, value):
     _set_gn_input_value(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME, "Scale", float(value))
+    _touch_preview_object()
+
+
+def _update_range_mesh(mesh, width: float, height: float, depth: float) -> None:
+    half_w = width * 0.5
+    half_d = depth * 0.5
+    verts = [
+        (-half_w, -half_d, 0.0),
+        (half_w, -half_d, 0.0),
+        (half_w, half_d, 0.0),
+        (-half_w, half_d, 0.0),
+        (-half_w, -half_d, height),
+        (half_w, -half_d, height),
+        (half_w, half_d, height),
+        (-half_w, half_d, height),
+    ]
+    faces = [
+        (0, 1, 2, 3),
+        (4, 5, 6, 7),
+        (0, 1, 5, 4),
+        (1, 2, 6, 5),
+        (2, 3, 7, 6),
+        (3, 0, 4, 7),
+    ]
+    mesh.clear_geometry()
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+
+
+class LD_OT_create_range_object(bpy.types.Operator):
+    bl_idname = "liberadrone.create_range_object"
+    bl_label = "Create Range Object"
+    bl_description = "Create or update RangeObject from range parameters"
+
+    def execute(self, context):
+        scene = context.scene
+        width = float(getattr(scene, "ld_checker_range_width", 0.0))
+        if width <= 0.0:
+            self.report({'ERROR'}, "Range Width must be > 0")
+            return {'CANCELLED'}
+        height = float(getattr(scene, "ld_checker_range_height", 0.0))
+        depth = float(getattr(scene, "ld_checker_range_depth", 0.0))
+        if height <= 0.0:
+            height = width
+        if depth <= 0.0:
+            depth = width
+
+        obj = bpy.data.objects.get(RANGE_OBJ_NAME)
+        if obj is None or obj.type != 'MESH':
+            mesh = bpy.data.meshes.new(f"{RANGE_OBJ_NAME}Mesh")
+            obj = bpy.data.objects.new(RANGE_OBJ_NAME, mesh)
+        else:
+            mesh = obj.data
+            if mesh is None or mesh.users > 1:
+                mesh = bpy.data.meshes.new(f"{RANGE_OBJ_NAME}Mesh")
+                obj.data = mesh
+        _update_range_mesh(mesh, width, height, depth)
+        if obj.name not in scene.collection.objects:
+            scene.collection.objects.link(obj)
+        from liberadronecore.system import sence_setup
+        target_col = sence_setup.get_or_create_collection(sence_setup.COL_FOR_PREVIEW)
+        sence_setup.move_object_to_collection(obj, target_col)
+
+        scene.ld_checker_range_object = obj
+        self.report({'INFO'}, f"RangeObject created: {obj.name}")
+        return {'FINISHED'}
 
 
 def _get_checker_enabled(self):
@@ -222,10 +240,8 @@ class LD_PT_libera_panel(bpy.types.Panel):
             icon='TRIA_DOWN' if scene.ld_ui_proxy_open else 'TRIA_RIGHT',
             emboss=False,
         )
-        row.label(text="ProxyPoints")
+        row.label(text="ErrorCheck")
         if scene.ld_ui_proxy_open:
-            if _get_nodes_modifier(PROXY_OBJ_NAME, PROXY_MOD_NAME) is None:
-                box.label(text="ProxyPointsGN not found", icon='ERROR')
             col = box.column(align=True)
             col.prop(scene, "ld_limit_profile", text="Limit Profile")
             col.prop(scene, "ld_proxy_max_speed_up", text="MaxSpeedUp")
@@ -234,11 +250,11 @@ class LD_PT_libera_panel(bpy.types.Panel):
             col.prop(scene, "ld_proxy_max_acc_vert", text="MaxAcc")
             col.prop(scene, "ld_proxy_min_distance", text="MinDistance")
             col.separator()
-            col.prop(scene, "ld_checker_range_enabled", text="Range Check")
             col.prop(scene, "ld_checker_range_object", text="Range Object")
             col.prop(scene, "ld_checker_range_width", text="Range Width")
             col.prop(scene, "ld_checker_range_height", text="Range Height")
             col.prop(scene, "ld_checker_range_depth", text="Range Depth")
+            col.operator("liberadrone.create_range_object", text="Create Range Object")
 
         box = layout.box()
         row = box.row()
@@ -299,6 +315,8 @@ class LD_PT_libera_panel(bpy.types.Panel):
         )
         row.label(text="Import")
         if scene.ld_ui_import_open:
+            box.prop(scene, "ld_import_sheet_url", text="Sheet URL")
+            box.prop(scene, "ld_import_vat_dir", text="VAT/CAT Folder")
             box.template_list(
                 "LD_UL_ImportList",
                 "",
@@ -367,6 +385,7 @@ class LD_UL_ExportList(bpy.types.UIList):
 
 classes = (
     LD_PT_libera_panel,
+    LD_OT_create_range_object,
     LD_ImportItem,
     LD_ExportItem,
     LD_UL_ImportList,
@@ -394,28 +413,28 @@ def register():
     )
     bpy.types.Scene.ld_proxy_max_speed_up = bpy.props.FloatProperty(
         name="MaxSpeedUp",
-        get=_get_proxy_max_speed_up,
-        set=_set_proxy_max_speed_up,
+        default=0.0,
+        min=0.0,
     )
     bpy.types.Scene.ld_proxy_max_speed_down = bpy.props.FloatProperty(
         name="MaxSpeedDown",
-        get=_get_proxy_max_speed_down,
-        set=_set_proxy_max_speed_down,
+        default=0.0,
+        min=0.0,
     )
     bpy.types.Scene.ld_proxy_max_speed_horiz = bpy.props.FloatProperty(
         name="MaxSpeedHoriz",
-        get=_get_proxy_max_speed_horiz,
-        set=_set_proxy_max_speed_horiz,
+        default=0.0,
+        min=0.0,
     )
     bpy.types.Scene.ld_proxy_max_acc_vert = bpy.props.FloatProperty(
         name="MaxAcc",
-        get=_get_proxy_max_acc_vert,
-        set=_set_proxy_max_acc_vert,
+        default=0.0,
+        min=0.0,
     )
     bpy.types.Scene.ld_proxy_min_distance = bpy.props.FloatProperty(
         name="MinDistance",
-        get=_get_proxy_min_distance,
-        set=_set_proxy_min_distance,
+        default=0.0,
+        min=0.0,
     )
     bpy.types.Scene.ld_preview_scale = bpy.props.FloatProperty(
         name="Scale",
@@ -472,6 +491,16 @@ def register():
     bpy.types.Scene.ld_export_items = bpy.props.CollectionProperty(type=LD_ExportItem)
     bpy.types.Scene.ld_import_index = bpy.props.IntProperty(name="Import Index", default=0)
     bpy.types.Scene.ld_export_index = bpy.props.IntProperty(name="Export Index", default=0)
+    bpy.types.Scene.ld_import_sheet_url = bpy.props.StringProperty(
+        name="Sheet URL",
+        default="",
+        subtype='NONE',
+    )
+    bpy.types.Scene.ld_import_vat_dir = bpy.props.StringProperty(
+        name="VAT/CAT Folder",
+        default="",
+        subtype='DIR_PATH',
+    )
     bpy.types.Scene.ld_ui_preview_open = bpy.props.BoolProperty(name="UI Preview Open", default=True)
     bpy.types.Scene.ld_ui_proxy_open = bpy.props.BoolProperty(name="UI Proxy Open", default=True)
     bpy.types.Scene.ld_ui_overlay_open = bpy.props.BoolProperty(name="UI Overlay Open", default=True)
@@ -501,6 +530,10 @@ def unregister():
         del bpy.types.Scene.ld_checker_range_depth
     if hasattr(bpy.types.Scene, "ld_import_index"):
         del bpy.types.Scene.ld_import_index
+    if hasattr(bpy.types.Scene, "ld_import_sheet_url"):
+        del bpy.types.Scene.ld_import_sheet_url
+    if hasattr(bpy.types.Scene, "ld_import_vat_dir"):
+        del bpy.types.Scene.ld_import_vat_dir
     if hasattr(bpy.types.Scene, "ld_export_index"):
         del bpy.types.Scene.ld_export_index
     if hasattr(bpy.types.Scene, "ld_import_items"):

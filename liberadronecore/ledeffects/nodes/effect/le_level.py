@@ -6,7 +6,7 @@ class LDLEDLevelNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Adjust color levels with gain, offset, and gamma."""
 
     bl_idname = "LDLEDLevelNode"
-    bl_label = "LED Level"
+    bl_label = "Level"
     bl_icon = "NODE_COMPOSITING"
 
     @classmethod

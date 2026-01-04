@@ -45,6 +45,37 @@ def _expand_distance_limit(value: float, scale: float) -> float:
     return value * scale if value > 0.0 else value
 
 
+def _get_scene_setting(scene, name: str, default, cast):
+    if scene is None:
+        return default
+    try:
+        return cast(getattr(scene, name, default))
+    except Exception:
+        return default
+
+
+def _get_transition_settings(scene):
+    max_subdiv = max(0, _get_scene_setting(scene, "ld_bakedt_max_subdiv", MAX_SUBDIV, int))
+    check_relax_iters = max(0, _get_scene_setting(scene, "ld_bakedt_check_relax_iters", CHECK_RELAX_ITERS, int))
+    pre_relax_iters = max(0, _get_scene_setting(scene, "ld_bakedt_pre_relax_iters", PRE_RELAX_ITERS, int))
+    exp_distance = max(0.0, _get_scene_setting(scene, "ld_bakedt_exp_distance", EXP_DISTANCE, float))
+    relax_dmin_scale = max(0.0, _get_scene_setting(scene, "ld_bakedt_relax_dmin_scale", RELAX_DMIN_SCALE, float))
+    relax_edge_frames = max(0, _get_scene_setting(scene, "ld_bakedt_relax_edge_frames", RELAX_EDGE_FRAMES, int))
+    speed_acc_margin = _get_scene_setting(scene, "ld_bakedt_speed_acc_margin", SPEED_ACC_MARGIN, float)
+    speed_acc_margin = max(0.0, min(1.0, speed_acc_margin))
+    max_neighbors = max(1, _get_scene_setting(scene, "ld_bakedt_max_neighbors", MAX_NEIGHBORS, int))
+    return {
+        "max_subdiv": max_subdiv,
+        "check_relax_iters": check_relax_iters,
+        "pre_relax_iters": pre_relax_iters,
+        "exp_distance": exp_distance,
+        "relax_dmin_scale": relax_dmin_scale,
+        "relax_edge_frames": relax_edge_frames,
+        "speed_acc_margin": speed_acc_margin,
+        "max_neighbors": max_neighbors,
+    }
+
+
 def _clamp_velocity(v: Vector, *, v_max: float, v_max_up: float, v_max_down: float, v_max_horiz: float) -> Vector:
     if v.length > 1e-12 and v.length > v_max:
         v = v * (v_max / v.length)
@@ -93,6 +124,7 @@ MAX_SUBDIV = 3               # 再帰分割の最大深さ
 SAMPLES_IN_INTERVAL = 2      # 区間チェックのサンプル数（1/3,2/3…）
 CHECK_RELAX_ITERS = 4        # 判定用の軽いリラックス反復
 PRE_RELAX_ITERS = 12         # 仮想ポーズ生成時の本気リラックス反復
+EXP_DISTANCE = 1.25          # 距離制限緩和倍率
 
 # 仮想ポーズの直線からの逸脱を抑える（前処理）
 TETHER_PRE = 0.35            # 0..1 直線位置(base)へ戻す強さ
@@ -105,6 +137,7 @@ MAX_SHIFT_RUN = None         # Noneなら D_MIN*0.75 を使用
 JERK_SCALE = 0.6             # Start/Endの急加速を緩める
 RELAX_DMIN_SCALE = 1.05      # Relax d_min scale at full strength
 RELAX_EDGE_FRAMES = 24       # Frames to ramp up from 1.0 at start/end
+SPEED_ACC_MARGIN = 0.995     # Safety margin for speed/acc limits
 
 MAX_NEIGHBORS = 25           # KDTreeで見る近傍数
 
@@ -461,9 +494,21 @@ def build_tracks_from_positions(
 
     if scene is None:
         scene = getattr(bpy, "context", None).scene if getattr(bpy, "context", None) else None
+    settings = _get_transition_settings(scene)
     v_max_up, v_max_down, v_max_horiz, v_max, a_max, j_max, d_min = _get_proxy_limits(scene)
     j_max = max(1e-6, j_max * JERK_SCALE)
-    d_min_relax = _expand_distance_limit(d_min, 1.25)
+    d_min_relax = _expand_distance_limit(d_min, settings["exp_distance"])
+    speed_margin = settings["speed_acc_margin"]
+    v_max_up_run = v_max_up * speed_margin
+    v_max_down_run = v_max_down * speed_margin
+    v_max_horiz_run = v_max_horiz * speed_margin
+    a_max_run = a_max * speed_margin
+    max_neighbors = settings["max_neighbors"]
+    max_subdiv = settings["max_subdiv"]
+    check_relax_iters = settings["check_relax_iters"]
+    pre_relax_iters = settings["pre_relax_iters"]
+    relax_dmin_scale = settings["relax_dmin_scale"]
+    relax_edge_frames = settings["relax_edge_frames"]
 
     start_f = int(frame_start)
     end_f = int(frame_end)
@@ -507,12 +552,12 @@ def build_tracks_from_positions(
         Aw, Ew, L_base, table,
         t0=0.0, t1=T_total,
         d_min=d_min_relax,
-        pre_iters=PRE_RELAX_ITERS,
+        pre_iters=pre_relax_iters,
         tether=TETHER_PRE,
         max_shift=MAX_SHIFT_PER_POSE,
-        max_subdiv=MAX_SUBDIV,
-        max_neighbors=MAX_NEIGHBORS,
-        check_relax_iters=CHECK_RELAX_ITERS,
+        max_subdiv=max_subdiv,
+        max_neighbors=max_neighbors,
+        check_relax_iters=check_relax_iters,
         samples_in_interval=SAMPLES_IN_INTERVAL,
         relax_endpoints=False
     )
@@ -569,7 +614,7 @@ def build_tracks_from_positions(
         target = [Vector((float(x), float(y), float(z))) for x, y, z in target_np]
         next_pos = [p.copy() for p in target]
 
-        edge_frames = max(1, int(RELAX_EDGE_FRAMES))
+        edge_frames = max(1, int(relax_edge_frames))
         edge_dist = min(f - start_f, end_f - f)
         if edge_dist <= 0:
             d_min_scale = 1.0
@@ -577,7 +622,7 @@ def build_tracks_from_positions(
             ramp = edge_dist / edge_frames
             if ramp > 1.0:
                 ramp = 1.0
-            d_min_scale = 1.0 + (RELAX_DMIN_SCALE - 1.0) * ramp
+            d_min_scale = 1.0 + (relax_dmin_scale - 1.0) * ramp
         d_min_run = d_min * d_min_scale
 
         relax_pose(
@@ -585,12 +630,12 @@ def build_tracks_from_positions(
             base=target,
             d_min=d_min_run,
             iters=RUN_RELAX_ITERS,
-            max_neighbors=MAX_NEIGHBORS,
+            max_neighbors=max_neighbors,
             tether=TETHER_RUN,
             max_shift=max_shift_run,
         )
 
-        v_allow = min(v_max, max(0.0, v_allow))
+        v_allow = min(v_max, max(0.0, v_allow)) * speed_margin
 
         next_pos_np = np.asarray(
             [[p.x, p.y, p.z] for p in next_pos],
@@ -601,19 +646,19 @@ def build_tracks_from_positions(
         v = _clamp_velocity_array(
             v,
             v_max=v_allow,
-            v_max_up=v_max_up,
-            v_max_down=v_max_down,
-            v_max_horiz=v_max_horiz,
+            v_max_up=v_max_up_run,
+            v_max_down=v_max_down_run,
+            v_max_horiz=v_max_horiz_run,
         )
         next_pos_np = cur_pos_np + v * dt
 
         dv = v - prev_vel_np
         acc = np.linalg.norm(dv, axis=1) / dt
-        acc_limit = max(a_max, 1e-12)
+        acc_limit = max(a_max_run, 1e-12)
         acc_mask = acc > acc_limit
         if np.any(acc_mask):
             scale = np.ones_like(acc)
-            scale[acc_mask] = a_max / acc[acc_mask]
+            scale[acc_mask] = a_max_run / acc[acc_mask]
             dv = dv * scale[:, None]
             v2 = prev_vel_np + dv
             spd2 = np.linalg.norm(v2, axis=1)

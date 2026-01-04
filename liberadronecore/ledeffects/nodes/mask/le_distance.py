@@ -6,7 +6,7 @@ class LDLEDDistanceMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Mask by distance to a mesh bounds."""
 
     bl_idname = "LDLEDDistanceMaskNode"
-    bl_label = "LED Distance Mask"
+    bl_label = "Distance Mask"
     bl_icon = "MOD_SCREW"
 
     target_object: bpy.props.PointerProperty(

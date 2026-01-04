@@ -6,7 +6,7 @@ class LDLEDFormationUVNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Project position into the DroneSystem bounds to produce UV."""
 
     bl_idname = "LDLEDFormationUVNode"
-    bl_label = "LED Formation UV"
+    bl_label = "Formation UV"
     bl_icon = "OUTLINER_OB_GROUP_INSTANCE"
 
     @classmethod

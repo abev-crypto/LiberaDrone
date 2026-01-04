@@ -9,6 +9,7 @@ from .entry import le_frameentry
 from .entry import le_joinentry
 from .entry import le_loopentry
 from .entry import le_markerentry
+from .entry import le_entryswitch
 from .mask import le_distance
 from .mask import le_idmask
 from .mask import le_insidemesh
@@ -29,3 +30,4 @@ from .util import le_math
 from .util import le_meshinfo
 from .util import le_split
 from .util import le_value
+from .util import le_valuefloat

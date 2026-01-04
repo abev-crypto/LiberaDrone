@@ -6,7 +6,7 @@ class LDLEDProjectionUVNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Project position into a mesh bbox to produce UV."""
 
     bl_idname = "LDLEDProjectionUVNode"
-    bl_label = "LED Projection UV"
+    bl_label = "Projection UV"
     bl_icon = "MOD_UVPROJECT"
 
     target_object: bpy.props.PointerProperty(

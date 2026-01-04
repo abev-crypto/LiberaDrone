@@ -6,7 +6,7 @@ class LDLEDVertexColorNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Sample nearest vertex color from a mesh."""
 
     bl_idname = "LDLEDVertexColorNode"
-    bl_label = "LED Vertex Color"
+    bl_label = "Vertex Color"
     bl_icon = "GROUP_VERTEX"
 
     target_object: bpy.props.PointerProperty(

@@ -6,7 +6,7 @@ class LDLEDLoopEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Loop an entry with an offset and repeat count."""
 
     bl_idname = "LDLEDLoopEntryNode"
-    bl_label = "LED Loop Entry"
+    bl_label = "Loop Entry"
     bl_icon = "RECOVER_LAST"
 
     offset: bpy.props.IntProperty(
