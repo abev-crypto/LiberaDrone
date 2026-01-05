@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 import io
 import os
 import re
@@ -17,7 +17,7 @@ SHEET_URL_DEFAULT = (
     "1EbPM3lqhiVnR1ZgmwEZoooDo7JqmlJyqLl51QKSAZhI/edit?gid=0#gid=0"
 )
 
-HEADERS = ("Use", "Name", "Attr", "Start(F)", "Duration(F)", "States")
+HEADERS = ("Use", "Name", "Attr", "Start(F)", "Duration(F)", "States", "FileCheck")
 
 
 def _ensure_qapp():
@@ -137,6 +137,18 @@ def _parse_rows(text: str) -> list[dict[str, str]]:
                 "states": states,
             }
         )
+    for idx, row in enumerate(parsed):
+        if row.get("attr") != "Transition":
+            continue
+        if row.get("name"):
+            continue
+        prev_name = ""
+        for prev in range(idx - 1, -1, -1):
+            prev_name = parsed[prev].get("name", "")
+            if prev_name:
+                break
+        if prev_name:
+            row["name"] = f"{prev_name}Transition"
     return parsed
 
 
@@ -155,16 +167,26 @@ def _map_show_neighbors(rows: list[dict[str, str]]) -> None:
 
 def _filter_transition_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     _map_show_neighbors(rows)
-    transitions: list[dict[str, str]] = []
+    display_rows: list[dict[str, str]] = []
     for idx, row in enumerate(rows):
-        if row.get("attr") != "Transition":
+        attr = row.get("attr")
+        if attr == "Show":
+            row["row_index"] = idx
+            display_rows.append(row)
             continue
-        if row.get("prev_show_idx") is None or row.get("next_show_idx") is None:
+        if attr != "Transition":
+            continue
+        prev_idx = row.get("prev_show_idx")
+        next_idx = row.get("next_show_idx")
+        if prev_idx is None or next_idx is None:
+            continue
+        prev_show = rows[prev_idx]
+        next_show = rows[next_idx]
+        if prev_show.get("states") != "完了" or next_show.get("states") != "完了":
             continue
         row["row_index"] = idx
-        transitions.append(row)
-    completed = [row for row in transitions if row.get("states") == "完了"]
-    return completed if completed else transitions
+        display_rows.append(row)
+    return display_rows
 
 
 def _ensure_collection(scene: bpy.types.Scene, name: str) -> bpy.types.Collection:
@@ -219,6 +241,38 @@ def _find_vat_cat_files(folder: str) -> tuple[str | None, str | None]:
             color_path = path
             continue
     return pos_path, color_path
+
+
+def _get_image_width(path: str | None) -> int | None:
+    if not path:
+        return None
+    img = _load_image(path)
+    if img is None or not getattr(img, "size", None):
+        return None
+    return int(img.size[0])
+
+
+def _calc_asset_status(base_dir: str, row: dict[str, str]) -> str:
+    if not base_dir or not row.get("name"):
+        return ""
+    folder = os.path.join(base_dir, row.get("name", ""))
+    pos_path, color_path = _find_vat_cat_files(folder)
+    vat_width = _get_image_width(pos_path)
+    cat_width = _get_image_width(color_path)
+    vat_exists = vat_width is not None
+    cat_exists = cat_width is not None
+    if not vat_exists and not cat_exists:
+        return "Missing"
+    if not vat_exists:
+        return "MissingVAT"
+    if not cat_exists:
+        return "MissingCAT"
+    duration = _to_int(row.get("duration_frame"))
+    if duration is None or duration <= 0:
+        return "DurError"
+    if vat_width != duration or cat_width != duration:
+        return "DurError"
+    return "OK"
 
 
 def _create_point_object(name: str, count: int, collection: bpy.types.Collection) -> bpy.types.Object:
@@ -357,6 +411,7 @@ class SheetImportWindow(QtWidgets.QMainWindow):
         self._rows_all: list[dict[str, str]] = []
         self._rows: list[dict[str, str]] = []
         self.setWindowTitle("LiberaDrone Import Sheet")
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
@@ -400,6 +455,7 @@ class SheetImportWindow(QtWidgets.QMainWindow):
         if not url:
             self.status_label.setText("Missing URL.")
             return
+        base_dir = self.folder_edit.text().strip()
         try:
             text = _fetch_csv(url)
             rows = _parse_rows(text)
@@ -417,12 +473,14 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             check_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsUserCheckable)
             check_item.setCheckState(QtCore.Qt.Unchecked)
             self.table.setItem(row_idx, 0, check_item)
+            status = _calc_asset_status(base_dir, row)
             values = (
                 row.get("name", ""),
                 row.get("attr", ""),
                 row.get("start_frame", ""),
                 row.get("duration_frame", ""),
                 row.get("states", ""),
+                status,
             )
             for col_idx, value in enumerate(values, start=1):
                 item = QtWidgets.QTableWidgetItem(value)
@@ -461,114 +519,161 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             self.status_label.setText("Formation tree not available.")
             return
 
+        import_indices: set[int] = set()
+        for row in selected:
+            idx = row.get("row_index")
+            if idx is None:
+                continue
+            import_indices.add(idx)
+            if row.get("attr") == "Transition":
+                prev_idx = self._rows_all[idx].get("prev_show_idx")
+                next_idx = self._rows_all[idx].get("next_show_idx")
+                if prev_idx is not None:
+                    import_indices.add(prev_idx)
+                if next_idx is not None:
+                    import_indices.add(next_idx)
+
+        if not import_indices:
+            self.status_label.setText("No rows selected.")
+            return
+
+        rows_to_import: list[dict[str, str]] = []
+        for idx in sorted(import_indices):
+            row = dict(self._rows_all[idx])
+            row["row_index"] = idx
+            rows_to_import.append(row)
+
+        status_map: dict[int, str] = {}
+        for row in rows_to_import:
+            status = _calc_asset_status(base_dir, row)
+            status_map[row["row_index"]] = status
+            if status == "DurError":
+                name = row.get("name", "")
+                self.status_label.setText(f"DurError: {name}")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Import Error",
+                    f"Duration mismatch: {name}",
+                )
+                return
+
+        def _should_create_vat(row, status: str, pos_img) -> bool:
+            if pos_img is None:
+                return False
+            if status in ("Missing", "MissingVAT"):
+                return False
+            if row.get("attr") == "Transition" and status != "OK":
+                return False
+            return True
+
+        assets: dict[int, dict[str, object]] = {}
+        vat_heights: set[int] = set()
+        for row in rows_to_import:
+            idx = row["row_index"]
+            name = row.get("name", "")
+            pos_img = None
+            pos_min, pos_max = (0.0, 0.0, 0.0), (1.0, 1.0, 1.0)
+            if name:
+                folder = os.path.join(base_dir, name)
+                pos_path, _color_path = _find_vat_cat_files(folder)
+                pos_img = _load_image(pos_path) if pos_path else None
+                bounds = _parse_bounds_from_name(os.path.basename(pos_path)) if pos_path else None
+                if bounds:
+                    pos_min, pos_max = bounds
+            assets[idx] = {
+                "pos_img": pos_img,
+                "pos_min": pos_min,
+                "pos_max": pos_max,
+            }
+            status = status_map.get(idx, "")
+            if _should_create_vat(row, status, pos_img):
+                vat_heights.add(int(pos_img.size[1]))
+
+        if len(vat_heights) > 1:
+            self.status_label.setText("Error: Drone count mismatch.")
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Import Error",
+                "Drone count mismatch between VAT images.",
+            )
+            return
+
         node_map: dict[str, bpy.types.Node] = {}
         for node in tree.nodes:
             key = node.label or node.name
             node_map[key] = node
 
-        if hasattr(scene, "ld_import_items"):
-            scene.ld_import_items.clear()
-            for row in selected:
-                item = scene.ld_import_items.add()
-                item.name = row.get("name", "")
-
         start_node = next((n for n in tree.nodes if n.bl_idname == "FN_StartNode"), None)
         if start_node is None:
             start_node = tree.nodes.new("FN_StartNode")
             start_node.location = (-300, 0)
+        if vat_heights:
+            start_node.drone_count = int(next(iter(vat_heights)))
 
         created = 0
-        for row in selected:
-            idx = row.get("row_index")
-            if idx is None:
+        prev_node = start_node
+        for order_idx, row in enumerate(rows_to_import):
+            idx = row["row_index"]
+            name = row.get("name", "")
+            if not name:
                 continue
-            prev_idx = self._rows_all[idx].get("prev_show_idx")
-            next_idx = self._rows_all[idx].get("next_show_idx")
-            prev_row = self._rows_all[prev_idx] if prev_idx is not None else None
-            next_row = self._rows_all[next_idx] if next_idx is not None else None
+            status = status_map.get(idx, "")
+            attr = row.get("attr")
+            pos_img = assets[idx]["pos_img"]
+            pos_min = assets[idx]["pos_min"]
+            pos_max = assets[idx]["pos_max"]
+            duration = _to_float(row.get("duration_frame"))
 
-            for show_row in (prev_row, next_row):
-                if not show_row:
-                    continue
-                name = show_row.get("name", "")
-                if not name:
-                    continue
-                if name in node_map and node_map[name].bl_idname == "FN_ShowNode":
-                    continue
-                col = _ensure_collection(scene, name)
-                folder = os.path.join(base_dir, name)
-                pos_path, _color_path = _find_vat_cat_files(folder)
-                pos_img = _load_image(pos_path) if pos_path else None
-                bounds = _parse_bounds_from_name(os.path.basename(pos_path)) if pos_path else None
-                pos_min, pos_max = bounds if bounds else ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
-                start_frame = _to_int(show_row.get("start_frame"))
+            if attr == "Transition" and status == "OK":
+                bl_idname = "FN_ShowNode"
+            elif attr == "Transition":
+                bl_idname = "FN_TransitionNode"
+            else:
+                bl_idname = "FN_ShowNode"
+
+            node = node_map.get(name)
+            if node is None or node.bl_idname != bl_idname:
+                node = tree.nodes.new(bl_idname)
+                node.label = name
+                node.location = (200 * (order_idx + 1), 0)
+                node_map[name] = node
+                created += 1
+
+            col = _ensure_collection(scene, name)
+            if bl_idname == "FN_ShowNode":
+                _set_socket_collection(node, "Collection", col)
+            else:
+                if hasattr(node, "collection"):
+                    try:
+                        node.collection = col
+                    except Exception:
+                        pass
+
+            if duration is not None:
+                _set_socket_value(node, "Duration", duration)
+
+            if _should_create_vat(row, status, pos_img):
                 obj = _create_point_object(f"{name}_VAT", pos_img.size[1] if pos_img else 1, col)
                 if pos_img is not None:
                     try:
                         pos_img.colorspace_settings.name = "Non-Color"
                     except Exception:
                         pass
-                    _apply_vat_to_object(obj, pos_img, pos_min=pos_min, pos_max=pos_max, start_frame=start_frame)
+                    _apply_vat_to_object(obj, pos_img, pos_min=pos_min, pos_max=pos_max, start_frame=None)
 
-                show_node = tree.nodes.new("FN_ShowNode")
-                show_node.label = name
-                show_node.location = (0, 0)
-                _set_socket_collection(show_node, "Collection", col)
-                duration = _to_float(show_row.get("duration_frame"))
-                if duration is not None:
-                    _set_socket_value(show_node, "Duration", duration)
-                node_map[name] = show_node
-                created += 1
-
-            transition_name = row.get("name", "")
-            if transition_name:
-                if transition_name in node_map and node_map[transition_name].bl_idname == "FN_TransitionNode":
-                    transition_node = node_map[transition_name]
-                else:
-                    transition_node = tree.nodes.new("FN_TransitionNode")
-                    transition_node.label = transition_name
-                    transition_node.location = (200, 0)
-                    duration = _to_float(row.get("duration_frame"))
-                    if duration is not None:
-                        _set_socket_value(transition_node, "Duration", duration)
-                    node_map[transition_name] = transition_node
-                    created += 1
-                col = _ensure_collection(scene, transition_name)
-                folder = os.path.join(base_dir, transition_name)
-                pos_path, _color_path = _find_vat_cat_files(folder)
-                pos_img = _load_image(pos_path) if pos_path else None
-                bounds = _parse_bounds_from_name(os.path.basename(pos_path)) if pos_path else None
-                pos_min, pos_max = bounds if bounds else ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
-                start_frame = _to_int(row.get("start_frame"))
-                obj = _create_point_object(f"{transition_name}_VAT", pos_img.size[1] if pos_img else 1, col)
-                if pos_img is not None:
-                    try:
-                        pos_img.colorspace_settings.name = "Non-Color"
-                    except Exception:
-                        pass
-                    _apply_vat_to_object(obj, pos_img, pos_min=pos_min, pos_max=pos_max, start_frame=start_frame)
-                if hasattr(transition_node, "collection"):
-                    try:
-                        transition_node.collection = col
-                    except Exception:
-                        pass
-            else:
-                transition_node = None
-
-            if prev_row and transition_node:
-                prev_node = node_map.get(prev_row.get("name", ""))
-                if prev_node:
-                    _link_flow(tree, start_node, prev_node)
-                    _link_flow(tree, prev_node, transition_node)
-            if next_row and transition_node:
-                next_node = node_map.get(next_row.get("name", ""))
-                if next_node:
-                    _link_flow(tree, transition_node, next_node)
+            if prev_node:
+                _link_flow(tree, prev_node, node)
+            prev_node = node
 
         if created:
             self.status_label.setText(f"Imported: {created} nodes")
         else:
             self.status_label.setText("No nodes created.")
+        try:
+            SheetImportWindow._instance = None
+            self.close()
+        except Exception:
+            pass
 
     @staticmethod
     def show_window(sheet_url: str, vat_dir: str = ""):
@@ -582,3 +687,6 @@ class SheetImportWindow(QtWidgets.QMainWindow):
         SheetImportWindow._instance.resize(900, 500)
         SheetImportWindow._instance.show()
         return SheetImportWindow._instance
+
+
+

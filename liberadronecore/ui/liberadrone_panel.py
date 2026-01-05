@@ -251,9 +251,10 @@ class LD_PT_libera_panel(bpy.types.Panel):
             col.prop(scene, "ld_proxy_min_distance", text="MinDistance")
             col.separator()
             col.prop(scene, "ld_checker_range_object", text="Range Object")
-            col.prop(scene, "ld_checker_range_width", text="Range Width")
-            col.prop(scene, "ld_checker_range_height", text="Range Height")
-            col.prop(scene, "ld_checker_range_depth", text="Range Depth")
+            if scene.ld_checker_range_object is None:
+                col.prop(scene, "ld_checker_range_width", text="Range Width")
+                col.prop(scene, "ld_checker_range_height", text="Range Height")
+                col.prop(scene, "ld_checker_range_depth", text="Range Depth")
             col.operator("liberadrone.create_range_object", text="Create Range Object")
 
         box = layout.box()
@@ -317,37 +318,7 @@ class LD_PT_libera_panel(bpy.types.Panel):
         if scene.ld_ui_import_open:
             box.prop(scene, "ld_import_sheet_url", text="Sheet URL")
             box.prop(scene, "ld_import_vat_dir", text="VAT/CAT Folder")
-            box.template_list(
-                "LD_UL_ImportList",
-                "",
-                scene,
-                "ld_import_items",
-                scene,
-                "ld_import_index",
-                rows=3,
-            )
             box.operator("liberadrone.show_import_sheet", text="Import Sheet (Test)")
-
-        box = layout.box()
-        row = box.row()
-        row.prop(
-            scene,
-            "ld_ui_export_open",
-            text="",
-            icon='TRIA_DOWN' if scene.ld_ui_export_open else 'TRIA_RIGHT',
-            emboss=False,
-        )
-        row.label(text="Export")
-        if scene.ld_ui_export_open:
-            box.template_list(
-                "LD_UL_ExportList",
-                "",
-                scene,
-                "ld_export_items",
-                scene,
-                "ld_export_index",
-                rows=3,
-            )
 
         box = layout.box()
         row = box.row()
@@ -365,31 +336,9 @@ class LD_PT_libera_panel(bpy.types.Panel):
             row.operator("liberadrone.setup_workspace_led", text="LEDEffectNodeWindow")
 
 
-class LD_ImportItem(bpy.types.PropertyGroup):
-    name: bpy.props.StringProperty(name="Import Item")
-
-
-class LD_ExportItem(bpy.types.PropertyGroup):
-    name: bpy.props.StringProperty(name="Export Item")
-
-
-class LD_UL_ImportList(bpy.types.UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        layout.prop(item, "name", text="", emboss=False, icon='IMPORT')
-
-
-class LD_UL_ExportList(bpy.types.UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        layout.prop(item, "name", text="", emboss=False, icon='EXPORT')
-
-
 classes = (
     LD_PT_libera_panel,
     LD_OT_create_range_object,
-    LD_ImportItem,
-    LD_ExportItem,
-    LD_UL_ImportList,
-    LD_UL_ExportList,
 )
 
 
@@ -413,27 +362,27 @@ def register():
     )
     bpy.types.Scene.ld_proxy_max_speed_up = bpy.props.FloatProperty(
         name="MaxSpeedUp",
-        default=0.0,
+        default=4.0,
         min=0.0,
     )
     bpy.types.Scene.ld_proxy_max_speed_down = bpy.props.FloatProperty(
         name="MaxSpeedDown",
-        default=0.0,
+        default=3.0,
         min=0.0,
     )
     bpy.types.Scene.ld_proxy_max_speed_horiz = bpy.props.FloatProperty(
         name="MaxSpeedHoriz",
-        default=0.0,
+        default=5.0,
         min=0.0,
     )
     bpy.types.Scene.ld_proxy_max_acc_vert = bpy.props.FloatProperty(
         name="MaxAcc",
-        default=0.0,
+        default=3.0,
         min=0.0,
     )
     bpy.types.Scene.ld_proxy_min_distance = bpy.props.FloatProperty(
         name="MinDistance",
-        default=0.0,
+        default=1.5,
         min=0.0,
     )
     bpy.types.Scene.ld_preview_scale = bpy.props.FloatProperty(
@@ -487,10 +436,6 @@ def register():
         default=100.0,
         min=0.0,
     )
-    bpy.types.Scene.ld_import_items = bpy.props.CollectionProperty(type=LD_ImportItem)
-    bpy.types.Scene.ld_export_items = bpy.props.CollectionProperty(type=LD_ExportItem)
-    bpy.types.Scene.ld_import_index = bpy.props.IntProperty(name="Import Index", default=0)
-    bpy.types.Scene.ld_export_index = bpy.props.IntProperty(name="Export Index", default=0)
     bpy.types.Scene.ld_import_sheet_url = bpy.props.StringProperty(
         name="Sheet URL",
         default="",
@@ -507,8 +452,19 @@ def register():
     bpy.types.Scene.ld_ui_graph_open = bpy.props.BoolProperty(name="UI Graph Open", default=True)
     bpy.types.Scene.ld_ui_view_setup_open = bpy.props.BoolProperty(name="UI View Setup Open", default=True)
     bpy.types.Scene.ld_ui_import_open = bpy.props.BoolProperty(name="UI Import Open", default=True)
-    bpy.types.Scene.ld_ui_export_open = bpy.props.BoolProperty(name="UI Export Open", default=True)
     bpy.types.Scene.ld_ui_workspace_open = bpy.props.BoolProperty(name="UI Workspace Open", default=True)
+
+    scene = getattr(bpy.context, "scene", None)
+    if scene and getattr(scene, "ld_limit_profile", "") == "MODEL_X":
+        defaults = (
+            getattr(scene, "ld_proxy_max_speed_up", 0.0),
+            getattr(scene, "ld_proxy_max_speed_down", 0.0),
+            getattr(scene, "ld_proxy_max_speed_horiz", 0.0),
+            getattr(scene, "ld_proxy_max_acc_vert", 0.0),
+            getattr(scene, "ld_proxy_min_distance", 0.0),
+        )
+        if all(value == 0.0 for value in defaults):
+            _apply_limit_profile(scene, "MODEL_X")
 
 
 def unregister():
@@ -528,22 +484,12 @@ def unregister():
         del bpy.types.Scene.ld_checker_range_height
     if hasattr(bpy.types.Scene, "ld_checker_range_depth"):
         del bpy.types.Scene.ld_checker_range_depth
-    if hasattr(bpy.types.Scene, "ld_import_index"):
-        del bpy.types.Scene.ld_import_index
     if hasattr(bpy.types.Scene, "ld_import_sheet_url"):
         del bpy.types.Scene.ld_import_sheet_url
     if hasattr(bpy.types.Scene, "ld_import_vat_dir"):
         del bpy.types.Scene.ld_import_vat_dir
-    if hasattr(bpy.types.Scene, "ld_export_index"):
-        del bpy.types.Scene.ld_export_index
-    if hasattr(bpy.types.Scene, "ld_import_items"):
-        del bpy.types.Scene.ld_import_items
-    if hasattr(bpy.types.Scene, "ld_export_items"):
-        del bpy.types.Scene.ld_export_items
     if hasattr(bpy.types.Scene, "ld_ui_workspace_open"):
         del bpy.types.Scene.ld_ui_workspace_open
-    if hasattr(bpy.types.Scene, "ld_ui_export_open"):
-        del bpy.types.Scene.ld_ui_export_open
     if hasattr(bpy.types.Scene, "ld_ui_import_open"):
         del bpy.types.Scene.ld_ui_import_open
     if hasattr(bpy.types.Scene, "ld_ui_view_setup_open"):

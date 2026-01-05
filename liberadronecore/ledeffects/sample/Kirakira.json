@@ -1,0 +1,378 @@
+{
+  "version": 1,
+  "tree_type": "LD_LedEffectsTree",
+  "root": "Kirakira",
+  "nodes": [
+    {
+      "name": "Kirakira",
+      "label": "",
+      "bl_idname": "LDLEDOutputNode",
+      "location": [
+        241.7212677001953,
+        -253.35914611816406
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDOutputNode",
+        "bl_label": "Output",
+        "bl_description": "Node representing the LED output surface.",
+        "bl_icon": "OUTPUT",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "blend_mode": "MIX",
+        "priority": 0,
+        "random": 1.0
+      },
+      "inputs": [
+        {
+          "name": "Color",
+          "default": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "name": "Intensity",
+          "default": 1.0
+        },
+        {
+          "name": "Alpha",
+          "default": 1.0
+        }
+      ],
+      "color_ramp": null
+    },
+    {
+      "name": "Frame Entry",
+      "label": "",
+      "bl_idname": "LDLEDFrameEntryNode",
+      "location": [
+        -441.6017761230469,
+        -530.2020263671875
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDFrameEntryNode",
+        "bl_label": "Frame Entry",
+        "bl_description": "Entry active between start and duration frames.",
+        "bl_icon": "TIME",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "start": 0,
+        "duration": 0
+      },
+      "inputs": [],
+      "color_ramp": null
+    },
+    {
+      "name": "Color Ramp",
+      "label": "",
+      "bl_idname": "LDLEDColorRampNode",
+      "location": [
+        37.084747314453125,
+        -321.04095458984375
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDColorRampNode",
+        "bl_label": "Color Ramp",
+        "bl_description": "Color ramp with Blender-style interpolation.",
+        "bl_icon": "NODE_COMPOSITING",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": ""
+      },
+      "inputs": [
+        {
+          "name": "Factor",
+          "default": 0.0
+        }
+      ],
+      "color_ramp": {
+        "name": "LDLEDColorRamp",
+        "interpolation": "LINEAR",
+        "color_mode": "RGB",
+        "elements": [
+          {
+            "position": 0.0,
+            "color": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          {
+            "position": 1.0,
+            "color": [
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Math",
+      "label": "",
+      "bl_idname": "LDLEDMathNode",
+      "location": [
+        -121.09634399414062,
+        -358.7313537597656
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDMathNode",
+        "bl_label": "Math",
+        "bl_description": "Basic math node for LED intensities.",
+        "bl_icon": "MODIFIER",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "operation": "FRACTION",
+        "clamp_result": false
+      },
+      "inputs": [
+        {
+          "name": "Value A",
+          "default": 0.0
+        },
+        {
+          "name": "Value B",
+          "default": 0.0
+        }
+      ],
+      "color_ramp": null
+    },
+    {
+      "name": "Math.001",
+      "label": "",
+      "bl_idname": "LDLEDMathNode",
+      "location": [
+        -301.0000305175781,
+        -332.26507568359375
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDMathNode",
+        "bl_label": "Math",
+        "bl_description": "Basic math node for LED intensities.",
+        "bl_icon": "MODIFIER",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "operation": "MULTIPLY",
+        "clamp_result": false
+      },
+      "inputs": [
+        {
+          "name": "Value A",
+          "default": 0.0
+        },
+        {
+          "name": "Value B",
+          "default": 0.0
+        }
+      ],
+      "color_ramp": null
+    },
+    {
+      "name": "Value",
+      "label": "",
+      "bl_idname": "LDLEDFloatValueNode",
+      "location": [
+        -115.63858795166016,
+        -588.2635498046875
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDFloatValueNode",
+        "bl_label": "Value",
+        "bl_description": "Provide a constant float value.",
+        "bl_icon": "DRIVER",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "value": 10.0
+      },
+      "inputs": [],
+      "color_ramp": null
+    },
+    {
+      "name": "Time",
+      "label": "",
+      "bl_idname": "LDLEDTimeMaskNode",
+      "location": [
+        -480.5987243652344,
+        -358.8633728027344
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDTimeMaskNode",
+        "bl_label": "Time",
+        "bl_description": "Output a 0-1 mask based on entry progress.",
+        "bl_icon": "TIME",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "mode": "LINEAR"
+      },
+      "inputs": [],
+      "color_ramp": null
+    }
+  ],
+  "links": [
+    {
+      "from_node": "Color Ramp",
+      "from_socket": "Color",
+      "to_node": "Kirakira",
+      "to_socket": "Color"
+    },
+    {
+      "from_node": "Math.001",
+      "from_socket": "Value",
+      "to_node": "Math",
+      "to_socket": "Value A"
+    },
+    {
+      "from_node": "Math",
+      "from_socket": "Value",
+      "to_node": "Color Ramp",
+      "to_socket": "Factor"
+    },
+    {
+      "from_node": "Frame Entry",
+      "from_socket": "Entry",
+      "to_node": "Time",
+      "to_socket": "Entry"
+    },
+    {
+      "from_node": "Frame Entry",
+      "from_socket": "Entry",
+      "to_node": "Kirakira",
+      "to_socket": "Entry"
+    },
+    {
+      "from_node": "Time",
+      "from_socket": "Factor",
+      "to_node": "Math.001",
+      "to_socket": "Value A"
+    },
+    {
+      "from_node": "Value",
+      "from_socket": "Value",
+      "to_node": "Math.001",
+      "to_socket": "Value B"
+    }
+  ]
+}

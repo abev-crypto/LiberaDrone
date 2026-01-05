@@ -276,6 +276,7 @@ def _build_led_graph(tree: bpy.types.NodeTree, payload: dict) -> bpy.types.Node 
     nodes_data = payload.get("nodes", [])
     if not nodes_data:
         return None
+    existing_nodes = list(tree.nodes)
     node_map: dict[str, bpy.types.Node] = {}
     for data in nodes_data:
         bl_idname = data.get("bl_idname", "")
@@ -329,6 +330,38 @@ def _build_led_graph(tree: bpy.types.NodeTree, payload: dict) -> bpy.types.Node 
             continue
 
     root_name = payload.get("root", "")
+    imported_nodes = list(node_map.values())
+    if existing_nodes and imported_nodes:
+        existing_x = [float(n.location.x) for n in existing_nodes if hasattr(n, "location")]
+        existing_max_x = max(existing_x) if existing_x else 0.0
+        new_x = [float(n.location.x) for n in imported_nodes if hasattr(n, "location")]
+        new_min_x = min(new_x) if new_x else 0.0
+        offset_x = (existing_max_x - new_min_x) + 300.0
+        for node in imported_nodes:
+            try:
+                node.location.x += offset_x
+            except Exception:
+                pass
+
+    if imported_nodes:
+        frame = tree.nodes.new("NodeFrame")
+        frame.label = payload.get("root", "Imported")
+        frame.shrink = True
+        xs = [float(n.location.x) for n in imported_nodes if hasattr(n, "location")]
+        ys = [float(n.location.y) for n in imported_nodes if hasattr(n, "location")]
+        if xs and ys:
+            try:
+                frame.location = (min(xs) - 60.0, max(ys) + 60.0)
+            except Exception:
+                pass
+        for node in imported_nodes:
+            if node == frame:
+                continue
+            try:
+                node.parent = frame
+            except Exception:
+                pass
+
     return node_map.get(root_name)
 
 
@@ -455,6 +488,17 @@ def _update_output_index(self, context):
     node = tree.nodes.get(items[idx].node_name)
     if node is not None:
         _set_active_output(context, node)
+
+
+def _node_editor_cursor(context) -> tuple[float, float]:
+    space = getattr(context, "space_data", None)
+    cursor = getattr(space, "cursor_location", None) if space else None
+    if cursor is None:
+        return (0.0, 0.0)
+    try:
+        return (float(cursor.x), float(cursor.y))
+    except Exception:
+        return (0.0, 0.0)
 
 
 def _get_selected_output_node(context, tree: bpy.types.NodeTree) -> bpy.types.Node | None:
@@ -660,6 +704,90 @@ class LDLED_OT_build_template(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class LDLED_OT_add_frame(bpy.types.Operator):
+    bl_idname = "ldled.add_frame"
+    bl_label = "Frame"
+    bl_description = "Wrap selected LED nodes in a frame"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        tree = _get_led_tree(context)
+        if tree is None:
+            self.report({'ERROR'}, "LED node tree not available")
+            return {'CANCELLED'}
+        selected = [n for n in tree.nodes if n.select]
+        frame = tree.nodes.new("NodeFrame")
+        frame.label = "Frame"
+        frame.shrink = True
+        if selected:
+            xs = [float(n.location.x) for n in selected if hasattr(n, "location")]
+            ys = [float(n.location.y) for n in selected if hasattr(n, "location")]
+            if xs and ys:
+                frame.location = (min(xs) - 60.0, max(ys) + 60.0)
+            for node in selected:
+                if node == frame:
+                    continue
+                node.parent = frame
+        else:
+            frame.location = _node_editor_cursor(context)
+        for node in tree.nodes:
+            node.select = False
+        frame.select = True
+        tree.nodes.active = frame
+        return {'FINISHED'}
+
+
+class LDLED_OT_add_reroute(bpy.types.Operator):
+    bl_idname = "ldled.add_reroute"
+    bl_label = "Reroute"
+    bl_description = "Add a reroute node at the cursor"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        tree = _get_led_tree(context)
+        if tree is None:
+            self.report({'ERROR'}, "LED node tree not available")
+            return {'CANCELLED'}
+        node = tree.nodes.new("NodeReroute")
+        node.location = _node_editor_cursor(context)
+        for n in tree.nodes:
+            n.select = False
+        node.select = True
+        tree.nodes.active = node
+        return {'FINISHED'}
+
+
+class LDLED_OT_group_selected(bpy.types.Operator):
+    bl_idname = "ldled.group_selected"
+    bl_label = "Group"
+    bl_description = "Group selected LED nodes (Output nodes are not allowed)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        tree = _get_led_tree(context)
+        if tree is None:
+            self.report({'ERROR'}, "LED node tree not available")
+            return {'CANCELLED'}
+        selected = [n for n in tree.nodes if n.select]
+        if not selected:
+            self.report({'ERROR'}, "Select nodes to group")
+            return {'CANCELLED'}
+        if any(getattr(n, "bl_idname", "") == "LDLEDOutputNode" for n in selected):
+            self.report({'ERROR'}, "Output nodes cannot be grouped")
+            return {'CANCELLED'}
+        if not bpy.ops.node.group_make.poll():
+            self.report({'ERROR'}, "Grouping is not available in this editor")
+            return {'CANCELLED'}
+        for node in selected:
+            tree.nodes.active = node
+            break
+        result = bpy.ops.node.group_make()
+        if result != {'FINISHED'}:
+            self.report({'ERROR'}, "Group creation failed")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
 class LDLED_PT_panel(bpy.types.Panel):
     bl_label = "LED Effects"
     bl_space_type = 'NODE_EDITOR'
@@ -677,6 +805,10 @@ class LDLED_PT_panel(bpy.types.Panel):
         tree = _get_led_tree(context)
 
         layout.operator("ldled.create_output_node", text="CreateNode")
+        row = layout.row(align=True)
+        row.operator("ldled.add_frame", text="Frame")
+        row.operator("ldled.add_reroute", text="Reroute")
+        row.operator("ldled.group_selected", text="Group")
         templates = _list_template_files()
         if templates:
             col = layout.column(align=True)
@@ -738,6 +870,9 @@ class LDLED_UI(RegisterBase):
         bpy.utils.register_class(LDLED_OT_export_template)
         bpy.utils.register_class(LDLED_OT_import_template)
         bpy.utils.register_class(LDLED_OT_build_template)
+        bpy.utils.register_class(LDLED_OT_add_frame)
+        bpy.utils.register_class(LDLED_OT_add_reroute)
+        bpy.utils.register_class(LDLED_OT_group_selected)
         bpy.utils.register_class(LDLED_PT_panel)
         if not hasattr(bpy.types.Scene, "ld_led_output_items"):
             bpy.types.Scene.ld_led_output_items = bpy.props.CollectionProperty(type=LDLEDOutputItem)
@@ -755,6 +890,9 @@ class LDLED_UI(RegisterBase):
         if hasattr(bpy.types.Scene, "ld_led_output_items"):
             del bpy.types.Scene.ld_led_output_items
         bpy.utils.unregister_class(LDLED_PT_panel)
+        bpy.utils.unregister_class(LDLED_OT_group_selected)
+        bpy.utils.unregister_class(LDLED_OT_add_reroute)
+        bpy.utils.unregister_class(LDLED_OT_add_frame)
         bpy.utils.unregister_class(LDLED_OT_build_template)
         bpy.utils.unregister_class(LDLED_OT_import_template)
         bpy.utils.unregister_class(LDLED_OT_export_template)

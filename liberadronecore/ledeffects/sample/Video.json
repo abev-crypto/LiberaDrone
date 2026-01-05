@@ -1,0 +1,216 @@
+{
+  "version": 1,
+  "tree_type": "LD_LedEffectsTree",
+  "root": "Video",
+  "nodes": [
+    {
+      "name": "Video",
+      "label": "",
+      "bl_idname": "LDLEDOutputNode",
+      "location": [
+        103.06208038330078,
+        -692.119384765625
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": true,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDOutputNode",
+        "bl_label": "Output",
+        "bl_description": "Node representing the LED output surface.",
+        "bl_icon": "OUTPUT",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "blend_mode": "MIX",
+        "priority": 0,
+        "random": 0.0
+      },
+      "inputs": [
+        {
+          "name": "Color",
+          "default": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "name": "Intensity",
+          "default": 1.0
+        },
+        {
+          "name": "Alpha",
+          "default": 1.0
+        }
+      ],
+      "color_ramp": null
+    },
+    {
+      "name": "Frame Entry.002",
+      "label": "",
+      "bl_idname": "LDLEDFrameEntryNode",
+      "location": [
+        -261.1952209472656,
+        -834.64208984375
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDFrameEntryNode",
+        "bl_label": "Frame Entry",
+        "bl_description": "Entry active between start and duration frames.",
+        "bl_icon": "TIME",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "start": 0,
+        "duration": 0
+      },
+      "inputs": [],
+      "color_ramp": null
+    },
+    {
+      "name": "Video Sampler",
+      "label": "",
+      "bl_idname": "LDLEDVideoSamplerNode",
+      "location": [
+        -64.75291442871094,
+        -691.4043579101562
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDVideoSamplerNode",
+        "bl_label": "Video Sampler",
+        "bl_description": "Sample a video frame (uses image data for now) based on entry progress.",
+        "bl_icon": "SEQUENCE",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "filepath": ""
+      },
+      "inputs": [
+        {
+          "name": "U",
+          "default": 0.0
+        },
+        {
+          "name": "V",
+          "default": 0.0
+        }
+      ],
+      "color_ramp": null
+    },
+    {
+      "name": "Projection UV.001",
+      "label": "",
+      "bl_idname": "LDLEDProjectionUVNode",
+      "location": [
+        -251.73281860351562,
+        -700.7343139648438
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDProjectionUVNode",
+        "bl_label": "Projection UV",
+        "bl_description": "Project position into a mesh bbox to produce UV.",
+        "bl_icon": "MOD_UVPROJECT",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "target_object": null
+      },
+      "inputs": [],
+      "color_ramp": null
+    }
+  ],
+  "links": [
+    {
+      "from_node": "Video Sampler",
+      "from_socket": "Color",
+      "to_node": "Video",
+      "to_socket": "Color"
+    },
+    {
+      "from_node": "Frame Entry.002",
+      "from_socket": "Entry",
+      "to_node": "Video Sampler",
+      "to_socket": "Entry"
+    },
+    {
+      "from_node": "Frame Entry.002",
+      "from_socket": "Entry",
+      "to_node": "Video",
+      "to_socket": "Entry"
+    },
+    {
+      "from_node": "Projection UV.001",
+      "from_socket": "U",
+      "to_node": "Video Sampler",
+      "to_socket": "U"
+    },
+    {
+      "from_node": "Projection UV.001",
+      "from_socket": "V",
+      "to_node": "Video Sampler",
+      "to_socket": "V"
+    }
+  ]
+}

@@ -8,7 +8,7 @@ matplotlib.use("QtAgg")  # Qt5/Qt6 backend
 from matplotlib import style
 style.use("dark_background")
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from matplotlib.figure import Figure
 from matplotlib import patches
@@ -177,6 +177,7 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("LiberaDrone Check Graph (Candles)")
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)

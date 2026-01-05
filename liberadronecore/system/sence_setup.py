@@ -1,6 +1,5 @@
 ﻿import bpy
 import bmesh
-import os
 from typing import Optional
 from mathutils import Vector
 
@@ -115,19 +114,14 @@ def _fill_preview_image(img: bpy.types.Image, ring: bool) -> None:
     img.pixels = pixels
 
 
-def _save_image_to_blend_dir(img: bpy.types.Image) -> None:
-    filepath = getattr(bpy.data, "filepath", "")
-    if not filepath:
-        return
-    dirpath = os.path.dirname(filepath)
-    if not dirpath:
-        return
-    filename = f"{img.name}.png"
-    path = os.path.join(dirpath, filename)
+def _pack_preview_image(img: bpy.types.Image) -> None:
     try:
-        img.filepath_raw = path
-        img.file_format = "PNG"
-        img.save()
+        img.pack()
+    except Exception:
+        pass
+    try:
+        img.filepath_raw = ""
+        img.filepath = ""
     except Exception:
         pass
 
@@ -143,7 +137,7 @@ def _ensure_preview_image(name: str, *, ring: bool) -> bpy.types.Image:
             pass
     _fill_preview_image(img, ring)
     img.use_fake_user = True
-    _save_image_to_blend_dir(img)
+    _pack_preview_image(img)
     return img
 
 

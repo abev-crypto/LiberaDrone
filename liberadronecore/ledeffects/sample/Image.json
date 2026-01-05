@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "tree_type": "LD_LedEffectsTree",
+  "root": "Image",
+  "nodes": [
+    {
+      "name": "Image",
+      "label": "",
+      "bl_idname": "LDLEDOutputNode",
+      "location": [
+        200.0,
+        0.0
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": true,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDOutputNode",
+        "bl_label": "Output",
+        "bl_description": "Node representing the LED output surface.",
+        "bl_icon": "OUTPUT",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "blend_mode": "MIX",
+        "priority": 0,
+        "random": 0.0
+      },
+      "inputs": [
+        {
+          "name": "Color",
+          "default": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "name": "Intensity",
+          "default": 1.0
+        },
+        {
+          "name": "Alpha",
+          "default": 1.0
+        }
+      ],
+      "color_ramp": null
+    },
+    {
+      "name": "Frame Entry.001",
+      "label": "",
+      "bl_idname": "LDLEDFrameEntryNode",
+      "location": [
+        -106.40081787109375,
+        -222.7399444580078
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDFrameEntryNode",
+        "bl_label": "Frame Entry",
+        "bl_description": "Entry active between start and duration frames.",
+        "bl_icon": "TIME",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "start": 0,
+        "duration": 0
+      },
+      "inputs": [],
+      "color_ramp": null
+    },
+    {
+      "name": "Image Sampler",
+      "label": "",
+      "bl_idname": "LDLEDImageSamplerNode",
+      "location": [
+        -33.56951904296875,
+        -73.84691619873047
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDImageSamplerNode",
+        "bl_label": "Image Sampler",
+        "bl_description": "Sample a Blender image by UV.",
+        "bl_icon": "IMAGE_DATA",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "image": null
+      },
+      "inputs": [
+        {
+          "name": "U",
+          "default": 0.0
+        },
+        {
+          "name": "V",
+          "default": 0.0
+        }
+      ],
+      "color_ramp": null
+    },
+    {
+      "name": "Projection UV",
+      "label": "",
+      "bl_idname": "LDLEDProjectionUVNode",
+      "location": [
+        -302.1261901855469,
+        -137.31869506835938
+      ],
+      "properties": {
+        "width": 140.0,
+        "height": 100.0,
+        "parent": null,
+        "warning_propagation": "ALL",
+        "use_custom_color": false,
+        "select": false,
+        "show_options": true,
+        "show_preview": false,
+        "hide": false,
+        "mute": false,
+        "show_texture": false,
+        "bl_idname": "LDLEDProjectionUVNode",
+        "bl_label": "Projection UV",
+        "bl_description": "Project position into a mesh bbox to produce UV.",
+        "bl_icon": "MOD_UVPROJECT",
+        "bl_static_type": "CUSTOM",
+        "bl_width_default": 140.0,
+        "bl_width_min": 100.0,
+        "bl_width_max": 700.0,
+        "bl_height_default": 100.0,
+        "bl_height_min": 30.0,
+        "bl_height_max": 30.0,
+        "codegen_hint": "",
+        "target_object": null
+      },
+      "inputs": [],
+      "color_ramp": null
+    }
+  ],
+  "links": [
+    {
+      "from_node": "Image Sampler",
+      "from_socket": "Color",
+      "to_node": "Image",
+      "to_socket": "Color"
+    },
+    {
+      "from_node": "Projection UV",
+      "from_socket": "U",
+      "to_node": "Image Sampler",
+      "to_socket": "U"
+    },
+    {
+      "from_node": "Projection UV",
+      "from_socket": "V",
+      "to_node": "Image Sampler",
+      "to_socket": "V"
+    },
+    {
+      "from_node": "Frame Entry.001",
+      "from_socket": "Entry",
+      "to_node": "Image",
+      "to_socket": "Entry"
+    }
+  ]
+}

@@ -14,6 +14,43 @@ import numpy as np
 
 
 _color_column_cache: dict[int, list[list[float]]] = {}
+_UNDO_DEPTH = 0
+
+
+def _set_undo_block(active: bool) -> None:
+    global _UNDO_DEPTH
+    if active:
+        _UNDO_DEPTH += 1
+    else:
+        _UNDO_DEPTH = max(0, _UNDO_DEPTH - 1)
+
+
+def _on_undo_pre(*_args, **_kwargs) -> None:
+    _set_undo_block(True)
+
+
+def _on_undo_post(*_args, **_kwargs) -> None:
+    _set_undo_block(False)
+
+
+def _on_redo_pre(*_args, **_kwargs) -> None:
+    _set_undo_block(True)
+
+
+def _on_redo_post(*_args, **_kwargs) -> None:
+    _set_undo_block(False)
+
+
+def _is_undo_running() -> bool:
+    if _UNDO_DEPTH > 0:
+        return True
+    checker = getattr(bpy.app, "is_job_running", None)
+    if checker is None:
+        return False
+    try:
+        return checker("UNDO") or checker("REDO")
+    except Exception:
+        return False
 
 def _is_any_viewport_wireframe() -> bool:
     wm = getattr(bpy.context, "window_manager", None)
@@ -83,6 +120,9 @@ def _write_led_color_attribute(colors) -> None:
 
 @persistent
 def update_led_effects(scene):
+    if _is_undo_running():
+        return
+
     if _is_any_viewport_wireframe():
         return
 
@@ -127,8 +167,24 @@ def update_led_effects(scene):
 def register():
     if update_led_effects not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(update_led_effects)
+    if _on_undo_pre not in bpy.app.handlers.undo_pre:
+        bpy.app.handlers.undo_pre.append(_on_undo_pre)
+    if _on_undo_post not in bpy.app.handlers.undo_post:
+        bpy.app.handlers.undo_post.append(_on_undo_post)
+    if _on_redo_pre not in bpy.app.handlers.redo_pre:
+        bpy.app.handlers.redo_pre.append(_on_redo_pre)
+    if _on_redo_post not in bpy.app.handlers.redo_post:
+        bpy.app.handlers.redo_post.append(_on_redo_post)
 
 
 def unregister():
     if update_led_effects in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.remove(update_led_effects)
+    if _on_undo_pre in bpy.app.handlers.undo_pre:
+        bpy.app.handlers.undo_pre.remove(_on_undo_pre)
+    if _on_undo_post in bpy.app.handlers.undo_post:
+        bpy.app.handlers.undo_post.remove(_on_undo_post)
+    if _on_redo_pre in bpy.app.handlers.redo_pre:
+        bpy.app.handlers.redo_pre.remove(_on_redo_pre)
+    if _on_redo_post in bpy.app.handlers.redo_post:
+        bpy.app.handlers.redo_post.remove(_on_redo_post)
