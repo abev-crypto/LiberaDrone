@@ -87,22 +87,54 @@ def _fetch_csv(url: str) -> str:
 
 def _parse_rows(text: str) -> list[dict[str, str]]:
     rows = list(csv.reader(io.StringIO(text)))
-    if len(rows) <= 3:
+    if not rows:
         return []
-    data_rows = rows[3:]
+    header_row = None
+    header_idx = None
+    for idx, row in enumerate(rows[:6]):
+        if not row:
+            continue
+        has_name = any((cell or "").strip().lower() == "name" for cell in row)
+        has_attr = any((cell or "").strip().lower() == "attr" for cell in row)
+        if has_name and has_attr:
+            header_row = row
+            header_idx = idx
+            break
+
+    if header_row is not None:
+        def _norm(label: str) -> str:
+            return re.sub(r"[^a-z0-9]", "", label.lower())
+
+        col_map = {_norm(cell): i for i, cell in enumerate(header_row) if cell}
+        name_idx = col_map.get("name", 0)
+        attr_idx = col_map.get("attr", 1)
+        start_idx = col_map.get("startf", 3)
+        duration_idx = col_map.get("durationf", 5)
+        states_idx = col_map.get("states", 6)
+        data_rows = rows[header_idx + 1:]
+    else:
+        name_idx, attr_idx, start_idx, duration_idx, states_idx = 0, 1, 3, 5, 6
+        data_rows = rows[3:]
     parsed: list[dict[str, str]] = []
     for row in data_rows:
-        padded = list(row) + ["", "", "", "", "", "", ""]
-        name = (padded[0] or "").strip()
-        if not name:
+        padded = list(row)
+        max_idx = max(name_idx, attr_idx, start_idx, duration_idx, states_idx)
+        if len(padded) <= max_idx:
+            padded += [""] * (max_idx + 1 - len(padded))
+        name = (padded[name_idx] or "").strip()
+        attr = (padded[attr_idx] or "").strip()
+        start_frame = (padded[start_idx] or "").strip()
+        duration_frame = (padded[duration_idx] or "").strip()
+        states = (padded[states_idx] or "").strip()
+        if not (name or attr or start_frame or duration_frame or states):
             continue
         parsed.append(
             {
                 "name": name,
-                "attr": (padded[1] or "").strip(),
-                "start_frame": (padded[3] or "").strip(),
-                "duration_frame": (padded[5] or "").strip(),
-                "states": (padded[6] or "").strip(),
+                "attr": attr,
+                "start_frame": start_frame,
+                "duration_frame": duration_frame,
+                "states": states,
             }
         )
     return parsed
@@ -123,17 +155,16 @@ def _map_show_neighbors(rows: list[dict[str, str]]) -> None:
 
 def _filter_transition_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     _map_show_neighbors(rows)
-    filtered: list[dict[str, str]] = []
+    transitions: list[dict[str, str]] = []
     for idx, row in enumerate(rows):
-        if row.get("states") != "完了":
-            continue
         if row.get("attr") != "Transition":
             continue
         if row.get("prev_show_idx") is None or row.get("next_show_idx") is None:
             continue
         row["row_index"] = idx
-        filtered.append(row)
-    return filtered
+        transitions.append(row)
+    completed = [row for row in transitions if row.get("states") == "完了"]
+    return completed if completed else transitions
 
 
 def _ensure_collection(scene: bpy.types.Scene, name: str) -> bpy.types.Collection:

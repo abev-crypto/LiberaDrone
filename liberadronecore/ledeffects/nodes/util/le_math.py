@@ -26,10 +26,21 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
         ("ONE_MINUS", "One Minus", "1 - A"),
     ]
 
+    single_input_ops = {
+        "SATURATE",
+        "FRACTION",
+        "FLOOR",
+        "CEIL",
+        "SINE",
+        "COSINE",
+        "ONE_MINUS",
+    }
+
     operation: bpy.props.EnumProperty(
         name="Operation",
         items=math_items,
         default="ADD",
+        update=lambda self, _context: self._sync_inputs(),
     )
 
     clamp_result: bpy.props.BoolProperty(
@@ -46,6 +57,15 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
         self.inputs.new("NodeSocketFloat", "Value A")
         self.inputs.new("NodeSocketFloat", "Value B")
         self.outputs.new("NodeSocketFloat", "Value")
+        self._sync_inputs()
+
+    def update(self):
+        self._sync_inputs()
+
+    def _sync_inputs(self):
+        socket = self.inputs.get("Value B")
+        if socket is not None:
+            socket.hide = self.operation in self.single_input_ops
 
     def draw_buttons(self, context, layout):
         layout.prop(self, "operation", text="")
