@@ -25,6 +25,9 @@ def _split_area(context, screen, area, direction: str, factor: float):
 
 
 def _ensure_workspace(context, name: str):
+    existing = bpy.data.workspaces.get(name)
+    if existing is not None:
+        return existing
     ws_path = Path(__file__).resolve().parents[2] / "scene" / "ws.blend"
     if not ws_path.exists():
         return None

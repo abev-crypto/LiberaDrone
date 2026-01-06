@@ -1,5 +1,12 @@
 from liberadronecore.reg.autoreg import AutoNode, AutoRegister, Registry
-from nodeitems_utils import NodeCategory
+from nodeitems_utils import NodeCategory, NodeItemCustom
+
+
+def _led_layout_tools_draw(_self, layout, _context):
+    layout.operator("ldled.add_frame", text="Frame")
+    layout.operator("ldled.add_reroute", text="Reroute")
+    layout.operator("ldled.group_selected", text="Group")
+    layout.separator()
 
 
 class LDLED_NodeCategory(NodeCategory):
@@ -12,6 +19,14 @@ class LDLED_NodeCategory(NodeCategory):
 class LDLED_RegisterBase(Registry[LDLED_NodeCategory]):
     node_root_id = "LD_LED_NODE_CATEGORIES"
     nc = LDLED_NodeCategory
+
+    @classmethod
+    def build_node_categories(cls) -> list[LDLED_NodeCategory]:
+        cats = super().build_node_categories()
+        layout_items = [NodeItemCustom(draw=_led_layout_tools_draw)]
+        cats.append(LDLED_NodeCategory("LD_LED_LAYOUT", "Layout", items=layout_items))
+        cats.sort(key=lambda c: c.identifier)
+        return cats
 
 
 class LDLED_Register(AutoRegister[LDLED_RegisterBase]):

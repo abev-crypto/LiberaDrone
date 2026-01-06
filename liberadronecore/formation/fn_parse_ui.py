@@ -196,6 +196,50 @@ def _draw_socket_status(layout, sock: bpy.types.NodeSocket) -> None:
     row.label(text=_socket_display_name(sock))
 
 
+def _node_editor_cursor(context) -> tuple[float, float]:
+    space = getattr(context, "space_data", None)
+    cursor = getattr(space, "cursor_location", None) if space else None
+    if cursor is None:
+        return (0.0, 0.0)
+    try:
+        return (float(cursor.x), float(cursor.y))
+    except Exception:
+        return (0.0, 0.0)
+
+
+class FN_OT_add_frame(bpy.types.Operator, FN_Register):
+    bl_idname = "fn.add_frame"
+    bl_label = "Frame"
+    bl_description = "Wrap selected Formation nodes in a frame"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        tree = _get_formation_tree(context)
+        if tree is None:
+            self.report({'ERROR'}, "Formation tree not available")
+            return {'CANCELLED'}
+        selected = [n for n in tree.nodes if n.select]
+        frame = tree.nodes.new("NodeFrame")
+        frame.label = "Frame"
+        frame.shrink = True
+        if selected:
+            xs = [float(n.location.x) for n in selected if hasattr(n, "location")]
+            ys = [float(n.location.y) for n in selected if hasattr(n, "location")]
+            if xs and ys:
+                frame.location = (min(xs) - 60.0, max(ys) + 60.0)
+            for node in selected:
+                if node == frame:
+                    continue
+                node.parent = frame
+        else:
+            frame.location = _node_editor_cursor(context)
+        for node in tree.nodes:
+            node.select = False
+        frame.select = True
+        tree.nodes.active = frame
+        return {'FINISHED'}
+
+
 class FN_TransitionListItem(bpy.types.PropertyGroup):
     node_name: bpy.props.StringProperty(name="Node Name")
     node_id: bpy.props.StringProperty(name="Node Id", default="")

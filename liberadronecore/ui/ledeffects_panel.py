@@ -501,6 +501,26 @@ def _node_editor_cursor(context) -> tuple[float, float]:
         return (0.0, 0.0)
 
 
+def _node_editor_override(context) -> dict | None:
+    window = getattr(context, "window", None)
+    area = getattr(context, "area", None)
+    if area is None or getattr(area, "type", "") != "NODE_EDITOR":
+        screen = getattr(window, "screen", None) if window else None
+        if screen:
+            area = next((a for a in screen.areas if a.type == "NODE_EDITOR"), None)
+    if area is None:
+        return None
+    region = next((r for r in area.regions if r.type == "WINDOW"), None)
+    if region is None:
+        return None
+    return {
+        "window": window,
+        "area": area,
+        "region": region,
+        "space_data": area.spaces.active if area.spaces else None,
+    }
+
+
 def _get_selected_output_node(context, tree: bpy.types.NodeTree) -> bpy.types.Node | None:
     if tree is None:
         return None
@@ -775,13 +795,21 @@ class LDLED_OT_group_selected(bpy.types.Operator):
         if any(getattr(n, "bl_idname", "") == "LDLEDOutputNode" for n in selected):
             self.report({'ERROR'}, "Output nodes cannot be grouped")
             return {'CANCELLED'}
-        if not bpy.ops.node.group_make.poll():
-            self.report({'ERROR'}, "Grouping is not available in this editor")
-            return {'CANCELLED'}
         for node in selected:
             tree.nodes.active = node
             break
-        result = bpy.ops.node.group_make()
+        override = _node_editor_override(context)
+        if override:
+            with context.temp_override(**override):
+                if not bpy.ops.node.group_make.poll():
+                    self.report({'ERROR'}, "Grouping is not supported in this editor")
+                    return {'CANCELLED'}
+                result = bpy.ops.node.group_make()
+        else:
+            if not bpy.ops.node.group_make.poll():
+                self.report({'ERROR'}, "Grouping is not supported in this editor")
+                return {'CANCELLED'}
+            result = bpy.ops.node.group_make()
         if result != {'FINISHED'}:
             self.report({'ERROR'}, "Group creation failed")
             return {'CANCELLED'}
@@ -805,10 +833,6 @@ class LDLED_PT_panel(bpy.types.Panel):
         tree = _get_led_tree(context)
 
         layout.operator("ldled.create_output_node", text="CreateNode")
-        row = layout.row(align=True)
-        row.operator("ldled.add_frame", text="Frame")
-        row.operator("ldled.add_reroute", text="Reroute")
-        row.operator("ldled.group_selected", text="Group")
         templates = _list_template_files()
         if templates:
             col = layout.column(align=True)

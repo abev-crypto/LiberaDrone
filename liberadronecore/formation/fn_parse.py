@@ -201,6 +201,8 @@ def _eval_socket_value(
             value = _eval_math_node(node, a_val, b_val)
         elif bl_idname == "FN_CollectionNode":
             value = getattr(node, "collection", _UNSET)
+        elif bl_idname == "FN_VATCacheNode":
+            value = getattr(node, "cache_collection", _UNSET)
         else:
             value = _socket_ui_value(sock)
     else:

@@ -146,14 +146,14 @@ def _update_range_mesh(mesh, width: float, height: float, depth: float) -> None:
 
 class LD_OT_create_range_object(bpy.types.Operator):
     bl_idname = "liberadrone.create_range_object"
-    bl_label = "Create Range Object"
-    bl_description = "Create or update RangeObject from range parameters"
+    bl_label = "Create Area Object"
+    bl_description = "Create or update AreaObject from area parameters"
 
     def execute(self, context):
         scene = context.scene
         width = float(getattr(scene, "ld_checker_range_width", 0.0))
         if width <= 0.0:
-            self.report({'ERROR'}, "Range Width must be > 0")
+            self.report({'ERROR'}, "Area Width must be > 0")
             return {'CANCELLED'}
         height = float(getattr(scene, "ld_checker_range_height", 0.0))
         depth = float(getattr(scene, "ld_checker_range_depth", 0.0))
@@ -179,7 +179,7 @@ class LD_OT_create_range_object(bpy.types.Operator):
         sence_setup.move_object_to_collection(obj, target_col)
 
         scene.ld_checker_range_object = obj
-        self.report({'INFO'}, f"RangeObject created: {obj.name}")
+        self.report({'INFO'}, f"Area object created: {obj.name}")
         return {'FINISHED'}
 
 
@@ -213,6 +213,8 @@ class LD_PT_libera_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
+
+        layout.operator("liberadrone.setup_all", text="Setup")
 
         box = layout.box()
         row = box.row()
@@ -250,12 +252,12 @@ class LD_PT_libera_panel(bpy.types.Panel):
             col.prop(scene, "ld_proxy_max_acc_vert", text="MaxAcc")
             col.prop(scene, "ld_proxy_min_distance", text="MinDistance")
             col.separator()
-            col.prop(scene, "ld_checker_range_object", text="Range Object")
+            col.prop(scene, "ld_checker_range_object", text="Area Object")
             if scene.ld_checker_range_object is None:
-                col.prop(scene, "ld_checker_range_width", text="Range Width")
-                col.prop(scene, "ld_checker_range_height", text="Range Height")
-                col.prop(scene, "ld_checker_range_depth", text="Range Depth")
-            col.operator("liberadrone.create_range_object", text="Create Range Object")
+                col.prop(scene, "ld_checker_range_width", text="Area Width")
+                col.prop(scene, "ld_checker_range_height", text="Area Height")
+                col.prop(scene, "ld_checker_range_depth", text="Area Depth")
+            col.operator("liberadrone.create_range_object", text="Create Area Object")
 
         box = layout.box()
         row = box.row()
@@ -319,21 +321,7 @@ class LD_PT_libera_panel(bpy.types.Panel):
             box.prop(scene, "ld_import_sheet_url", text="Sheet URL")
             box.prop(scene, "ld_import_vat_dir", text="VAT/CAT Folder")
             box.operator("liberadrone.show_import_sheet", text="Import Sheet (Test)")
-
-        box = layout.box()
-        row = box.row()
-        row.prop(
-            scene,
-            "ld_ui_workspace_open",
-            text="",
-            icon='TRIA_DOWN' if scene.ld_ui_workspace_open else 'TRIA_RIGHT',
-            emboss=False,
-        )
-        row.label(text="Workspace")
-        if scene.ld_ui_workspace_open:
-            row = box.row(align=True)
-            row.operator("liberadrone.setup_workspace_formation", text="FormationNodeWindow")
-            row.operator("liberadrone.setup_workspace_led", text="LEDEffectNodeWindow")
+            box.operator("liberadrone.show_export_sheet", text="Export Sheet")
 
 
 classes = (
@@ -418,21 +406,21 @@ def register():
         default=True,
     )
     bpy.types.Scene.ld_checker_range_object = bpy.props.PointerProperty(
-        name="Range Object",
+        name="Area Object",
         type=bpy.types.Object,
     )
     bpy.types.Scene.ld_checker_range_width = bpy.props.FloatProperty(
-        name="Range Width",
+        name="Area Width",
         default=100.0,
         min=0.0,
     )
     bpy.types.Scene.ld_checker_range_height = bpy.props.FloatProperty(
-        name="Range Height",
+        name="Area Height",
         default=100.0,
         min=0.0,
     )
     bpy.types.Scene.ld_checker_range_depth = bpy.props.FloatProperty(
-        name="Range Depth",
+        name="Area Depth",
         default=100.0,
         min=0.0,
     )

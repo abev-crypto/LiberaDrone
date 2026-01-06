@@ -1,5 +1,10 @@
 from liberadronecore.reg.autoreg import AutoNode, AutoRegister, Registry
-from nodeitems_utils import NodeCategory, NodeItem, register_node_categories, unregister_node_categories
+from nodeitems_utils import NodeCategory, NodeItem, NodeItemCustom, register_node_categories, unregister_node_categories
+
+
+def _formation_layout_tools_draw(_self, layout, _context):
+    layout.operator("fn.add_frame", text="Frame")
+    layout.separator()
 
 class FN_NodeCategory(NodeCategory):
     @classmethod
@@ -9,6 +14,14 @@ class FN_NodeCategory(NodeCategory):
 
 class FN_RegisterBase(Registry[FN_NodeCategory]):
     nc = FN_NodeCategory
+
+    @classmethod
+    def build_node_categories(cls) -> list[FN_NodeCategory]:
+        cats = super().build_node_categories()
+        layout_items = [NodeItemCustom(draw=_formation_layout_tools_draw)]
+        cats.append(FN_NodeCategory("FN_LAYOUT", "Layout", items=layout_items))
+        cats.sort(key=lambda c: c.identifier)
+        return cats
 
 class FN_Register(AutoRegister[FN_RegisterBase]):
     registry = FN_RegisterBase

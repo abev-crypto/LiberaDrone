@@ -1,5 +1,6 @@
 ﻿import bpy
 import bmesh
+import os
 from typing import Optional
 from mathutils import Vector
 
@@ -116,14 +117,14 @@ def _fill_preview_image(img: bpy.types.Image, ring: bool) -> None:
 
 def _pack_preview_image(img: bpy.types.Image) -> None:
     try:
-        img.pack()
+        filepath = bpy.path.abspath(img.filepath) if getattr(img, "filepath", "") else ""
     except Exception:
-        pass
-    try:
-        img.filepath_raw = ""
-        img.filepath = ""
-    except Exception:
-        pass
+        filepath = ""
+    if filepath and os.path.isfile(filepath):
+        try:
+            img.pack()
+        except Exception:
+            pass
 
 
 def _ensure_preview_image(name: str, *, ring: bool) -> bpy.types.Image:

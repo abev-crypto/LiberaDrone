@@ -13,3 +13,16 @@ class LD_OT_show_import_sheet(bpy.types.Operator):
         vat_dir = getattr(scene, "ld_import_vat_dir", "")
         import_sheet.SheetImportWindow.show_window(sheet_url, vat_dir)
         return {'FINISHED'}
+
+
+class LD_OT_show_export_sheet(bpy.types.Operator):
+    bl_idname = "liberadrone.show_export_sheet"
+    bl_label = "Show Export Sheet"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        scene = context.scene
+        sheet_url = getattr(scene, "ld_import_sheet_url", "") or import_sheet.SHEET_URL_DEFAULT
+        export_dir = getattr(scene, "ld_import_vat_dir", "")
+        import_sheet.SheetExportWindow.show_window(sheet_url, export_dir)
+        return {'FINISHED'}
