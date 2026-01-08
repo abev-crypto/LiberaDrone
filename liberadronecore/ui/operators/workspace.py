@@ -24,6 +24,18 @@ def _split_area(context, screen, area, direction: str, factor: float):
     return new_areas[0] if new_areas else None
 
 
+def _append_workspace_from_library(blend_path: Path, name: str):
+    try:
+        with bpy.data.libraries.load(str(blend_path), link=False) as (data_from, data_to):
+            workspaces = getattr(data_from, "workspaces", None)
+            if not workspaces or name not in workspaces:
+                return None
+            data_to.workspaces = [name]
+    except Exception:
+        return None
+    return bpy.data.workspaces.get(name)
+
+
 def _ensure_workspace(context, name: str):
     existing = bpy.data.workspaces.get(name)
     if existing is not None:
@@ -33,111 +45,58 @@ def _ensure_workspace(context, name: str):
         return None
 
     blend_path = ws_path.resolve()
+    ws = _append_workspace_from_library(blend_path, name)
+    if ws is not None:
+        return ws
+
     workspace_dir = str(blend_path) + "/WorkSpace/"
-    bpy.ops.wm.append(
-        directory=workspace_dir,
-        filename=name,
-        filepath=workspace_dir + name,
-    )
+    window = getattr(context, "window", None) or bpy.context.window
+    screen = window.screen if window else None
+    if window and screen:
+        with context.temp_override(window=window, screen=screen):
+            bpy.ops.wm.append(
+                directory=workspace_dir,
+                filename=name,
+                filepath=workspace_dir + name,
+            )
     return bpy.data.workspaces.get(name)
 
 
-def _configure_workspace_screen(context, screen, tree_type: str):
-    areas = list(screen.areas)
-    if not areas:
-        return
+def setup_workspace(context, mode: str):
+    if mode == "LED":
+        name = "LED"
+        tree_type = "LD_LedEffectsTree"
+    else:
+        name = "Formation"
+        tree_type = "FN_FormationTree"
 
-    top_area = max(areas, key=lambda a: a.height * a.width)
-    timeline_area = None
-
-    if not any(a.type == 'TIMELINE' for a in screen.areas):
-        new_area = _split_area(context, screen, top_area, 'HORIZONTAL', 0.75)
-        if new_area is not None:
-            bottom = min([top_area, new_area], key=lambda a: a.y)
-            timeline_area = bottom
-            top_area = max([top_area, new_area], key=lambda a: a.y)
-
-    if timeline_area is None:
-        for area in screen.areas:
-            if area.type == 'TIMELINE':
-                timeline_area = area
-                break
-
-    if not any(a.type == 'NODE_EDITOR' for a in screen.areas):
-        new_area = _split_area(context, screen, top_area, 'VERTICAL', 0.5)
-        if new_area is not None:
-            left = min([top_area, new_area], key=lambda a: a.x)
-            right = max([top_area, new_area], key=lambda a: a.x)
-            left.type = 'VIEW_3D'
-            right.type = 'NODE_EDITOR'
-            space = right.spaces.active
-            if hasattr(space, "tree_type"):
-                space.tree_type = tree_type
-            if hasattr(right, "ui_type"):
-                right.ui_type = tree_type
-
-    if timeline_area is not None:
-        timeline_area.type = 'DOPESHEET_EDITOR'
-        space = timeline_area.spaces.active
-        if hasattr(space, "ui_type"):
-            space.ui_type = 'TIMELINE'
-
-    for area in screen.areas:
-        if area.type == 'VIEW_3D':
-            break
+    ws = _ensure_workspace(context, name)
+    if ws is None:
+        return None
+    return ws
 
 
-class LD_OT_setup_workspace(bpy.types.Operator):
-    bl_idname = "liberadrone.setup_workspace"
-    bl_label = "Setup Workspace"
+class LD_OT_setup_workspace_formation(bpy.types.Operator):
+    bl_idname = "liberadrone.setup_workspace_formation"
+    bl_label = "FormationNodeWindow"
     bl_options = {'REGISTER'}
 
-    mode: bpy.props.EnumProperty(
-        name="Mode",
-        items=(
-            ("FORMATION", "Formation", "Formation node workspace"),
-            ("LED", "LED Effect", "LED effect node workspace"),
-        ),
-        default="FORMATION",
-    )
-
     def execute(self, context):
-        if self.mode == "LED":
-            name = "LED"
-            tree_type = "LD_LedEffectsTree"
-        else:
-            name = "Formation"
-            tree_type = "FN_FormationTree"
-
-        ws = _ensure_workspace(context, name)
+        ws = setup_workspace(context, "FORMATION")
         if ws is None:
             self.report({'ERROR'}, "Failed to create workspace (missing template or window)")
             return {'CANCELLED'}
-
-        window = context.window
-        if window is None:
-            self.report({'ERROR'}, "No active window")
-            return {'CANCELLED'}
-
-        window.workspace = ws
-        screen = window.screen
-        _configure_workspace_screen(context, screen, tree_type)
         return {'FINISHED'}
 
 
-class LD_OT_setup_workspace_formation(LD_OT_setup_workspace):
-    bl_idname = "liberadrone.setup_workspace_formation"
-    bl_label = "FormationNodeWindow"
-
-    def invoke(self, context, event):
-        self.mode = "FORMATION"
-        return self.execute(context)
-
-
-class LD_OT_setup_workspace_led(LD_OT_setup_workspace):
+class LD_OT_setup_workspace_led(bpy.types.Operator):
     bl_idname = "liberadrone.setup_workspace_led"
     bl_label = "LEDEffectNodeWindow"
+    bl_options = {'REGISTER'}
 
-    def invoke(self, context, event):
-        self.mode = "LED"
-        return self.execute(context)
+    def execute(self, context):
+        ws = setup_workspace(context, "LED")
+        if ws is None:
+            self.report({'ERROR'}, "Failed to create workspace (missing template or window)")
+            return {'CANCELLED'}
+        return {'FINISHED'}

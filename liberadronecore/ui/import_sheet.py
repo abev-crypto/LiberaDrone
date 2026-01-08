@@ -220,6 +220,96 @@ def _apply_import_settings(scene: bpy.types.Scene, settings: dict[str, str], sta
             scene.ld_limit_profile = "CUSTOM"
 
 
+def _set_world_surface_black(scene: bpy.types.Scene) -> None:
+    if scene is None:
+        return
+    world = scene.world
+    if world is None:
+        world = bpy.data.worlds.new("World")
+        scene.world = world
+    try:
+        world.use_nodes = True
+    except Exception:
+        pass
+
+    nt = getattr(world, "node_tree", None)
+    if nt is None:
+        return
+    nodes = nt.nodes
+    links = nt.links
+
+    output = next((n for n in nodes if n.type == "OUTPUT_WORLD"), None)
+    if output is None:
+        output = nodes.new("ShaderNodeOutputWorld")
+        output.location = (300, 0)
+
+    bg_node = None
+    for link in links:
+        if link.to_node == output and link.to_socket.name == "Surface":
+            if link.from_node and link.from_node.type == "BACKGROUND":
+                bg_node = link.from_node
+                break
+    if bg_node is None:
+        bg_node = next((n for n in nodes if n.type == "BACKGROUND"), None)
+    if bg_node is None:
+        bg_node = nodes.new("ShaderNodeBackground")
+        bg_node.location = (0, 0)
+
+    if output and not output.inputs["Surface"].is_linked:
+        try:
+            links.new(bg_node.outputs["Background"], output.inputs["Surface"])
+        except Exception:
+            pass
+
+    try:
+        color_input = bg_node.inputs.get("Color")
+        if color_input is not None:
+            color_input.default_value = (0.0, 0.0, 0.0, 1.0)
+    except Exception:
+        pass
+
+
+def _link_camera_blend_assets(
+    scene: bpy.types.Scene,
+    base_dir: str,
+) -> tuple[list[bpy.types.Object], bpy.types.Object | None]:
+    if scene is None or not base_dir:
+        return [], None
+    blend_path = os.path.join(base_dir, "Camera.blend")
+    if not os.path.isfile(blend_path):
+        return [], None
+
+    before_names = {s.name for s in bpy.data.scenes}
+    scene_name = None
+    try:
+        with bpy.data.libraries.load(blend_path, link=True) as (data_from, data_to):
+            if not data_from.scenes:
+                return [], None
+            scene_name = "Scene" if "Scene" in data_from.scenes else data_from.scenes[0]
+            data_to.scenes = [scene_name]
+    except Exception:
+        return [], None
+
+    after_names = {s.name for s in bpy.data.scenes}
+    new_names = [name for name in after_names if name not in before_names]
+    linked_scene = bpy.data.scenes.get(new_names[0]) if new_names else bpy.data.scenes.get(scene_name or "")
+    if linked_scene is None:
+        return [], None
+
+    cameras: list[bpy.types.Object] = []
+    area_obj = None
+    for obj in linked_scene.objects:
+        if obj.type == 'CAMERA':
+            if scene.objects.get(obj.name) is None:
+                scene.collection.objects.link(obj)
+            cameras.append(obj)
+        elif obj.name == "AreaObject":
+            if scene.objects.get(obj.name) is None:
+                scene.collection.objects.link(obj)
+            area_obj = obj
+    return cameras, area_obj
+
+
 def _get_formation_tree(context) -> bpy.types.NodeTree | None:
     space = getattr(context, "space_data", None)
     if space and getattr(space, "edit_tree", None) and getattr(space, "tree_type", "") == "FN_FormationTree":
@@ -936,11 +1026,23 @@ class SheetImportWindow(QtWidgets.QMainWindow):
         if scene is None:
             self.status_label.setText("No active scene.")
             return
+        _set_world_surface_black(scene)
 
         base_dir = self.folder_edit.text().strip()
         if not base_dir:
             self.status_label.setText("Missing VAT/CAT folder.")
             return
+
+        linked_area_obj = None
+        try:
+            _linked_cameras, linked_area_obj = _link_camera_blend_assets(scene, base_dir)
+        except Exception:
+            linked_area_obj = None
+        if linked_area_obj is not None:
+            try:
+                scene.ld_checker_range_object = linked_area_obj
+            except Exception:
+                pass
 
         tree = _ensure_formation_tree(bpy.context)
         if tree is None:
@@ -1019,6 +1121,7 @@ class SheetImportWindow(QtWidgets.QMainWindow):
 
         settings, settings_source, settings_error = _read_sheet_settings(self.url_edit.text().strip())
         drone_num_setting = _to_int(settings.get("dronenum")) if settings else None
+        glare_threshold = _to_float(settings.get("glarethreshold")) if settings else None
 
         if drone_num_setting and vat_heights:
             if any(height != drone_num_setting for height in vat_heights):
@@ -1049,6 +1152,11 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             start_node.location = (-300, 0)
         if settings:
             _apply_import_settings(scene, settings, start_node=start_node)
+        if linked_area_obj is None and getattr(scene, "ld_checker_range_object", None) is None:
+            try:
+                bpy.ops.liberadrone.create_range_object()
+            except Exception:
+                pass
         settings_note = ""
         if settings:
             parts = []
@@ -1130,13 +1238,14 @@ class SheetImportWindow(QtWidgets.QMainWindow):
                 folder = os.path.join(base_dir, name)
                 _pos_path, cat_path = _find_vat_cat_files(folder)
                 cat_img = _load_image(cat_path) if cat_path else None
-            _build_cat_led_graph(
-                bpy.context,
-                cut_name=name,
-                cat_image=cat_img,
-                start_frame=start_frame,
-                duration=duration_int or 0,
-            )
+            if cat_img is not None:
+                _build_cat_led_graph(
+                    bpy.context,
+                    cut_name=name,
+                    cat_image=cat_img,
+                    start_frame=start_frame,
+                    duration=duration_int or 0,
+                )
 
             if prev_node:
                 _link_flow(tree, prev_node, node)
@@ -1146,6 +1255,15 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             self.status_label.setText(f"Imported: {created} nodes{settings_note}")
         else:
             self.status_label.setText(f"No nodes created.{settings_note}")
+        try:
+            bpy.ops.liberadrone.setup_all()
+        except Exception:
+            pass
+        try:
+            from liberadronecore.util import view_setup
+            view_setup.setup_glare_compositor(scene, glare_threshold=glare_threshold)
+        except Exception:
+            pass
         try:
             SheetImportWindow._instance = None
             self.close()

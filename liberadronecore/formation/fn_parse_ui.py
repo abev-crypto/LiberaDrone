@@ -262,7 +262,9 @@ class FN_UL_TransitionList(bpy.types.UIList):
         if node is None:
             row.label(text=item.node_name)
         else:
-            row.prop(node, "name", text="")
+            row.prop(node, "label", text="")
+            if not getattr(node, "label", ""):
+                row.label(text=node.name)
 
 
 class FN_PT_transition_list(bpy.types.Panel):
@@ -271,6 +273,7 @@ class FN_PT_transition_list(bpy.types.Panel):
     bl_space_type = 'NODE_EDITOR'
     bl_region_type = 'UI'
     bl_category = "Formation"
+    bl_order = 0
 
     @classmethod
     def poll(cls, context):
@@ -308,9 +311,9 @@ class FN_PT_transition_list(bpy.types.Panel):
 
         box = layout.box()
         box.label(text="Active Node")
-        box.prop(node, "name", text="Name")
         if hasattr(node, "draw_buttons"):
             node.draw_buttons(context, box)
+        box.operator("fn.create_or_assign_collection", text="Create/Assign Collection")
 
         socket_box = layout.box()
         socket_box.label(text="Sockets")
@@ -356,6 +359,7 @@ class FN_PT_formation_panel(bpy.types.Panel, FN_Register):
     bl_space_type = 'NODE_EDITOR'
     bl_region_type = 'UI'
     bl_category = "Formation"
+    bl_order = 2
 
     @classmethod
     def poll(cls, context):
@@ -364,7 +368,6 @@ class FN_PT_formation_panel(bpy.types.Panel, FN_Register):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator("fn.setup_scene", text="Setup")
         layout.operator("fn.create_node_chain", text="CreateNode")
         layout.operator("fn.calculate_schedule", text="Calculate")
         layout.operator("fn.force_calculate_schedule", text="Force Calculate")
@@ -382,10 +385,7 @@ class FN_PT_formation_panel(bpy.types.Panel, FN_Register):
         if node:
             box = layout.box()
             box.label(text="Active Node")
-            box.prop(node, "label", text="Label")
-            op = box.operator("fn.create_collection_from_label", text="Create Collection")
-            op.node_name = node.name
-            box.operator("fn.assign_selected_to_show", text="Assign Selected to Show")
+            box.operator("fn.create_or_assign_collection", text="Create/Assign Collection")
 
 
 class FN_PT_transition_settings(bpy.types.Panel, FN_Register):
@@ -394,6 +394,8 @@ class FN_PT_transition_settings(bpy.types.Panel, FN_Register):
     bl_space_type = 'NODE_EDITOR'
     bl_region_type = 'UI'
     bl_category = "Formation"
+    bl_order = 1
+    bl_options = {'DEFAULT_CLOSED'}
 
     @classmethod
     def poll(cls, context):

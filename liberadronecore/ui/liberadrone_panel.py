@@ -174,6 +174,10 @@ class LD_OT_create_range_object(bpy.types.Operator):
         _update_range_mesh(mesh, width, height, depth)
         if obj.name not in scene.collection.objects:
             scene.collection.objects.link(obj)
+        try:
+            obj.display_type = 'WIRE'
+        except Exception:
+            pass
         from liberadronecore.system import sence_setup
         target_col = sence_setup.get_or_create_collection(sence_setup.COL_FOR_PREVIEW)
         sence_setup.move_object_to_collection(obj, target_col)
@@ -204,128 +208,102 @@ def _update_limit_profile(self, context):
     _apply_limit_profile(self, getattr(self, "ld_limit_profile", ""))
 
 
-class LD_PT_libera_panel(bpy.types.Panel):
-    bl_label = "LiberaDrone"
+class LD_PT_libera_panel_base(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "LiberaDrone"
 
+
+class LD_PT_libera_panel_preview(LD_PT_libera_panel_base):
+    bl_label = "PreviewDrone"
+    bl_idname = "LD_PT_libera_panel_preview"
+    bl_order = 0
+
     def draw(self, context):
         layout = self.layout
         scene = context.scene
+        if _get_nodes_modifier(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME) is None:
+            layout.label(text="PreviewDroneGN not found", icon='ERROR')
+        col = layout.column(align=True)
+        col.prop(scene, "ld_preview_show_ring", text="ShowRing")
+        col.prop(scene, "ld_preview_scale", text="Scale")
 
-        layout.operator("liberadrone.setup_all", text="Setup")
 
-        box = layout.box()
-        row = box.row()
-        row.prop(
-            scene,
-            "ld_ui_preview_open",
-            text="",
-            icon='TRIA_DOWN' if scene.ld_ui_preview_open else 'TRIA_RIGHT',
-            emboss=False,
-        )
-        row.label(text="PreviewDrone")
-        if scene.ld_ui_preview_open:
-            if _get_nodes_modifier(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME) is None:
-                box.label(text="PreviewDroneGN not found", icon='ERROR')
-            col = box.column(align=True)
-            col.prop(scene, "ld_preview_show_ring", text="ShowRing")
-            col.prop(scene, "ld_preview_scale", text="Scale")
+class LD_PT_libera_panel_errorcheck(LD_PT_libera_panel_base):
+    bl_label = "ErrorCheck"
+    bl_idname = "LD_PT_libera_panel_errorcheck"
+    bl_order = 1
 
-        box = layout.box()
-        row = box.row()
-        row.prop(
-            scene,
-            "ld_ui_proxy_open",
-            text="",
-            icon='TRIA_DOWN' if scene.ld_ui_proxy_open else 'TRIA_RIGHT',
-            emboss=False,
-        )
-        row.label(text="ErrorCheck")
-        if scene.ld_ui_proxy_open:
-            col = box.column(align=True)
-            col.prop(scene, "ld_limit_profile", text="Limit Profile")
-            col.prop(scene, "ld_proxy_max_speed_up", text="MaxSpeedUp")
-            col.prop(scene, "ld_proxy_max_speed_down", text="MaxSpeedDown")
-            col.prop(scene, "ld_proxy_max_speed_horiz", text="MaxSpeedHoriz")
-            col.prop(scene, "ld_proxy_max_acc_vert", text="MaxAcc")
-            col.prop(scene, "ld_proxy_min_distance", text="MinDistance")
-            col.separator()
-            col.prop(scene, "ld_checker_range_object", text="Area Object")
-            if scene.ld_checker_range_object is None:
-                col.prop(scene, "ld_checker_range_width", text="Area Width")
-                col.prop(scene, "ld_checker_range_height", text="Area Height")
-                col.prop(scene, "ld_checker_range_depth", text="Area Depth")
-            col.operator("liberadrone.create_range_object", text="Create Area Object")
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        col = layout.column(align=True)
+        col.prop(scene, "ld_limit_profile", text="Limit Profile")
+        col.prop(scene, "ld_proxy_max_speed_up", text="MaxSpeedUp")
+        col.prop(scene, "ld_proxy_max_speed_down", text="MaxSpeedDown")
+        col.prop(scene, "ld_proxy_max_speed_horiz", text="MaxSpeedHoriz")
+        col.prop(scene, "ld_proxy_max_acc_vert", text="MaxAcc")
+        col.prop(scene, "ld_proxy_min_distance", text="MinDistance")
+        col.separator()
+        col.prop(scene, "ld_checker_range_object", text="Area Object")
+        if scene.ld_checker_range_object is None:
+            col.prop(scene, "ld_checker_range_width", text="Area Width")
+            col.prop(scene, "ld_checker_range_height", text="Area Height")
+            col.prop(scene, "ld_checker_range_depth", text="Area Depth")
+        col.operator("liberadrone.create_range_object", text="Create Area Object")
 
-        box = layout.box()
-        row = box.row()
-        row.prop(
-            scene,
-            "ld_ui_overlay_open",
-            text="",
-            icon='TRIA_DOWN' if scene.ld_ui_overlay_open else 'TRIA_RIGHT',
-            emboss=False,
-        )
-        row.label(text="Overlay")
-        if scene.ld_ui_overlay_open:
-            box.prop(scene, "ld_checker_enabled", text="Show Checker")
-            col = box.column(align=True)
-            col.prop(scene, "ld_checker_show_speed", text="Speed")
-            col.prop(scene, "ld_checker_show_acc", text="Acc")
-            col.prop(scene, "ld_checker_show_distance", text="Distance")
-            col.prop(scene, "ld_checker_range_enabled", text="Range")
-            col.prop(scene, "ld_checker_size", text="Checker Size")
 
-        box = layout.box()
-        row = box.row()
-        row.prop(
-            scene,
-            "ld_ui_graph_open",
-            text="",
-            icon='TRIA_DOWN' if scene.ld_ui_graph_open else 'TRIA_RIGHT',
-            emboss=False,
-        )
-        row.label(text="Graph")
-        if scene.ld_ui_graph_open:
-            box.operator("liberadrone.show_check_graph", text="Show Check Graph")
+class LD_PT_libera_panel_overlay(LD_PT_libera_panel_base):
+    bl_label = "Overlay"
+    bl_idname = "LD_PT_libera_panel_overlay"
+    bl_order = 2
 
-        box = layout.box()
-        row = box.row()
-        row.prop(
-            scene,
-            "ld_ui_view_setup_open",
-            text="",
-            icon='TRIA_DOWN' if scene.ld_ui_view_setup_open else 'TRIA_RIGHT',
-            emboss=False,
-        )
-        row.label(text="View Setup")
-        if scene.ld_ui_view_setup_open:
-            box.operator("liberadrone.setup_glare_compositor", text="Setup Glare")
-            row = box.row(align=True)
-            row.operator("liberadrone.frame_from_neg_y", text="Frame From -Y")
-            row.prop(scene, "ld_camera_margin", text="")
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        layout.prop(scene, "ld_checker_enabled", text="Show Checker")
+        col = layout.column(align=True)
+        col.prop(scene, "ld_checker_show_speed", text="Speed")
+        col.prop(scene, "ld_checker_show_acc", text="Acc")
+        col.prop(scene, "ld_checker_show_distance", text="Distance")
+        col.prop(scene, "ld_checker_range_enabled", text="Range")
+        col.prop(scene, "ld_checker_size", text="Checker Size")
+        layout.separator()
+        layout.operator("liberadrone.show_check_graph", text="Show Check Graph")
 
-        box = layout.box()
-        row = box.row()
-        row.prop(
-            scene,
-            "ld_ui_import_open",
-            text="",
-            icon='TRIA_DOWN' if scene.ld_ui_import_open else 'TRIA_RIGHT',
-            emboss=False,
-        )
-        row.label(text="Import")
-        if scene.ld_ui_import_open:
-            box.prop(scene, "ld_import_sheet_url", text="Sheet URL")
-            box.prop(scene, "ld_import_vat_dir", text="VAT/CAT Folder")
-            box.operator("liberadrone.show_import_sheet", text="Import Sheet (Test)")
-            box.operator("liberadrone.show_export_sheet", text="Export Sheet")
+
+class LD_PT_libera_panel_view_setup(LD_PT_libera_panel_base):
+    bl_label = "View Setup"
+    bl_idname = "LD_PT_libera_panel_view_setup"
+    bl_order = 3
+
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row(align=True)
+        row.operator("liberadrone.frame_from_neg_y", text="Frame From -Y")
+        row.prop(context.scene, "ld_camera_margin", text="")
+
+
+class LD_PT_libera_panel_io(LD_PT_libera_panel_base):
+    bl_label = "I/O"
+    bl_idname = "LD_PT_libera_panel_io"
+    bl_order = 4
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        layout.prop(scene, "ld_import_sheet_url", text="Sheet URL")
+        layout.prop(scene, "ld_import_vat_dir", text="VAT/CAT Folder")
+        layout.operator("liberadrone.show_import_sheet", text="Import Sheet")
+        layout.operator("liberadrone.show_export_sheet", text="Export Sheet")
 
 
 classes = (
-    LD_PT_libera_panel,
+    LD_PT_libera_panel_preview,
+    LD_PT_libera_panel_errorcheck,
+    LD_PT_libera_panel_overlay,
+    LD_PT_libera_panel_view_setup,
+    LD_PT_libera_panel_io,
     LD_OT_create_range_object,
 )
 
@@ -434,14 +412,6 @@ def register():
         default="",
         subtype='DIR_PATH',
     )
-    bpy.types.Scene.ld_ui_preview_open = bpy.props.BoolProperty(name="UI Preview Open", default=True)
-    bpy.types.Scene.ld_ui_proxy_open = bpy.props.BoolProperty(name="UI Proxy Open", default=True)
-    bpy.types.Scene.ld_ui_overlay_open = bpy.props.BoolProperty(name="UI Overlay Open", default=True)
-    bpy.types.Scene.ld_ui_graph_open = bpy.props.BoolProperty(name="UI Graph Open", default=True)
-    bpy.types.Scene.ld_ui_view_setup_open = bpy.props.BoolProperty(name="UI View Setup Open", default=True)
-    bpy.types.Scene.ld_ui_import_open = bpy.props.BoolProperty(name="UI Import Open", default=True)
-    bpy.types.Scene.ld_ui_workspace_open = bpy.props.BoolProperty(name="UI Workspace Open", default=True)
-
     scene = getattr(bpy.context, "scene", None)
     if scene and getattr(scene, "ld_limit_profile", "") == "MODEL_X":
         defaults = (
@@ -476,20 +446,6 @@ def unregister():
         del bpy.types.Scene.ld_import_sheet_url
     if hasattr(bpy.types.Scene, "ld_import_vat_dir"):
         del bpy.types.Scene.ld_import_vat_dir
-    if hasattr(bpy.types.Scene, "ld_ui_workspace_open"):
-        del bpy.types.Scene.ld_ui_workspace_open
-    if hasattr(bpy.types.Scene, "ld_ui_import_open"):
-        del bpy.types.Scene.ld_ui_import_open
-    if hasattr(bpy.types.Scene, "ld_ui_view_setup_open"):
-        del bpy.types.Scene.ld_ui_view_setup_open
-    if hasattr(bpy.types.Scene, "ld_ui_graph_open"):
-        del bpy.types.Scene.ld_ui_graph_open
-    if hasattr(bpy.types.Scene, "ld_ui_overlay_open"):
-        del bpy.types.Scene.ld_ui_overlay_open
-    if hasattr(bpy.types.Scene, "ld_ui_proxy_open"):
-        del bpy.types.Scene.ld_ui_proxy_open
-    if hasattr(bpy.types.Scene, "ld_ui_preview_open"):
-        del bpy.types.Scene.ld_ui_preview_open
     if hasattr(bpy.types.Scene, "ld_checker_range_object"):
         del bpy.types.Scene.ld_checker_range_object
     if hasattr(bpy.types.Scene, "ld_checker_size"):

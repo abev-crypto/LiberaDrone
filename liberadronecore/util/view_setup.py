@@ -4,7 +4,7 @@ from bpy.props import FloatProperty
 from bpy.types import Operator
 from mathutils import Vector
 
-def setup_glare_compositor(scene=None):
+def setup_glare_compositor(scene=None, glare_threshold=None):
     if scene is None:
         scene = bpy.context.scene
 
@@ -29,7 +29,13 @@ def setup_glare_compositor(scene=None):
     n_glare.glare_type = 'BLOOM'
     n_glare.quality = 'MEDIUM'
     n_glare.mix = 0.0
-    n_glare.threshold = 0.2
+    if glare_threshold is None:
+        n_glare.threshold = 0.2
+    else:
+        try:
+            n_glare.threshold = float(glare_threshold)
+        except Exception:
+            n_glare.threshold = 0.2
     n_glare.size = 5
 
     # ----- Composite -----

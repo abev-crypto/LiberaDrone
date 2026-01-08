@@ -45,16 +45,7 @@ class LD_OT_setup_all(bpy.types.Operator):
     bl_options = {'REGISTER'}
 
     def execute(self, context):
-        try:
-            bpy.ops.fn.setup_scene()
-        except Exception as exc:
-            self.report({'WARNING'}, f"Formation setup failed: {exc}")
-        try:
-            bpy.ops.liberadrone.setup_workspace_formation()
-        except Exception as exc:
-            self.report({'WARNING'}, f"Formation workspace failed: {exc}")
-        try:
-            bpy.ops.liberadrone.setup_workspace_led()
-        except Exception as exc:
-            self.report({'WARNING'}, f"LED workspace failed: {exc}")
+        bpy.ops.fn.setup_scene()
+        bpy.ops.liberadrone.setup_workspace_formation()
+        bpy.ops.liberadrone.setup_workspace_led()
         return {'FINISHED'}

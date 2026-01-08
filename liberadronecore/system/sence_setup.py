@@ -1,6 +1,5 @@
 ﻿import bpy
 import bmesh
-import os
 from typing import Optional
 from mathutils import Vector
 
@@ -47,6 +46,12 @@ def move_object_to_collection(obj, target_col):
     for c in list(obj.users_collection):
         c.objects.unlink(obj)
     target_col.objects.link(obj)
+
+def _get_scene():
+    scene = getattr(bpy.context, "scene", None)
+    if scene is None and bpy.data.scenes:
+        scene = bpy.data.scenes[0]
+    return scene
 
 def ensure_color_attribute(mesh, name=ATTR_NAME):
     # Blender縺ｮ繝舌・繧ｸ繝ｧ繝ｳ蟾ｮ繧貞精蜿弱＠縺ｦ "color" 繧ｫ繝ｩ繝ｼ螻樊ｧ繧堤畑諢上☆繧・
@@ -117,14 +122,23 @@ def _fill_preview_image(img: bpy.types.Image, ring: bool) -> None:
 
 def _pack_preview_image(img: bpy.types.Image) -> None:
     try:
-        filepath = bpy.path.abspath(img.filepath) if getattr(img, "filepath", "") else ""
+        img.pack(as_png=True)
     except Exception:
-        filepath = ""
-    if filepath and os.path.isfile(filepath):
         try:
             img.pack()
         except Exception:
-            pass
+            return
+
+    try:
+        filepath = getattr(img, "filepath", "") or ""
+        if not filepath and getattr(bpy.data, "is_saved", False):
+            img.filepath_raw = f"//{img.name}"
+            img.file_format = 'PNG'
+            filepath = img.filepath
+        if filepath:
+            img.save()
+    except Exception:
+        pass
 
 
 def _ensure_preview_image(name: str, *, ring: bool) -> bpy.types.Image:
@@ -191,6 +205,11 @@ def get_or_create_emission_attr_material(mat_name=MAT_NAME, attr_name=ATTR_NAME,
     principled.inputs[1].default_value = 0.0
     principled.inputs[2].default_value = 0.5
     principled.inputs[13].default_value = 0.5
+    roughness_input = principled.inputs.get("Roughness")
+    if roughness_input is None and len(principled.inputs) > 7:
+        roughness_input = principled.inputs[7]
+    if roughness_input is not None:
+        roughness_input.default_value = 0
     if principled.inputs.get("Emission Strength"):
         principled.inputs["Emission Strength"].default_value = 1.0
     elif len(principled.inputs) > 28:
@@ -199,6 +218,11 @@ def get_or_create_emission_attr_material(mat_name=MAT_NAME, attr_name=ATTR_NAME,
     links.new(image_tex.outputs[0], mix.inputs[6])
     links.new(attr.outputs[0], mix.inputs[7])
     links.new(mix.outputs[2], principled.inputs[0])
+    emission_input = principled.inputs.get("Emission") or principled.inputs.get("Emission Color")
+    if emission_input is None and len(principled.inputs) > 17:
+        emission_input = principled.inputs[17]
+    if emission_input is not None:
+        links.new(mix.outputs[2], emission_input)
     links.new(image_tex.outputs[0], principled.inputs[4])
     links.new(principled.outputs[0], out.inputs[0])
 
@@ -213,17 +237,32 @@ def assign_material(obj, mat):
         obj.data.materials.append(mat)
 
 def create_preview_plane(name=PREVIEW_NAME, size=PREVIEW_PLANE_SIZE):
-    bpy.ops.mesh.primitive_plane_add(size=size, location=(0, 0, 0))
-    obj = bpy.context.active_object
-    obj.name = name
-    obj.data.name = f"{name}_Mesh"
+    scene = _get_scene()
+    if scene is None:
+        raise RuntimeError("No active scene for preview plane.")
+    mesh = bpy.data.meshes.new(f"{name}_Mesh")
+    obj = bpy.data.objects.new(name, mesh)
+    scene.collection.objects.link(obj)
+
+    bm = bmesh.new()
+    half = size * 0.5
+    v0 = bm.verts.new((-half, -half, 0.0))
+    v1 = bm.verts.new((half, -half, 0.0))
+    v2 = bm.verts.new((half, half, 0.0))
+    v3 = bm.verts.new((-half, half, 0.0))
+    bm.faces.new((v0, v1, v2, v3))
+    bm.to_mesh(mesh)
+    bm.free()
     return obj
 
 def create_any_mesh_points(name=ANY_MESH_NAME, n_verts=ANY_MESH_VERTS):
+    scene = _get_scene()
+    if scene is None:
+        raise RuntimeError("No active scene for AnyMesh.")
     # 縲御ｻｻ諢城らせ謨ｰ縺ｮ繝｡繝・す繝･縲・ 縺薙％縺ｧ縺ｯ 窶懃せ縺縺鯛・縺ｮ繝｡繝・す繝･繧剃ｽ懊ｋ・亥ｾ後〒閾ｪ逕ｱ縺ｫ邱ｨ髮・＠繧・☆縺・ｼ・
     mesh = bpy.data.meshes.new(f"{name}_Mesh")
     obj = bpy.data.objects.new(name, mesh)
-    bpy.context.scene.collection.objects.link(obj)
+    scene.collection.objects.link(obj)
 
     bm = bmesh.new()
     # 驕ｩ蠖薙↓蛻・ｸ・ｼ・譁ｹ蜷代↓荳ｦ縺ｹ繧倶ｾ具ｼ・

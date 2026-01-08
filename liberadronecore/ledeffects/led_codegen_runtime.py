@@ -313,7 +313,7 @@ def _collection_world_bbox(
 ) -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
     if not collection_name:
         return None
-    names = _get_collection_cache(collection_name, use_children)
+    names = _get_collection_cache(collection_name, use_children, build_mesh_cache=False)
     if names is None:
         col = bpy.data.collections.get(collection_name)
         if col is None:
@@ -438,20 +438,33 @@ def _build_mesh_cache(obj: bpy.types.Object) -> Optional[Dict[str, Any]]:
                 uv_by_vertex[v_idx] = (float(uv[0]), float(uv[1]))
 
     color_by_vertex: List[Optional[Tuple[float, float, float, float]]] = [None] * len(mesh.vertices)
-    attr = mesh.color_attributes.active if hasattr(mesh, "color_attributes") else None
-    if attr is None and hasattr(mesh, "color_attributes"):
-        if mesh.color_attributes:
-            attr = mesh.color_attributes[0]
+    attr = None
+    if hasattr(mesh, "color_attributes"):
+        attrs = list(mesh.color_attributes)
+        if attrs:
+            color_attrs = [
+                a for a in attrs
+                if getattr(a, "data_type", "") in {"BYTE_COLOR", "FLOAT_COLOR"}
+            ]
+            if color_attrs:
+                active = mesh.color_attributes.active
+                attr = active if active in color_attrs else color_attrs[0]
     if attr is not None:
         if attr.domain == 'POINT':
             for idx in range(len(mesh.vertices)):
-                color = attr.data[idx].color
+                try:
+                    color = attr.data[idx].color
+                except Exception:
+                    continue
                 color_by_vertex[idx] = (float(color[0]), float(color[1]), float(color[2]), float(color[3]))
         elif attr.domain == 'CORNER':
             for loop in mesh.loops:
                 v_idx = loop.vertex_index
                 if color_by_vertex[v_idx] is None:
-                    color = attr.data[loop.index].color
+                    try:
+                        color = attr.data[loop.index].color
+                    except Exception:
+                        continue
                     color_by_vertex[v_idx] = (float(color[0]), float(color[1]), float(color[2]), float(color[3]))
 
     available_uv = list(range(len(mesh.vertices)))
@@ -481,12 +494,21 @@ def _get_mesh_cache(obj: bpy.types.Object) -> Optional[Dict[str, Any]]:
     return cache
 
 
-def _get_collection_cache(collection_name: str, use_children: bool) -> Optional[List[str]]:
+def _get_collection_cache(
+    collection_name: str,
+    use_children: bool,
+    build_mesh_cache: bool = True,
+) -> Optional[List[str]]:
     if _LED_FRAME_CACHE.get("frame") is None:
         return None
     key = (collection_name, bool(use_children))
     cached = _LED_FRAME_CACHE["collection"].get(key)
     if cached is not None:
+        if build_mesh_cache:
+            for name in cached:
+                obj = bpy.data.objects.get(name)
+                if obj is not None and obj.type == 'MESH':
+                    _get_mesh_cache(obj)
         return cached
     col = bpy.data.collections.get(collection_name)
     if col is None:
@@ -500,8 +522,9 @@ def _get_collection_cache(collection_name: str, use_children: bool) -> Optional[
         if use_children:
             stack.extend(list(current.children))
     names = [obj.name for obj in candidates]
-    for obj in candidates:
-        _get_mesh_cache(obj)
+    if build_mesh_cache:
+        for obj in candidates:
+            _get_mesh_cache(obj)
     _LED_FRAME_CACHE["collection"][key] = names
     return names
 
@@ -701,7 +724,7 @@ def _nearest_vertex_uv_with_dist(
 
 def _collection_nearest_uv(collection_name: str, pos: Tuple[float, float, float], use_children: bool) -> Tuple[float, float]:
     candidates: List[bpy.types.Object] = []
-    cached = _get_collection_cache(collection_name, use_children)
+    cached = _get_collection_cache(collection_name, use_children, build_mesh_cache=True)
     if cached is not None:
         for name in cached:
             obj = bpy.data.objects.get(name)
@@ -731,8 +754,26 @@ def _collection_nearest_uv(collection_name: str, pos: Tuple[float, float, float]
     return best_uv
 
 
-def _formation_bbox_uv(pos: Tuple[float, float, float]) -> Tuple[float, float]:
+_FORMATION_BBOX_CACHE: Dict[str, Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = {}
+
+
+def _get_formation_bbox(cache_key: Optional[str] = None, static: bool = False):
+    if static and cache_key:
+        cached = _FORMATION_BBOX_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
     bounds = _collection_world_bbox("Formation", use_children=True)
+    if static and cache_key and bounds:
+        _FORMATION_BBOX_CACHE[cache_key] = bounds
+    return bounds
+
+
+def _formation_bbox_uv(
+    pos: Tuple[float, float, float],
+    cache_key: Optional[str] = None,
+    static: bool = False,
+) -> Tuple[float, float]:
+    bounds = _get_formation_bbox(cache_key, static)
     if not bounds:
         return 0.0, 0.0
     (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
@@ -741,6 +782,24 @@ def _formation_bbox_uv(pos: Tuple[float, float, float]) -> Tuple[float, float]:
     u = _clamp((pos[0] - min_x) / span_x, 0.0, 1.0)
     v = _clamp((pos[2] - min_z) / span_z, 0.0, 1.0)
     return u, v
+
+
+def _formation_bbox_relpos(
+    pos: Tuple[float, float, float],
+    cache_key: Optional[str] = None,
+    static: bool = False,
+) -> Tuple[float, float, float]:
+    bounds = _get_formation_bbox(cache_key, static)
+    if not bounds:
+        return 0.0, 0.0, 0.0
+    (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
+    span_x = max(0.0001, max_x - min_x)
+    span_y = max(0.0001, max_y - min_y)
+    span_z = max(0.0001, max_z - min_z)
+    rel_x = _clamp((pos[0] - min_x) / span_x, 0.0, 1.0)
+    rel_y = _clamp((pos[1] - min_y) / span_y, 0.0, 1.0)
+    rel_z = _clamp((pos[2] - min_z) / span_z, 0.0, 1.0)
+    return rel_x, rel_y, rel_z
 
 
 _IMAGE_CACHE: Dict[str, Tuple[int, int, List[float]]] = {}
@@ -1142,6 +1201,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         "_nearest_vertex_uv": _nearest_vertex_uv,
         "_collection_nearest_uv": _collection_nearest_uv,
         "_formation_bbox_uv": _formation_bbox_uv,
+        "_formation_bbox_relpos": _formation_bbox_relpos,
         "_sample_image": _sample_image,
         "_sample_video": _sample_video,
         "_color_ramp_eval": _color_ramp_eval,

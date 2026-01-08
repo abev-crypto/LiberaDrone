@@ -87,6 +87,92 @@ def _resolve_socket_value(node: bpy.types.Node, name: str, default):
     return fn_parse._resolve_input_value(node, name, default)
 
 
+def _iter_connected_nodes(sock: bpy.types.NodeSocket | None) -> list[bpy.types.Node]:
+    if sock is None:
+        return []
+    nodes: list[bpy.types.Node] = []
+    seen_nodes: set[int] = set()
+    seen_reroutes: set[int] = set()
+    stack = [sock]
+    while stack:
+        cur = stack.pop()
+        for link in getattr(cur, "links", []):
+            if hasattr(link, "is_valid") and not link.is_valid:
+                continue
+            target = getattr(link, "to_node", None)
+            if target is None:
+                continue
+            if getattr(target, "bl_idname", "") == "NodeReroute":
+                node_id = int(target.as_pointer()) if hasattr(target, "as_pointer") else id(target)
+                if node_id in seen_reroutes:
+                    continue
+                seen_reroutes.add(node_id)
+                for out_sock in getattr(target, "outputs", []):
+                    stack.append(out_sock)
+                continue
+            node_id = int(target.as_pointer()) if hasattr(target, "as_pointer") else id(target)
+            if node_id in seen_nodes:
+                continue
+            seen_nodes.add(node_id)
+            nodes.append(target)
+    return nodes
+
+
+def _resolve_connected_range(node: bpy.types.Node, context) -> tuple[int, int] | None:
+    out_sock = node.outputs.get("Collection") if hasattr(node, "outputs") else None
+    targets = _iter_connected_nodes(out_sock)
+    formation_ids = {
+        "FN_ShowNode",
+        "FN_TransitionNode",
+        "FN_SplitTransitionNode",
+        "FN_MergeTransitionNode",
+    }
+    targets = [t for t in targets if getattr(t, "bl_idname", "") in formation_ids]
+    if not targets:
+        return None
+    try:
+        from liberadronecore.formation import fn_parse
+    except Exception:
+        return None
+    schedule = fn_parse.compute_schedule(context, assign_pairs=False)
+    range_start = None
+    range_end = None
+    for target in targets:
+        entry = None
+        tree_name = getattr(getattr(target, "id_data", None), "name", "")
+        for item in schedule:
+            if item.node_name == target.name and item.tree_name == tree_name:
+                entry = item
+                break
+        if entry is not None:
+            start = int(entry.start)
+            end = int(entry.end)
+        else:
+            start = getattr(target, "computed_start_frame", None)
+            try:
+                start = int(start)
+            except Exception:
+                start = None
+            if start is None or start < 0:
+                continue
+            duration_value = fn_parse._resolve_input_value(target, "Duration", 0.0, "duration")
+            try:
+                duration = fn_parse._duration_frames(duration_value)
+            except Exception:
+                try:
+                    duration = int(float(duration_value))
+                except Exception:
+                    duration = 0
+            end = start + max(0, int(duration))
+        if range_start is None or start < range_start:
+            range_start = start
+        if range_end is None or end > range_end:
+            range_end = end
+    if range_start is None or range_end is None or range_end <= range_start:
+        return None
+    return range_start, range_end - range_start
+
+
 class FN_OT_build_vat_cache(bpy.types.Operator, FN_Register):
     bl_idname = "fn.build_vat_cache"
     bl_label = "Build VAT Cache"
@@ -123,19 +209,6 @@ class FN_VATCacheNode(bpy.types.Node, FN_Node):
 
     def init(self, context):
         self.inputs.new("FN_SocketCollection", "Collection")
-        start_sock = self.inputs.new("FN_SocketInt", "Start Frame")
-        start_sock.value = int(getattr(getattr(context, "scene", None), "frame_start", 0))
-        duration_sock = self.inputs.new("FN_SocketFloat", "Duration")
-        duration_sock.value = float(
-            max(
-                1,
-                int(
-                    getattr(getattr(context, "scene", None), "frame_end", 1)
-                    - getattr(getattr(context, "scene", None), "frame_start", 0)
-                    + 1
-                ),
-            )
-        )
         self.outputs.new("FN_SocketCollection", "Collection")
 
     def draw_buttons(self, context, layout):
@@ -152,21 +225,13 @@ class FN_VATCacheNode(bpy.types.Node, FN_Node):
         if not isinstance(source, bpy.types.Collection):
             raise RuntimeError("Collection input is required.")
 
-        start_frame = _resolve_socket_value(self, "Start Frame", scene.frame_start)
-        duration = _resolve_socket_value(
-            self,
-            "Duration",
-            max(1, scene.frame_end - scene.frame_start + 1),
-        )
-        try:
-            start_frame = int(start_frame)
-        except Exception:
+        range_data = _resolve_connected_range(self, context)
+        if range_data is None:
             start_frame = int(scene.frame_start)
-        try:
-            duration = int(float(duration))
-        except Exception:
-            duration = max(1, scene.frame_end - start_frame + 1)
-        duration = max(1, duration)
+            duration = max(1, int(scene.frame_end - scene.frame_start + 1))
+        else:
+            start_frame, duration = range_data
+            duration = max(1, int(duration))
         end_frame = start_frame + duration
 
         try:

@@ -8,8 +8,8 @@ TODO LedEffectsをドローンへ反映するタスク
 import bpy
 from bpy.app.handlers import persistent
 
-import liberadronecore.util.droneutil as du
 from liberadronecore.ledeffects import led_codegen_runtime as le_codegen
+from liberadronecore.system.transition import transition_apply
 import numpy as np
 
 
@@ -118,6 +118,31 @@ def _write_led_color_attribute(colors) -> None:
     #mesh.update()
 
 
+def _collect_formation_positions(scene) -> list[tuple[float, float, float]]:
+    col = bpy.data.collections.get("Formation")
+    if col is None:
+        return []
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    positions, pair_ids = transition_apply._collect_positions_for_collection(
+        col,
+        int(getattr(scene, "frame_current", 0)),
+        depsgraph,
+    )
+    if not positions:
+        return []
+    if pair_ids and len(pair_ids) == len(positions):
+        ordered = [None] * len(positions)
+        valid = True
+        for idx, pid in enumerate(pair_ids):
+            if pid is None or pid < 0 or pid >= len(positions) or ordered[pid] is not None:
+                valid = False
+                break
+            ordered[pid] = positions[idx]
+        if valid and all(p is not None for p in ordered):
+            positions = ordered
+    return [(float(p.x), float(p.y), float(p.z)) for p in positions]
+
+
 @persistent
 def update_led_effects(scene):
     if _is_undo_running():
@@ -140,11 +165,9 @@ def update_led_effects(scene):
     frame = scene.frame_current
     frame_start = scene.frame_start
 
-    drones = du.get_all_drones_in_scene(scene)
-    if not drones:
+    positions = _collect_formation_positions(scene)
+    if not positions:
         return
-
-    positions = [du.get_position_of_object(drone) for drone in drones]
 
     le_codegen.begin_led_frame_cache(frame, positions)
     colors = np.zeros((len(positions), 4), dtype=np.float32)

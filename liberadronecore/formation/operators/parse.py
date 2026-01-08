@@ -152,6 +152,12 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
     bl_description = "Run scene setup using Start node drone count"
 
     def execute(self, context):
+        scene = context.scene
+        if scene is not None:
+            try:
+                scene.view_settings.view_transform = "Standard"
+            except Exception:
+                pass
         def _ensure_collection(scene: bpy.types.Scene, name: str) -> bpy.types.Collection:
             col = bpy.data.collections.get(name)
             if col is None:
@@ -229,6 +235,24 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
                 mesh.vertices.add(count)
                 mesh.update()
 
+        def _ensure_uv_map(obj: Optional[bpy.types.Object]) -> None:
+            if obj is None or obj.type != 'MESH':
+                return
+            mesh = getattr(obj, "data", None)
+            if mesh is None:
+                return
+            uv_layers = getattr(mesh, "uv_layers", None)
+            if uv_layers is not None:
+                if not uv_layers:
+                    uv_layers.new(name="UVMap")
+                return
+            uv_textures = getattr(mesh, "uv_textures", None)
+            if uv_textures is not None and len(uv_textures) == 0:
+                try:
+                    uv_textures.new(name="UVMap")
+                except Exception:
+                    pass
+
         tree = None
         space = context.space_data
         if space and getattr(space, "edit_tree", None):
@@ -264,6 +288,7 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
         if preview_obj is None and legacy_preview is not None:
             legacy_preview.name = "PreviewDrone"
             preview_obj = legacy_preview
+        _ensure_uv_map(preview_obj)
 
         if preview_obj is None:
             if drone_count is not None:
@@ -275,6 +300,7 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
             preview_obj = bpy.data.objects.get("Iso")
             if preview_obj:
                 preview_obj.name = "PreviewDrone"
+        _ensure_uv_map(preview_obj)
 
         preview_group = None
         from liberadronecore.system.drone import preview_drone_gn
@@ -480,6 +506,62 @@ class FN_OT_assign_selected_to_show(bpy.types.Operator, FN_Register):
             node.collection_vertex_count = _count_collection_vertices(col)
 
         self.report({'INFO'}, f"Assigned {len(meshes)} meshes to {name}")
+        return {'FINISHED'}
+
+
+class FN_OT_create_or_assign_collection(bpy.types.Operator, FN_Register):
+    bl_idname = "fn.create_or_assign_collection"
+    bl_label = "Create/Assign Collection"
+    bl_description = "Create collection from label or assign selected meshes to active Show node"
+
+    def execute(self, context):
+        node = getattr(context, "active_node", None)
+        if node is None:
+            self.report({'ERROR'}, "Active node not found")
+            return {'CANCELLED'}
+        if context.scene is None:
+            self.report({'ERROR'}, "No active scene")
+            return {'CANCELLED'}
+
+        name = (node.label or node.name or "").strip()
+        if not name:
+            self.report({'ERROR'}, "Formation name is required")
+            return {'CANCELLED'}
+
+        selected = getattr(context, "selected_objects", None)
+        meshes = [o for o in (selected or []) if o.type == 'MESH']
+        if meshes and getattr(node, "bl_idname", "") != "FN_ShowNode":
+            self.report({'ERROR'}, "Active Show node not found")
+            return {'CANCELLED'}
+
+        col = bpy.data.collections.get(name)
+        created = False
+        if col is None:
+            col = bpy.data.collections.new(name)
+            context.scene.collection.children.link(col)
+            created = True
+
+        if meshes:
+            for obj in meshes:
+                if obj.name not in col.objects:
+                    col.objects.link(obj)
+            node.label = name
+
+        if hasattr(node, "inputs"):
+            sock = node.inputs.get("Collection")
+            if sock and hasattr(sock, "collection"):
+                sock.collection = col
+        if hasattr(node, "collection"):
+            node.collection = col
+        if hasattr(node, "collection_vertex_count"):
+            node.collection_vertex_count = _count_collection_vertices(col)
+
+        if meshes:
+            self.report({'INFO'}, f"Assigned {len(meshes)} meshes to {name}")
+        elif created:
+            self.report({'INFO'}, f"Created collection {name}")
+        else:
+            self.report({'INFO'}, f"Collection {name} already exists")
         return {'FINISHED'}
 
 
