@@ -401,6 +401,20 @@ def _order_by_pair_id(items, pair_ids):
     return ordered
 
 
+def _map_by_pair_id(items, pair_ids):
+    if pair_ids is None or len(items) != len(pair_ids):
+        return items
+    count = len(items)
+    mapped = [None] * count
+    for dst_idx, pid in enumerate(pair_ids):
+        if pid is None or pid < 0 or pid >= count:
+            return items
+        mapped[dst_idx] = items[pid]
+    if any(entry is None for entry in mapped):
+        return items
+    return mapped
+
+
 def _read_color_verts() -> tuple[list[tuple[float, float, float, float]], list[int] | None] | None:
     obj = bpy.data.objects.get("ColorVerts")
     if obj is None or obj.type != 'MESH':
@@ -519,8 +533,8 @@ def _export_cut_to_vat_cat(context, cut: dict[str, object], export_dir: str) -> 
                 view_layer.update()
             return False, f"No positions at frame {frame}."
 
-        ordered_positions = _order_by_pair_id(positions, pair_ids)
-        ordered_pos = [(float(p.x), float(p.y), float(p.z)) for p in ordered_positions]
+        mapped_positions = _map_by_pair_id(positions, pair_ids)
+        ordered_pos = [(float(p.x), float(p.y), float(p.z)) for p in mapped_positions]
 
         color_data = _read_color_verts()
         if color_data is None:
@@ -534,9 +548,9 @@ def _export_cut_to_vat_cat(context, cut: dict[str, object], export_dir: str) -> 
             if view_layer is not None:
                 view_layer.update()
             return False, "ColorVerts count mismatch."
-        ordered_colors = _order_by_pair_id(colors, color_pair_ids)
+        mapped_colors = _map_by_pair_id(colors, color_pair_ids)
         colors_frames.append(
-            [(float(c[0]), float(c[1]), float(c[2]), float(c[3])) for c in ordered_colors]
+            [(float(c[0]), float(c[1]), float(c[2]), float(c[3])) for c in mapped_colors]
         )
         positions_frames.append(ordered_pos)
 

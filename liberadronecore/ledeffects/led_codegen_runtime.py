@@ -275,10 +275,16 @@ def _color_ramp_eval(
     return tuple(elements[-1][1])
 
 
-def _get_object(name: str) -> Optional[bpy.types.Object]:
-    if not name:
+def _get_object(value) -> Optional[bpy.types.Object]:
+    if value is None:
         return None
-    return bpy.data.objects.get(name)
+    if isinstance(value, bpy.types.Object):
+        return value
+    if isinstance(value, str):
+        if not value:
+            return None
+        return bpy.data.objects.get(value)
+    return None
 
 
 def _object_world_bbox(obj: bpy.types.Object) -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
@@ -802,13 +808,41 @@ def _formation_bbox_relpos(
     return rel_x, rel_y, rel_z
 
 
-_IMAGE_CACHE: Dict[str, Tuple[int, int, List[float]]] = {}
+_IMAGE_CACHE: Dict[int, Tuple[int, int, List[float]]] = {}
+
+def _cache_static_image(image: Optional[bpy.types.Image]) -> None:
+    if image is None:
+        return
+    source = getattr(image, "source", "")
+    if source in {"MOVIE", "SEQUENCE", "VIEWER", "COMPOSITED"}:
+        return
+    width, height = image.size
+    if width <= 0 or height <= 0:
+        return
+    key = int(image.as_pointer())
+    cached = _IMAGE_CACHE.get(key)
+    if cached is not None and cached[0] == width and cached[1] == height:
+        return
+    try:
+        pixels = list(image.pixels)
+    except Exception:
+        return
+    _IMAGE_CACHE[key] = (width, height, pixels)
 
 
-def _sample_image(image_name: str, uv: Tuple[float, float]) -> Tuple[float, float, float, float]:
+def _prewarm_tree_images(tree: Optional[bpy.types.NodeTree]) -> None:
+    if tree is None:
+        return
+    for node in getattr(tree, "nodes", []):
+        image = getattr(node, "image", None)
+        if isinstance(image, bpy.types.Image):
+            _cache_static_image(image)
+
+
+def _sample_image(image_name, uv: Tuple[float, float]) -> Tuple[float, float, float, float]:
     if not image_name:
         return 0.0, 0.0, 0.0, 1.0
-    image = bpy.data.images.get(image_name)
+    image = image_name if isinstance(image_name, bpy.types.Image) else bpy.data.images.get(image_name)
     if image is None:
         return 0.0, 0.0, 0.0, 1.0
     width, height = image.size
@@ -819,7 +853,22 @@ def _sample_image(image_name: str, uv: Tuple[float, float]) -> Tuple[float, floa
     x = int(u * (width - 1))
     y = int(v * (height - 1))
     idx = (y * width + x) * 4
-    pixels = image.pixels
+    pixels = None
+    source = getattr(image, "source", "")
+    if source not in {"MOVIE", "SEQUENCE", "VIEWER", "COMPOSITED"}:
+        key = int(image.as_pointer())
+        cached = _IMAGE_CACHE.get(key)
+        if cached is not None and cached[0] == width and cached[1] == height:
+            pixels = cached[2]
+        else:
+            try:
+                pixels = list(image.pixels)
+            except Exception:
+                pixels = None
+            if pixels is not None:
+                _IMAGE_CACHE[key] = (width, height, pixels)
+    if pixels is None:
+        pixels = image.pixels
     if idx + 3 >= len(pixels):
         return 0.0, 0.0, 0.0, 1.0
     return float(pixels[idx]), float(pixels[idx + 1]), float(pixels[idx + 2]), float(pixels[idx + 3])
@@ -954,6 +1003,26 @@ def _entry_shift(
     return shifted
 
 
+def _entry_scale_duration(
+    entry: Optional[Dict[str, List[Tuple[float, float]]]],
+    speed: float,
+) -> Dict[str, List[Tuple[float, float]]]:
+    if not entry:
+        return {}
+    scale = float(speed)
+    if scale <= 0.0:
+        return {}
+    result: Dict[str, List[Tuple[float, float]]] = {}
+    for key, spans in entry.items():
+        new_spans = []
+        for start, end in spans:
+            start = float(start)
+            duration = max(0.0, float(end) - start)
+            new_spans.append((start, start + duration * scale))
+        result[key] = new_spans
+    return result
+
+
 def _entry_loop(
     entry: Optional[Dict[str, List[Tuple[float, float]]]],
     offset: float,
@@ -1060,18 +1129,28 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         output_counts[priority] = output_counts.get(priority, 0) + 1
     output_indices = {priority: 0 for priority in output_counts}
 
-    emitted: set[int] = set()
     lines: List[str] = []
 
-    def emit_node(node: bpy.types.Node) -> None:
-        if node.as_pointer() in emitted:
+    def emit_node(
+        node: bpy.types.Node,
+        target_lines: List[str],
+        emitted_nodes: set[int],
+    ) -> None:
+        if node.as_pointer() in emitted_nodes:
             return
         if not isinstance(node, LDLED_CodeNodeBase):
             return
 
         inputs: Dict[str, str] = {}
+        allowed_inputs = None
+        try:
+            allowed_inputs = set(node.code_inputs())
+        except Exception:
+            allowed_inputs = None
         for sock in getattr(node, "inputs", []):
-            inputs[sock.name] = resolve_input(sock)
+            if allowed_inputs is not None and sock.name not in allowed_inputs:
+                continue
+            inputs[sock.name] = resolve_input(sock, target_lines, emitted_nodes)
 
         output_vars = {
             sock.name: f"{node.codegen_id()}_{_sanitize_identifier(sock.name)}"
@@ -1081,10 +1160,14 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
 
         snippet = node.build_code(inputs) or ""
         for line in snippet.splitlines():
-            lines.append(line)
-        emitted.add(node.as_pointer())
+            target_lines.append(line)
+        emitted_nodes.add(node.as_pointer())
 
-    def resolve_input(socket: Optional[bpy.types.NodeSocket]) -> str:
+    def resolve_input(
+        socket: Optional[bpy.types.NodeSocket],
+        target_lines: List[str],
+        emitted_nodes: set[int],
+    ) -> str:
         if socket is None:
             return "0.0"
         is_entry = getattr(socket, "bl_idname", "") == "LDLEDEntrySocket"
@@ -1095,17 +1178,17 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
                     continue
                 from_node = link.from_node
                 from_socket = link.from_socket
-                emit_node(from_node)
+                emit_node(from_node, target_lines, emitted_nodes)
                 if isinstance(from_node, LDLED_CodeNodeBase):
                     entry_vars.append(_get_output_var(from_node, from_socket))
             if not entry_vars:
                 return "_entry_empty()"
             if len(entry_vars) == 1:
                 return entry_vars[0]
-            merge_var = f"_entry_merge_{len(lines)}"
-            lines.append(f"{merge_var} = _entry_empty()")
+            merge_var = f"_entry_merge_{len(target_lines)}"
+            target_lines.append(f"{merge_var} = _entry_empty()")
             for entry_var in entry_vars:
-                lines.append(f"{merge_var} = _entry_merge({merge_var}, {entry_var})")
+                target_lines.append(f"{merge_var} = _entry_merge({merge_var}, {entry_var})")
             return merge_var
         if socket.is_linked and socket.links:
             link = socket.links[0]
@@ -1113,7 +1196,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
                 return _default_for_input(socket)
             from_node = link.from_node
             from_socket = link.from_socket
-            emit_node(from_node)
+            emit_node(from_node, target_lines, emitted_nodes)
             if isinstance(from_node, LDLED_CodeNodeBase):
                 return _get_output_var(from_node, from_socket)
             return _default_for_socket(from_socket)
@@ -1121,14 +1204,31 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
             return "_entry_empty()"
         return _default_for_input(socket)
 
+    output_meta_blocks: Dict[str, List[str]] = {}
+    output_color_blocks: Dict[str, List[str]] = {}
+
+    for output in outputs:
+        out_key = output.name
+        meta_lines: List[str] = []
+        meta_emitted: set[int] = set()
+        intensity_in = resolve_input(output.inputs.get("Intensity"), meta_lines, meta_emitted)
+        alpha_in = resolve_input(output.inputs.get("Alpha"), meta_lines, meta_emitted)
+        entry_in = resolve_input(output.inputs.get("Entry"), meta_lines, meta_emitted)
+        meta_lines.append(f"_intensity = {intensity_in}")
+        meta_lines.append(f"_alpha = {alpha_in}")
+        meta_lines.append(f"_entry = {entry_in}")
+        output_meta_blocks[out_key] = meta_lines
+
+        color_lines: List[str] = []
+        color_emitted: set[int] = set()
+        color_in = resolve_input(output.inputs.get("Color"), color_lines, color_emitted)
+        color_lines.append(f"_color = {color_in}")
+        output_color_blocks[out_key] = color_lines
+
     lines.append("_output_items = []")
 
     for output in outputs:
-        color_in = resolve_input(output.inputs.get("Color"))
-        intensity_in = resolve_input(output.inputs.get("Intensity"))
-        alpha_in = resolve_input(output.inputs.get("Alpha"))
-        entry_in = resolve_input(output.inputs.get("Entry"))
-        out_id = _sanitize_identifier(output.name)
+        out_key = output.name
         priority = int(getattr(output, "priority", 0))
         group_index = output_indices[priority]
         group_size = output_counts[priority]
@@ -1140,41 +1240,74 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
             random_weight = 0.0
         random_weight = max(0.0, min(1.0, random_weight))
         seed = _output_seed(output.name)
-        lines.append(f"_color_{out_id} = {color_in}")
-        lines.append(f"_intensity_{out_id} = {intensity_in}")
-        lines.append(f"_alpha_{out_id} = {alpha_in}")
-        lines.append(f"_entry_{out_id} = {entry_in}")
         lines.append(
-            "_output_items.append(({0}, {1}, {2}, {3}, {4}, _color_{5}, _intensity_{5}, _alpha_{5}, _entry_{5}, {6}))"
+            "_output_items.append(({0}, {1}, {2}, {3}, {4}, {5}, {6}))"
             .format(
                 priority,
                 group_index,
                 group_size,
                 repr(random_weight),
                 repr(blend_mode),
-                out_id,
                 repr(seed),
+                repr(out_key),
             )
         )
 
     lines.append("_ordered_outputs = []")
-    lines.append("for _prio, _group_idx, _group_size, _rand, _blend, _color, _intensity, _alpha, _entry, _seed in _output_items:")
+    lines.append("for _prio, _group_idx, _group_size, _rand, _blend, _seed, _out_id in _output_items:")
     lines.append("    _order = _group_idx")
     lines.append("    if _rand > 0.0:")
     lines.append("        _roll = _rand01_static(idx, _seed)")
     lines.append("        if _roll < _rand:")
     lines.append("            _order = _rand01_static(idx, _seed + 1.0) * _group_size")
-    lines.append("    _ordered_outputs.append((_prio, _order, _group_idx, _blend, _color, _intensity, _alpha, _entry))")
+    lines.append("    _ordered_outputs.append((_prio, _order, _group_idx, _blend, _out_id))")
     lines.append("_ordered_outputs.sort(key=lambda item: (item[0], item[1], item[2]))")
-    lines.append("for _prio, _order, _group_idx, _blend, _color, _intensity, _alpha, _entry in _ordered_outputs:")
+    lines.append("_meta = {}")
+    lines.append("_max_opaque_prio = None")
+    lines.append("for _prio, _order, _group_idx, _blend, _out_id in _ordered_outputs:")
+    first = True
+    for out_key, meta_lines in output_meta_blocks.items():
+        keyword = "if" if first else "elif"
+        lines.append(f"    {keyword} _out_id == {out_key!r}:")
+        for line in meta_lines:
+            lines.append(f"        {line}")
+        first = False
+    lines.append("    else:")
+    lines.append("        _intensity = 0.0")
+    lines.append("        _alpha = 0.0")
+    lines.append("        _entry = _entry_empty()")
     lines.append("    _entry_count = _entry_active_count(_entry, frame)")
     lines.append("    if _entry_is_empty(_entry):")
     lines.append("        _entry_count = 1")
-    lines.append("    if _entry_count > 0:")
-    lines.append("        _src_alpha = _clamp01(_alpha * (_color[3] if len(_color) > 3 else 1.0))")
-    lines.append("        _src_color = [_color[0] * _intensity, _color[1] * _intensity, _color[2] * _intensity, 1.0]")
-    lines.append("        for _ in range(int(_entry_count)):")
-    lines.append("            color = _blend_over(color, _src_color, _src_alpha, _blend)")
+    lines.append("    _meta[_out_id] = (_intensity, _alpha, _entry, _entry_count)")
+    lines.append("    if _blend == \"MIX\" and _entry_count > 0 and _intensity >= 1.0 and _alpha >= 1.0:")
+    lines.append("        if _max_opaque_prio is None or _prio > _max_opaque_prio:")
+    lines.append("            _max_opaque_prio = _prio")
+
+    lines.append("for _prio, _order, _group_idx, _blend, _out_id in _ordered_outputs:")
+    lines.append("    if _max_opaque_prio is not None and _prio < _max_opaque_prio:")
+    lines.append("        continue")
+    lines.append("    _meta_vals = _meta.get(_out_id)")
+    lines.append("    if _meta_vals is None:")
+    lines.append("        continue")
+    lines.append("    _intensity, _alpha, _entry, _entry_count = _meta_vals")
+    lines.append("    if _entry_count <= 0 or _intensity <= 0.0 or _alpha <= 0.0:")
+    lines.append("        continue")
+    first = True
+    for out_key, color_lines in output_color_blocks.items():
+        keyword = "if" if first else "elif"
+        lines.append(f"    {keyword} _out_id == {out_key!r}:")
+        for line in color_lines:
+            lines.append(f"        {line}")
+        first = False
+    lines.append("    else:")
+    lines.append("        _color = (0.0, 0.0, 0.0, 1.0)")
+    lines.append("    _src_alpha = _clamp01(_alpha * (_color[3] if len(_color) > 3 else 1.0))")
+    lines.append("    if _src_alpha <= 0.0:")
+    lines.append("        continue")
+    lines.append("    _src_color = [_color[0] * _intensity, _color[1] * _intensity, _color[2] * _intensity, 1.0]")
+    lines.append("    for _ in range(int(_entry_count)):")
+    lines.append("        color = _blend_over(color, _src_color, _src_alpha, _blend)")
 
     body = ["def _led_effect(idx, pos, frame):", "    color = [0.0, 0.0, 0.0, 1.0]"]
     body.extend([f"    {line}" for line in lines])
@@ -1215,6 +1348,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         "_entry_from_marker": _entry_from_marker,
         "_entry_from_formation": _entry_from_formation,
         "_entry_shift": _entry_shift,
+        "_entry_scale_duration": _entry_scale_duration,
         "_entry_loop": _entry_loop,
         "_entry_active_count": _entry_active_count,
         "_entry_progress": _entry_progress,
@@ -1224,7 +1358,153 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         "mathutils": mathutils,
     }
     exec(code, env)
+    _prewarm_tree_images(tree)
     return env["_led_effect"]
+
+
+def compile_led_socket(
+    tree: bpy.types.NodeTree,
+    node: bpy.types.Node,
+    socket_name: str,
+    *,
+    force_inputs: bool = False,
+) -> Optional[Callable]:
+    if tree is None or node is None or not socket_name:
+        return None
+    _prewarm_tree_images(tree)
+    socket = node.inputs.get(socket_name) if hasattr(node, "inputs") else None
+    if socket is None:
+        return None
+
+    lines: List[str] = []
+    emitted: set[int] = set()
+
+    def emit_node(
+        dep_node: bpy.types.Node,
+        target_lines: List[str],
+        emitted_nodes: set[int],
+    ) -> None:
+        if dep_node.as_pointer() in emitted_nodes:
+            return
+        if not isinstance(dep_node, LDLED_CodeNodeBase):
+            return
+
+        inputs: Dict[str, str] = {}
+        allowed_inputs = None
+        if not force_inputs:
+            try:
+                allowed_inputs = set(dep_node.code_inputs())
+            except Exception:
+                allowed_inputs = None
+        for sock in getattr(dep_node, "inputs", []):
+            if allowed_inputs is not None and sock.name not in allowed_inputs:
+                continue
+            inputs[sock.name] = resolve_input(sock, target_lines, emitted_nodes)
+
+        output_vars = {
+            sock.name: f"{dep_node.codegen_id()}_{_sanitize_identifier(sock.name)}"
+            for sock in getattr(dep_node, "outputs", [])
+        }
+        dep_node._set_codegen_output_vars(output_vars)
+
+        snippet = dep_node.build_code(inputs) or ""
+        for line in snippet.splitlines():
+            target_lines.append(line)
+        emitted_nodes.add(dep_node.as_pointer())
+
+    def resolve_input(
+        dep_socket: Optional[bpy.types.NodeSocket],
+        target_lines: List[str],
+        emitted_nodes: set[int],
+    ) -> str:
+        if dep_socket is None:
+            return "0.0"
+        is_entry = getattr(dep_socket, "bl_idname", "") == "LDLEDEntrySocket"
+        if is_entry and dep_socket.is_linked and dep_socket.links:
+            entry_vars: List[str] = []
+            for link in dep_socket.links:
+                if not getattr(link, "is_valid", True):
+                    continue
+                from_node = link.from_node
+                from_socket = link.from_socket
+                emit_node(from_node, target_lines, emitted_nodes)
+                if isinstance(from_node, LDLED_CodeNodeBase):
+                    entry_vars.append(_get_output_var(from_node, from_socket))
+            if not entry_vars:
+                return "_entry_empty()"
+            if len(entry_vars) == 1:
+                return entry_vars[0]
+            merge_var = f"_entry_merge_{len(target_lines)}"
+            target_lines.append(f"{merge_var} = _entry_empty()")
+            for entry_var in entry_vars:
+                target_lines.append(f"{merge_var} = _entry_merge({merge_var}, {entry_var})")
+            return merge_var
+        if dep_socket.is_linked and dep_socket.links:
+            link = dep_socket.links[0]
+            if not getattr(link, "is_valid", True):
+                return _default_for_input(dep_socket)
+            from_node = link.from_node
+            from_socket = link.from_socket
+            emit_node(from_node, target_lines, emitted_nodes)
+            if isinstance(from_node, LDLED_CodeNodeBase):
+                return _get_output_var(from_node, from_socket)
+            return _default_for_socket(from_socket)
+        if is_entry:
+            return "_entry_empty()"
+        return _default_for_input(dep_socket)
+
+    value_expr = resolve_input(socket, lines, emitted)
+    lines.append(f"_value = {value_expr}")
+
+    body = ["def _led_socket(idx, pos, frame):"]
+    body.extend([f"    {line}" for line in lines])
+    body.append("    return _value")
+
+    code = "\n".join(body)
+    env = {
+        "_clamp": _clamp,
+        "_clamp01": _clamp01,
+        "_alpha_over": _alpha_over,
+        "_blend_over": _blend_over,
+        "_rand01": _rand01,
+        "_rand01_static": _rand01_static,
+        "_rgb_to_hsv": _rgb_to_hsv,
+        "_hsv_to_rgb": _hsv_to_rgb,
+        "_srgb_to_linear": _srgb_to_linear,
+        "_linear_to_srgb": _linear_to_srgb,
+        "_to_grayscale": _to_grayscale,
+        "_get_object": _get_object,
+        "_project_bbox_uv": _project_bbox_uv,
+        "_distance_to_mesh_bbox": _distance_to_mesh_bbox,
+        "_point_in_mesh_bbox": _point_in_mesh_bbox,
+        "_nearest_vertex_color": _nearest_vertex_color,
+        "_nearest_vertex_uv": _nearest_vertex_uv,
+        "_collection_nearest_uv": _collection_nearest_uv,
+        "_formation_bbox_uv": _formation_bbox_uv,
+        "_formation_bbox_relpos": _formation_bbox_relpos,
+        "_sample_image": _sample_image,
+        "_sample_video": _sample_video,
+        "_color_ramp_eval": _color_ramp_eval,
+        "_cat_cache_write": _cat_cache_write,
+        "_cat_cache_read": _cat_cache_read,
+        "_entry_empty": _entry_empty,
+        "_entry_is_empty": _entry_is_empty,
+        "_entry_merge": _entry_merge,
+        "_entry_from_range": _entry_from_range,
+        "_entry_from_marker": _entry_from_marker,
+        "_entry_from_formation": _entry_from_formation,
+        "_entry_shift": _entry_shift,
+        "_entry_scale_duration": _entry_scale_duration,
+        "_entry_loop": _entry_loop,
+        "_entry_active_count": _entry_active_count,
+        "_entry_progress": _entry_progress,
+        "_entry_active_index": _entry_active_index,
+        "bpy": bpy,
+        "math": math,
+        "mathutils": mathutils,
+    }
+    exec(code, env)
+    return env["_led_socket"]
 
 
 def get_output_activity(tree: bpy.types.NodeTree, frame: float) -> Dict[str, bool]:
@@ -1242,7 +1522,14 @@ def get_output_activity(tree: bpy.types.NodeTree, frame: float) -> Dict[str, boo
             return
 
         inputs: Dict[str, str] = {}
+        allowed_inputs = None
+        try:
+            allowed_inputs = set(node.code_inputs())
+        except Exception:
+            allowed_inputs = None
         for sock in getattr(node, "inputs", []):
+            if allowed_inputs is not None and sock.name not in allowed_inputs:
+                continue
             inputs[sock.name] = resolve_input(sock)
 
         output_vars = {
@@ -1315,6 +1602,7 @@ def get_output_activity(tree: bpy.types.NodeTree, frame: float) -> Dict[str, boo
         "_entry_from_marker": _entry_from_marker,
         "_entry_from_formation": _entry_from_formation,
         "_entry_shift": _entry_shift,
+        "_entry_scale_duration": _entry_scale_duration,
         "_entry_loop": _entry_loop,
         "_entry_active_count": _entry_active_count,
         "_entry_progress": _entry_progress,

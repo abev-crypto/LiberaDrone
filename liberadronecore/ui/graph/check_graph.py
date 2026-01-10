@@ -3,12 +3,15 @@
 # -----------------------------------------
 # Matplotlib backend: Qt6(Pyside6) 対忁E
 # -----------------------------------------
+import numpy as np
 import matplotlib
 matplotlib.use("QtAgg")  # Qt5/Qt6 backend
 from matplotlib import style
 style.use("dark_background")
 
 from PySide6 import QtCore, QtWidgets
+
+from liberadronecore.overlay import checker as overlay_checker
 
 from matplotlib.figure import Figure
 from matplotlib import patches
@@ -21,7 +24,7 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 # =========================
 BIN_FRAMES = 4
 COLOR_BY = "high"            # "high" or "close" (�F?E??�Ɏg��E??�\�l)
-TARGET_OBJ_NAME = "ProxyPoints"
+TARGET_COLLECTION_NAME = "Formation"
 
 COLOR_OK = "#2ecc71"
 COLOR_WARN = "#e74c3c"
@@ -43,58 +46,31 @@ def _ensure_qapp():
     return app
 
 
-def _get_attr(mesh, name: str):
-    attr = mesh.attributes.get(name)
-    return attr if attr is not None else None
+def _get_fps(scene: bpy.types.Scene) -> float:
+    fps = float(getattr(scene.render, "fps", 0.0))
+    base = float(getattr(scene.render, "fps_base", 1.0) or 1.0)
+    if base <= 0.0:
+        base = 1.0
+    if fps <= 0.0:
+        fps = 24.0
+    return fps / base
 
 
-def _get_attr_values(attr) -> list[float]:
-    values: list[float] = []
-    if attr is None:
-        return values
-    for data in attr.data:
-        val = getattr(data, "value", 0.0)
-        try:
-            values.append(float(val))
-        except Exception:
-            values.append(0.0)
-    return values
+def _positions_to_numpy(positions):
+    if not positions:
+        return np.zeros((0, 3), dtype=np.float64)
+    return np.asarray([[p.x, p.y, p.z] for p in positions], dtype=np.float64)
 
 
-def _get_frame_metrics(scene):
-    obj = bpy.data.objects.get(TARGET_OBJ_NAME)
-    if obj is None:
-        return None
-
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    eval_obj = obj.evaluated_get(depsgraph)
-    mesh = getattr(eval_obj, "data", None)
-    if mesh is None:
-        return None
-
-    speed_vert = _get_attr_values(_get_attr(mesh, "speed_vert"))
-    speed_horiz = _get_attr_values(_get_attr(mesh, "speed_horiz"))
-    acc = _get_attr_values(_get_attr(mesh, "acc"))
-    min_dist = _get_attr_values(_get_attr(mesh, "min_distance"))
-
-    max_up = max([v for v in speed_vert if v > 0.0] or [0.0])
-    max_down = abs(min([v for v in speed_vert if v < 0.0] or [0.0]))
-    max_horiz = max(speed_horiz or [0.0])
-    max_acc = max(acc or [0.0])
-    min_distance = min(min_dist or [0.0])
-
-    return {
-        "speed_up": max_up,
-        "speed_down": max_down,
-        "speed_horiz": max_horiz,
-        "acc": max_acc,
-        "min_distance": min_distance,
-    }
+def _collect_positions(scene, depsgraph):
+    positions, _signature = overlay_checker._collect_formation_positions(scene, depsgraph)
+    return positions
 
 
 def _sample_metric_series(scene):
     f0, f1 = scene.frame_start, scene.frame_end
     frames = list(range(f0, f1 + 1))
+    fps = _get_fps(scene)
 
     series = {
         "speed_up": [],
@@ -103,15 +79,77 @@ def _sample_metric_series(scene):
         "acc": [],
         "min_distance": [],
     }
-    for f in frames:
-        scene.frame_set(f)
-        metrics = _get_frame_metrics(scene)
-        if metrics is None:
-            for key in series:
-                series[key].append(0.0)
-            continue
-        for key in series:
-            series[key].append(metrics.get(key, 0.0))
+    prev_positions_np = None
+    prev_vel_np = None
+    prev_frame = None
+
+    view_layer = bpy.context.view_layer
+
+    suspend = None
+    try:
+        from liberadronecore.tasks import ledeffects_task
+        suspend = getattr(ledeffects_task, "suspend_led_effects", None)
+    except Exception:
+        suspend = None
+
+    if suspend is not None:
+        suspend(True)
+    try:
+        for f in frames:
+            scene.frame_set(f)
+            if view_layer is not None:
+                view_layer.update()
+
+            depsgraph = bpy.context.evaluated_depsgraph_get()
+            positions = _collect_positions(scene, depsgraph)
+            if not positions:
+                for key in series:
+                    series[key].append(0.0)
+                prev_positions_np = None
+                prev_vel_np = None
+                prev_frame = None
+                continue
+
+            positions_np = _positions_to_numpy(positions)
+            if prev_positions_np is None or prev_positions_np.shape[0] != positions_np.shape[0] or prev_frame is None:
+                speed_vert = [0.0] * len(positions)
+                speed_horiz = [0.0] * len(positions)
+                acc = [0.0] * len(positions)
+                prev_vel_np = np.zeros_like(positions_np)
+            else:
+                frame_delta = f - prev_frame
+                if frame_delta == 0:
+                    frame_delta = 1
+                dt = (frame_delta / fps) if fps > 0.0 else 1.0
+                vel = (positions_np - prev_positions_np) / dt
+                speed_vert = vel[:, 2].tolist()
+                speed_horiz = np.linalg.norm(vel[:, :2], axis=1).tolist()
+                if prev_vel_np is None or prev_vel_np.shape[0] != vel.shape[0]:
+                    acc = [0.0] * len(positions)
+                else:
+                    acc_vec = (vel - prev_vel_np) / dt
+                    acc = np.linalg.norm(acc_vec, axis=1).tolist()
+                prev_vel_np = vel
+
+            min_dist = overlay_checker._compute_min_distances(positions)
+
+            max_up = max([v for v in speed_vert if v > 0.0] or [0.0])
+            max_down = abs(min([v for v in speed_vert if v < 0.0] or [0.0]))
+            max_horiz = max(speed_horiz or [0.0])
+            max_acc = max(acc or [0.0])
+            min_distance = min(min_dist or [0.0])
+
+            series["speed_up"].append(max_up)
+            series["speed_down"].append(max_down)
+            series["speed_horiz"].append(max_horiz)
+            series["acc"].append(max_acc)
+            series["min_distance"].append(min_distance)
+
+            prev_positions_np = positions_np
+            prev_frame = f
+    finally:
+        if suspend is not None:
+            suspend(False)
 
     return frames, series
 
@@ -185,7 +223,7 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
 
         top_row = QtWidgets.QHBoxLayout()
         root.addLayout(top_row)
-        top_row.addWidget(QtWidgets.QLabel(f"Target: {TARGET_OBJ_NAME}"))
+        top_row.addWidget(QtWidgets.QLabel(f"Target: {TARGET_COLLECTION_NAME}"))
 
         top_row.addWidget(QtWidgets.QLabel("Bin Frames"))
         self.spin_bin = QtWidgets.QSpinBox()
@@ -228,9 +266,9 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
 
     def resample_and_redraw(self):
         scene = bpy.context.scene
-        obj = bpy.data.objects.get(TARGET_OBJ_NAME)
-        if obj is None:
-            QtWidgets.QMessageBox.warning(self, "Error", "Target object not found")
+        col = bpy.data.collections.get(TARGET_COLLECTION_NAME)
+        if col is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "Formation collection not found")
             return
 
         frames, series = _sample_metric_series(scene)

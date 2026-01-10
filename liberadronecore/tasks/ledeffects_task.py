@@ -15,6 +15,7 @@ import numpy as np
 
 _color_column_cache: dict[int, list[list[float]]] = {}
 _UNDO_DEPTH = 0
+_SUSPEND_LED_EFFECTS = 0
 
 
 def _set_undo_block(active: bool) -> None:
@@ -52,6 +53,18 @@ def _is_undo_running() -> bool:
     except Exception:
         return False
 
+
+def suspend_led_effects(active: bool) -> None:
+    global _SUSPEND_LED_EFFECTS
+    if active:
+        _SUSPEND_LED_EFFECTS += 1
+    else:
+        _SUSPEND_LED_EFFECTS = max(0, _SUSPEND_LED_EFFECTS - 1)
+
+
+def _is_led_suspended() -> bool:
+    return _SUSPEND_LED_EFFECTS > 0
+
 def _is_any_viewport_wireframe() -> bool:
     wm = getattr(bpy.context, "window_manager", None)
     if wm is None:
@@ -76,7 +89,7 @@ def _write_column_to_cache(column: int, colors) -> None:
     _color_column_cache[column] = [list(color) for color in colors]
 
 
-def _write_led_color_attribute(colors) -> None:
+def _write_led_color_attribute(colors, pair_ids=None) -> None:
     system_obj = bpy.data.objects.get("ColorVerts")
     if system_obj is None or system_obj.type != 'MESH':
         return
@@ -94,34 +107,49 @@ def _write_led_color_attribute(colors) -> None:
     if expected <= 0:
         return
 
-    flat: list[float]
+    if colors is None:
+        return
 
-    if hasattr(colors, "shape"):
-        arr = np.asarray(colors, dtype=np.float32)
-        if arr.ndim == 1:
-            arr = arr.reshape((-1, 4))
-        elif arr.ndim >= 2:
-            arr = arr.reshape((-1, arr.shape[-1]))
-        if arr.shape[1] < 4:
-            pad = np.zeros((arr.shape[0], 4 - arr.shape[1]), dtype=arr.dtype)
-            arr = np.concatenate([arr, pad], axis=1)
-        elif arr.shape[1] > 4:
-            arr = arr[:, :4]
+    arr = np.asarray(colors, dtype=np.float32)
+    if arr.ndim == 1:
+        arr = arr.reshape((-1, 4))
+    elif arr.ndim >= 2:
+        arr = arr.reshape((-1, arr.shape[-1]))
+    if arr.shape[1] < 4:
+        pad = np.zeros((arr.shape[0], 4 - arr.shape[1]), dtype=arr.dtype)
+        arr = np.concatenate([arr, pad], axis=1)
+    elif arr.shape[1] > 4:
+        arr = arr[:, :4]
+
+    if pair_ids is not None and len(pair_ids) == arr.shape[0]:
+        mapped = np.zeros((expected, 4), dtype=arr.dtype)
+        src_count = arr.shape[0]
+        for dst_idx, pid in enumerate(pair_ids):
+            if pid is None:
+                continue
+            try:
+                src_idx = int(pid)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= src_idx < src_count and 0 <= dst_idx < expected:
+                mapped[dst_idx] = arr[src_idx]
+        arr = mapped
+    else:
         arr = arr[:expected]
         if arr.shape[0] < expected:
             pad = np.zeros((expected - arr.shape[0], 4), dtype=arr.dtype)
             arr = np.concatenate([arr, pad], axis=0)
-        arr = np.clip(arr, 0.0, 1.0)
-        flat = arr.reshape(-1).tolist()
-        attr.data.foreach_set("color", flat)
+
+    arr = np.clip(arr, 0.0, 1.0)
+    attr.data.foreach_set("color", arr.reshape(-1).tolist())
 
     #mesh.update()
 
 
-def _collect_formation_positions(scene) -> list[tuple[float, float, float]]:
+def _collect_formation_positions(scene) -> tuple[list[tuple[float, float, float]], list[int] | None]:
     col = bpy.data.collections.get("Formation")
     if col is None:
-        return []
+        return [], None
     depsgraph = bpy.context.evaluated_depsgraph_get()
     positions, pair_ids = transition_apply._collect_positions_for_collection(
         col,
@@ -129,23 +157,46 @@ def _collect_formation_positions(scene) -> list[tuple[float, float, float]]:
         depsgraph,
     )
     if not positions:
-        return []
-    if pair_ids and len(pair_ids) == len(positions):
-        ordered = [None] * len(positions)
-        valid = True
-        for idx, pid in enumerate(pair_ids):
-            if pid is None or pid < 0 or pid >= len(positions) or ordered[pid] is not None:
-                valid = False
-                break
-            ordered[pid] = positions[idx]
-        if valid and all(p is not None for p in ordered):
-            positions = ordered
-    return [(float(p.x), float(p.y), float(p.z)) for p in positions]
+        return [], None
+    if not pair_ids or len(pair_ids) != len(positions):
+        pair_ids = None
+    return [(float(p.x), float(p.y), float(p.z)) for p in positions], pair_ids
+
+
+def _order_positions_by_pair_id(
+    positions: list[tuple[float, float, float]],
+    pair_ids: list[int] | None,
+) -> tuple[list[tuple[float, float, float]], list[int] | None]:
+    if not pair_ids or len(pair_ids) != len(positions):
+        return positions, pair_ids
+    indexed: list[tuple[int, int, tuple[float, float, float]]] = []
+    fallback: list[tuple[int, tuple[float, float, float], int | None]] = []
+    for idx, pid in enumerate(pair_ids):
+        try:
+            key = int(pid)
+        except (TypeError, ValueError):
+            key = None
+        if key is None:
+            fallback.append((idx, positions[idx], pid))
+        else:
+            indexed.append((key, idx, positions[idx]))
+    if not indexed:
+        return positions, pair_ids
+    indexed.sort(key=lambda item: (item[0], item[1]))
+    ordered_positions = [pos for _key, _idx, pos in indexed]
+    ordered_pair_ids = [pair_ids[idx] for _key, idx, _pos in indexed]
+    if fallback:
+        ordered_positions.extend([pos for _idx, pos, _pid in fallback])
+        ordered_pair_ids.extend([pid for _idx, _pos, pid in fallback])
+    return ordered_positions, ordered_pair_ids
 
 
 @persistent
 def update_led_effects(scene):
     if _is_undo_running():
+        return
+
+    if _is_led_suspended():
         return
 
     if _is_any_viewport_wireframe():
@@ -165,7 +216,7 @@ def update_led_effects(scene):
     frame = scene.frame_current
     frame_start = scene.frame_start
 
-    positions = _collect_formation_positions(scene)
+    positions, pair_ids = _collect_formation_positions(scene)
     if not positions:
         return
 
@@ -173,8 +224,16 @@ def update_led_effects(scene):
     colors = np.zeros((len(positions), 4), dtype=np.float32)
     try:
         for idx, pos in enumerate(positions):
-            le_codegen.set_led_runtime_index(idx)
-            color = effect_fn(idx, pos, frame)
+            runtime_idx = idx
+            if pair_ids is not None:
+                pid = pair_ids[idx]
+                if pid is not None:
+                    try:
+                        runtime_idx = int(pid)
+                    except (TypeError, ValueError):
+                        runtime_idx = idx
+            le_codegen.set_led_runtime_index(runtime_idx)
+            color = effect_fn(runtime_idx, pos, frame)
             if not color:
                 continue
             for chan in range(min(4, len(color))):
@@ -184,7 +243,7 @@ def update_led_effects(scene):
         le_codegen.end_led_frame_cache()
 
     #_write_column_to_cache(frame - frame_start, colors)
-    _write_led_color_attribute(colors)
+    _write_led_color_attribute(colors, pair_ids)
 
 
 def register():

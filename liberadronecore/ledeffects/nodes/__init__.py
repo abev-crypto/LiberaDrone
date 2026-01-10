@@ -26,6 +26,7 @@ from .util import le_catcache
 from .util import le_collectioninfo
 from .util import le_colorspace
 from .util import le_combine
+from .util import le_imageinfo
 from .util import le_math
 from .util import le_meshinfo
 from .util import le_split

@@ -76,38 +76,58 @@ def _collect_formation_positions(
     if col is None:
         return [], ()
     meshes = [obj for obj in col.all_objects if obj.type == 'MESH']
-    meshes.sort(key=lambda o: o.name)
 
     positions: list[Vector] = []
-    signature: list[tuple[str, int | str]] = [("__scene__", scene.name if scene else "")]
+    pair_ids: list[int] = []
     pairs_ok = True
-    paired_positions: list[tuple[int, Vector]] = []
-    fallback_positions: list[Vector] = []
+    total_count = 0
     for obj in meshes:
         eval_obj = obj.evaluated_get(depsgraph)
         eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
         if eval_mesh is None:
             continue
-        signature.append((obj.name, len(eval_mesh.vertices)))
         mw = eval_obj.matrix_world
         obj_positions = [mw @ v.co for v in eval_mesh.vertices]
-        fallback_positions.extend(obj_positions)
-        pair_ids = _collect_pair_ids(eval_mesh, obj.data)
-        if pair_ids is None or len(pair_ids) != len(obj_positions):
-            pairs_ok = False
-        else:
-            paired_positions.extend(zip(pair_ids, obj_positions))
+        positions.extend(obj_positions)
+        total_count += len(obj_positions)
+        if pairs_ok:
+            obj_pairs = _collect_pair_ids(eval_mesh, obj.data)
+            if obj_pairs is None or len(obj_pairs) != len(obj_positions):
+                pairs_ok = False
+            else:
+                pair_ids.extend(obj_pairs)
         eval_obj.to_mesh_clear()
-    if not fallback_positions:
+
+    signature: list[tuple[str, int | str]] = [
+        ("__scene__", scene.name if scene else ""),
+        ("__vert_count__", total_count),
+    ]
+    if not positions:
         signature.append(("__pair_sort__", 0))
         return [], tuple(signature)
-    if pairs_ok and paired_positions:
-        paired_positions.sort(key=lambda item: item[0])
-        positions = [pos for _, pos in paired_positions]
-        signature.append(("__pair_sort__", 1))
-    else:
-        positions = fallback_positions
-        signature.append(("__pair_sort__", 0))
+
+    if pairs_ok and len(pair_ids) == len(positions):
+        paired: list[tuple[int, int]] = []
+        fallback: list[tuple[int, Vector]] = []
+        for idx, pid in enumerate(pair_ids):
+            try:
+                key = int(pid)
+            except (TypeError, ValueError):
+                key = None
+            if key is None:
+                fallback.append((idx, positions[idx]))
+            else:
+                paired.append((key, idx))
+        if paired:
+            paired.sort(key=lambda item: (item[0], item[1]))
+            ordered = [positions[idx] for _key, idx in paired]
+            if fallback:
+                ordered.extend([pos for _idx, pos in fallback])
+            positions = ordered
+            signature.append(("__pair_sort__", 1))
+            return positions, tuple(signature)
+
+    signature.append(("__pair_sort__", 0))
     return positions, tuple(signature)
 
 
