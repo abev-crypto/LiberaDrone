@@ -14,6 +14,7 @@ from liberadronecore.system.transition import vat_gn
 from liberadronecore.formation import fn_parse
 from liberadronecore.system.transition import transition_apply
 from liberadronecore.ui import ledeffects_panel as led_panel
+from liberadronecore.util import image_util
 
 SHEET_URL_DEFAULT = (
     "https://docs.google.com/spreadsheets/d/"
@@ -104,41 +105,69 @@ def _parse_rows(text: str) -> list[dict[str, str]]:
         return []
     header_row = None
     header_idx = None
+    header_type = None
+
+    def _norm(label: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", label.lower())
+
     for idx, row in enumerate(rows[:6]):
         if not row:
             continue
-        has_name = any((cell or "").strip().lower() == "name" for cell in row)
-        has_attr = any((cell or "").strip().lower() == "attr" for cell in row)
+        normed = [_norm(cell) for cell in row if cell]
+        has_name = "name" in normed
+        has_attr = "attr" in normed
+        has_duration = ("durationf" in normed) or ("duration" in normed)
         if has_name and has_attr:
             header_row = row
             header_idx = idx
+            header_type = "full"
+            break
+        if has_name and has_duration:
+            header_row = row
+            header_idx = idx
+            header_type = "export"
             break
 
     if header_row is not None:
-        def _norm(label: str) -> str:
-            return re.sub(r"[^a-z0-9]", "", label.lower())
-
         col_map = {_norm(cell): i for i, cell in enumerate(header_row) if cell}
         name_idx = col_map.get("name", 0)
-        attr_idx = col_map.get("attr", 1)
-        start_idx = col_map.get("startf", 3)
-        duration_idx = col_map.get("durationf", 5)
-        states_idx = col_map.get("states", 6)
+        duration_idx = col_map.get("durationf", col_map.get("duration"))
+        if header_type == "export":
+            attr_idx = None
+            start_idx = None
+            states_idx = None
+            if duration_idx is None:
+                duration_idx = 2
+        else:
+            attr_idx = col_map.get("attr", 1)
+            start_idx = col_map.get("startf", 3)
+            if duration_idx is None:
+                duration_idx = 5
+            states_idx = col_map.get("states", 6)
         data_rows = rows[header_idx + 1:]
     else:
         name_idx, attr_idx, start_idx, duration_idx, states_idx = 0, 1, 3, 5, 6
         data_rows = rows[3:]
     parsed: list[dict[str, str]] = []
+
+    def _cell(values: list[str], idx: int | None) -> str:
+        if idx is None or idx < 0:
+            return ""
+        if idx >= len(values):
+            return ""
+        return (values[idx] or "").strip()
+
     for row in data_rows:
         padded = list(row)
-        max_idx = max(name_idx, attr_idx, start_idx, duration_idx, states_idx)
+        indices = [i for i in (name_idx, attr_idx, start_idx, duration_idx, states_idx) if i is not None and i >= 0]
+        max_idx = max(indices) if indices else -1
         if len(padded) <= max_idx:
             padded += [""] * (max_idx + 1 - len(padded))
-        name = (padded[name_idx] or "").strip()
-        attr = (padded[attr_idx] or "").strip()
-        start_frame = (padded[start_idx] or "").strip()
-        duration_frame = (padded[duration_idx] or "").strip()
-        states = (padded[states_idx] or "").strip()
+        name = _cell(padded, name_idx)
+        attr = _cell(padded, attr_idx)
+        start_frame = _cell(padded, start_idx)
+        duration_frame = _cell(padded, duration_idx)
+        states = _cell(padded, states_idx)
         if not (name or attr or start_frame or duration_frame or states):
             continue
         parsed.append(
@@ -477,22 +506,6 @@ def _format_bounds_suffix(pos_min, pos_max) -> str:
     )
 
 
-def _save_image(img: bpy.types.Image, path: str, file_format: str) -> None:
-    try:
-        img.filepath_raw = path
-        img.file_format = file_format
-        if file_format == "OPEN_EXR":
-            try:
-                img.colorspace_settings.name = "Non-Color"
-            except Exception:
-                pass
-            if hasattr(img, "use_float"):
-                img.use_float = True
-        img.save()
-    except Exception:
-        pass
-
-
 def _export_cut_to_vat_cat(context, cut: dict[str, object], export_dir: str) -> tuple[bool, str]:
     scene = context.scene
     view_layer = context.view_layer
@@ -533,7 +546,7 @@ def _export_cut_to_vat_cat(context, cut: dict[str, object], export_dir: str) -> 
                 view_layer.update()
             return False, f"No positions at frame {frame}."
 
-        mapped_positions = _map_by_pair_id(positions, pair_ids)
+        mapped_positions = _order_by_pair_id(positions, pair_ids)
         ordered_pos = [(float(p.x), float(p.y), float(p.z)) for p in mapped_positions]
 
         color_data = _read_color_verts()
@@ -548,7 +561,7 @@ def _export_cut_to_vat_cat(context, cut: dict[str, object], export_dir: str) -> 
             if view_layer is not None:
                 view_layer.update()
             return False, "ColorVerts count mismatch."
-        mapped_colors = _map_by_pair_id(colors, color_pair_ids)
+        mapped_colors = _order_by_pair_id(colors, color_pair_ids)
         colors_frames.append(
             [(float(c[0]), float(c[1]), float(c[2]), float(c[3])) for c in mapped_colors]
         )
@@ -593,15 +606,20 @@ def _export_cut_to_vat_cat(context, cut: dict[str, object], export_dir: str) -> 
     bounds_suffix = _format_bounds_suffix(pos_min, pos_max)
     vat_base = f"{safe_name}_VAT_{bounds_suffix}"
     cat_base = f"{safe_name}_CAT"
+    pos_path = os.path.join(target_dir, f"{vat_base}.exr")
+    cat_path = os.path.join(target_dir, f"{cat_base}.png")
 
-    pos_img = bpy.data.images.new(
-        name=vat_base,
-        width=frame_count,
-        height=drone_count,
-        alpha=True,
-        float_buffer=True,
-    )
-    pos_img.pixels[:] = pos_pixels.ravel()
+    if not image_util.write_exr_rgba(pos_path, pos_pixels):
+        pos_img = bpy.data.images.new(
+            name=vat_base,
+            width=frame_count,
+            height=drone_count,
+            alpha=True,
+            float_buffer=True,
+        )
+        pos_img.pixels[:] = pos_pixels.ravel()
+        image_util.save_image(pos_img, pos_path, "OPEN_EXR", use_float=True, colorspace="Non-Color")
+
     col_img = bpy.data.images.new(
         name=cat_base,
         width=frame_count,
@@ -610,11 +628,7 @@ def _export_cut_to_vat_cat(context, cut: dict[str, object], export_dir: str) -> 
         float_buffer=False,
     )
     col_img.pixels[:] = col_pixels.ravel()
-
-    pos_path = os.path.join(target_dir, f"{vat_base}.exr")
-    cat_path = os.path.join(target_dir, f"{cat_base}.png")
-    _save_image(pos_img, pos_path, "OPEN_EXR")
-    _save_image(col_img, cat_path, "PNG")
+    image_util.save_image(col_img, cat_path, "PNG")
 
     return True, f"Exported: {name}"
 
@@ -683,7 +697,7 @@ def _load_image(path: str) -> bpy.types.Image | None:
 
 
 def _parse_bounds_from_name(filename: str) -> tuple[tuple[float, float, float], tuple[float, float, float]] | None:
-    pattern = r"S_(-?\\d+(?:\\.\\d+)?)_(-?\\d+(?:\\.\\d+)?)_(-?\\d+(?:\\.\\d+)?)_E_(-?\\d+(?:\\.\\d+)?)_(-?\\d+(?:\\.\\d+)?)_(-?\\d+(?:\\.\\d+)?)"
+    pattern = r"S_(-?\d+(?:\.\d+)?)_(-?\d+(?:\.\d+)?)_(-?\d+(?:\.\d+)?)_E_(-?\d+(?:\.\d+)?)_(-?\d+(?:\.\d+)?)_(-?\d+(?:\.\d+)?)"
     match = re.search(pattern, filename)
     if not match:
         return None
@@ -915,22 +929,32 @@ def _set_socket_collection(node, name: str, collection: bpy.types.Collection) ->
             pass
 
 
-def _to_int(value: str | None) -> int | None:
+def _parse_number(value: str | None) -> float | None:
     if value is None:
         return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    match = re.search(r"[-+]?(?:\d+\.?\d*|\.\d+)", text)
+    if not match:
+        return None
     try:
-        return int(float(value))
+        return float(match.group(0))
     except Exception:
         return None
+
+
+def _to_int(value: str | None) -> int | None:
+    parsed = _parse_number(value)
+    if parsed is None:
+        return None
+    return int(parsed)
 
 
 def _to_float(value: str | None) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except Exception:
-        return None
+    return _parse_number(value)
 
 
 class SheetImportWindow(QtWidgets.QMainWindow):

@@ -1,12 +1,10 @@
-import os
-import struct
-import zlib
-
 import bpy
+import os
 import numpy as np
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects import led_codegen_runtime
 from liberadronecore.reg.base_reg import RegisterBase
+from liberadronecore.util import image_util
 
 
 class LDLEDCatCacheNode(bpy.types.Node, LDLED_CodeNodeBase):
@@ -97,67 +95,6 @@ def _pack_cat_image(img: bpy.types.Image) -> None:
 
     if not packed:
         print(f"[CATCache] Warning: failed to pack image {img.name}")
-
-
-def _sanitize_filename(name: str) -> str:
-    safe = []
-    for ch in name or "":
-        if ("a" <= ch <= "z") or ("A" <= ch <= "Z") or ("0" <= ch <= "9") or ch in {"_", "-"}:
-            safe.append(ch)
-        else:
-            safe.append("_")
-    result = "".join(safe).strip("_")
-    return result or "cat_cache"
-
-
-def _cat_cache_png_path(scene, node) -> str | None:
-    filepath = getattr(bpy.data, "filepath", "")
-    if not filepath:
-        return None
-    dirpath = os.path.dirname(filepath)
-    if not dirpath:
-        return None
-    name = _sanitize_filename(getattr(node, "name", "") or "cat_cache")
-    return os.path.join(dirpath, f"{name}_CAT.png")
-
-
-def _png_chunk(tag: bytes, data: bytes) -> bytes:
-    return (
-        struct.pack(">I", len(data))
-        + tag
-        + data
-        + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-    )
-
-
-def _write_png_rgba(path: str, pixels: np.ndarray) -> bool:
-    try:
-        height, width, channels = pixels.shape
-    except Exception:
-        return False
-    if width <= 0 or height <= 0:
-        return False
-    data = np.clip(pixels, 0.0, 1.0)
-    if channels < 4:
-        pad = np.zeros((height, width, 4 - channels), dtype=data.dtype)
-        data = np.concatenate([data, pad], axis=2)
-    elif channels > 4:
-        data = data[:, :, :4]
-    data = (data * 255.0 + 0.5).astype(np.uint8)
-    data = np.flipud(data)  # PNG is top-down; Blender pixels are bottom-up.
-    row = data.reshape(height, width * 4)
-    raw = np.zeros((height, width * 4 + 1), dtype=np.uint8)
-    raw[:, 1:] = row
-    compressed = zlib.compress(raw.tobytes(), level=6)
-    try:
-        with open(path, "wb") as handle:
-            handle.write(b"\x89PNG\r\n\x1a\n")
-            handle.write(_png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)))
-            handle.write(_png_chunk(b"IDAT", compressed))
-            handle.write(_png_chunk(b"IEND", b""))
-    except Exception:
-        return False
-    return True
 
 
 def _first_entry_span(entry) -> tuple[float, float] | None:
@@ -296,41 +233,19 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
         except Exception:
             pass
         img = None
-        png_path = _cat_cache_png_path(scene, node)
-        if png_path and _write_png_rgba(png_path, pixels):
+        png_path = image_util.scene_cache_path(f"{node.label}_CAT", "PNG", scene=scene, create=True)
+        if png_path and image_util.write_png_rgba(png_path, pixels):
             abs_path = bpy.path.abspath(png_path)
             img = node.image
             if img is not None:
-                try:
-                    img_path = bpy.path.abspath(img.filepath)
-                except Exception:
-                    img_path = ""
+                img_path = bpy.path.abspath(img.filepath)
                 if img_path and os.path.normpath(img_path) == os.path.normpath(abs_path):
-                    try:
-                        img.reload()
-                    except Exception:
-                        pass
+                    img.reload()
                 else:
                     img = None
             if img is None:
-                try:
                     img = bpy.data.images.load(abs_path, check_existing=True)
-                except Exception:
-                    img = None
 
-        if img is None:
-            img = node.image
-            if img is None or img.size[0] != width or img.size[1] != height:
-                name = f"{node.name}_CAT"
-                img = bpy.data.images.new(name=name, width=width, height=height, alpha=True, float_buffer=True)
-            img.pixels.foreach_set(pixels.reshape(-1).tolist())
-            try:
-                if hasattr(img, "update"):
-                    img.update()
-                if hasattr(img, "update_tag"):
-                    img.update_tag()
-            except Exception:
-                pass
         if img is not None:
             try:
                 led_codegen_runtime._IMAGE_CACHE.pop(int(img.as_pointer()), None)

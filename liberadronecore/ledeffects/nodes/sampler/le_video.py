@@ -22,6 +22,10 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
     def init(self, context):
         self.inputs.new("NodeSocketFloat", "U")
         self.inputs.new("NodeSocketFloat", "V")
+        start_offset = self.inputs.new("NodeSocketFloat", "Start Offset")
+        speed = self.inputs.new("NodeSocketFloat", "Speed")
+        start_offset.default_value = 0.0
+        speed.default_value = 1.0
         self.inputs.new("LDLEDEntrySocket", "Entry")
         self.outputs.new("NodeSocketColor", "Color")
 
@@ -31,6 +35,8 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
     def build_code(self, inputs):
         u = inputs.get("U", "0.0")
         v = inputs.get("V", "0.0")
+        start_offset = inputs.get("Start Offset", "0.0")
+        speed = inputs.get("Speed", "1.0")
         entry = inputs.get("Entry", "_entry_empty()")
         out_var = self.output_var("Color")
         video_path = bpy.path.abspath(self.filepath) if self.filepath else ""
@@ -38,6 +44,7 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         return "\n".join(
             [
                 f"_progress_{vid_id} = _entry_progress({entry}, frame)",
-                f"{out_var} = _sample_video({video_path!r}, frame, {u}, {v}) if _progress_{vid_id} > 0.0 else (0.0, 0.0, 0.0, 1.0)",
+                f"_frame_{vid_id} = ({start_offset}) + (frame * ({speed}))",
+                f"{out_var} = _sample_video({video_path!r}, _frame_{vid_id}, {u}, {v}) if _progress_{vid_id} > 0.0 else (0.0, 0.0, 0.0, 1.0)",
             ]
         )

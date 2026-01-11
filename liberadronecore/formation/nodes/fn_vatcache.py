@@ -5,6 +5,7 @@ from bpy.props import PointerProperty, StringProperty
 
 from liberadronecore.formation.fn_nodecategory import FN_Node, FN_Register
 from liberadronecore.system.transition import vat_gn, transition_apply
+from liberadronecore.util import image_util
 
 
 def _ensure_collection(scene: bpy.types.Scene, name: str) -> bpy.types.Collection:
@@ -295,6 +296,16 @@ class FN_VATCacheNode(bpy.types.Node, FN_Node):
         prefix = f"VATCache_{self.name}"
         img = _ensure_image(f"{prefix}_VAT", frame_count, drone_count)
         img.pixels[:] = pos_pixels.ravel()
+        cache_path = image_util.scene_cache_path(f"{prefix}_VAT", "OPEN_EXR", scene=scene, create=True)
+        if cache_path and image_util.write_exr_rgba(cache_path, pos_pixels):
+            image_util.link_image_to_existing_file(
+                img,
+                cache_path,
+                "OPEN_EXR",
+                use_float=True,
+                colorspace="Non-Color",
+                reload=True,
+            )
 
         cache_col = _ensure_collection(scene, prefix)
         obj = _ensure_point_object(

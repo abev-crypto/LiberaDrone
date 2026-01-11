@@ -1,5 +1,8 @@
+import os
+
 import bpy
 from liberadronecore.overlay import checker
+from liberadronecore.util import image_util
 
 
 PREVIEW_OBJ_NAME = "PreviewDrone"
@@ -296,6 +299,48 @@ class LD_PT_libera_panel_io(LD_PT_libera_panel_base):
         layout.prop(scene, "ld_import_vat_dir", text="VAT/CAT Folder")
         layout.operator("liberadrone.show_import_sheet", text="Import Sheet")
         layout.operator("liberadrone.show_export_sheet", text="Export Sheet")
+        layout.separator()
+        layout.operator("liberadrone.pack_scene_images", text="Pack Cache Images")
+
+
+class LD_OT_pack_scene_images(bpy.types.Operator):
+    bl_idname = "liberadrone.pack_scene_images"
+    bl_label = "Pack Cache Images"
+    bl_description = "Pack images saved in the scene cache folder into the blend file"
+
+    def execute(self, context):
+        cache_dir = image_util.get_scene_cache_dir(context.scene, create=False)
+        if not cache_dir:
+            self.report({'ERROR'}, "Save the blend file before packing cache images.")
+            return {'CANCELLED'}
+        cache_dir = os.path.normpath(cache_dir)
+        packed = 0
+        skipped = 0
+        for img in bpy.data.images:
+            if img is None:
+                continue
+            if getattr(img, "packed_file", None) is not None:
+                skipped += 1
+                continue
+            filepath = getattr(img, "filepath", "") or getattr(img, "filepath_raw", "")
+            if not filepath:
+                continue
+            abs_path = bpy.path.abspath(filepath)
+            if not abs_path:
+                continue
+            try:
+                in_cache = os.path.commonpath([cache_dir, os.path.normpath(abs_path)]) == cache_dir
+            except Exception:
+                in_cache = False
+            if not in_cache:
+                continue
+            try:
+                img.pack()
+                packed += 1
+            except Exception:
+                pass
+        self.report({'INFO'}, f"Packed {packed} images (skipped {skipped}).")
+        return {'FINISHED'}
 
 
 classes = (
@@ -304,6 +349,7 @@ classes = (
     LD_PT_libera_panel_overlay,
     LD_PT_libera_panel_view_setup,
     LD_PT_libera_panel_io,
+    LD_OT_pack_scene_images,
     LD_OT_create_range_object,
 )
 

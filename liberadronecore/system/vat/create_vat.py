@@ -5,6 +5,7 @@ import numpy as np
 
 import bpy
 
+from liberadronecore.util import image_util
 
 def ms_to_frame(ms: float, fps: float) -> float:
     return (ms / 1000.0) * fps
@@ -43,27 +44,19 @@ def _create_image(
     return img
 
 
-def _save_image_to_blend_dir(img: bpy.types.Image) -> None:
-    filepath = getattr(bpy.data, "filepath", "")
-    if not filepath:
-        return
-    dirpath = os.path.dirname(filepath)
-    if not dirpath:
+def _save_image_to_scene_cache(img: bpy.types.Image) -> None:
+    if img is None:
         return
     is_pos = img.name.endswith("_Pos")
-    filename = f"{img.name}.exr" if is_pos else f"{img.name}.png"
-    path = os.path.join(dirpath, filename)
-    try:
-        img.filepath_raw = path
-        if is_pos:
-            img.file_format = "OPEN_EXR"
-            if hasattr(img, "use_float"):
-                img.use_float = True
-        else:
-            img.file_format = "PNG"
-        img.save()
-    except Exception:
-        pass
+    file_format = "OPEN_EXR" if is_pos else "PNG"
+    image_util.save_image_to_scene_cache(
+        img,
+        img.name,
+        file_format,
+        use_float=is_pos,
+        colorspace="Non-Color" if is_pos else None,
+        link=True,
+    )
 
 def _row_frame(row: dict, fps: float) -> float:
     if "frame" in row:
@@ -203,8 +196,8 @@ def build_vat_images_from_tracks(
     pos_img.pixels[:] = pos_pixels.ravel()
     col_img.pixels[:] = col_pixels.ravel()
 
-    _save_image_to_blend_dir(pos_img)
-    _save_image_to_blend_dir(col_img)
+    _save_image_to_scene_cache(pos_img)
+    _save_image_to_scene_cache(col_img)
 
     return pos_img, col_img, pos_min, pos_max, duration, drone_count
 
