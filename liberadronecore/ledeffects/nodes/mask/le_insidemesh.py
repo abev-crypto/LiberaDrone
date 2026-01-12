@@ -12,38 +12,22 @@ class LDLEDInsideMeshNode(bpy.types.Node, LDLED_CodeNodeBase):
     bl_label = "Inside Mesh"
     bl_icon = "MESH_CUBE"
 
-    target_object: bpy.props.PointerProperty(
-        name="Mesh",
-        type=bpy.types.Object,
-        poll=lambda self, obj: obj.type == 'MESH',
-    )
-
     @classmethod
     def poll(cls, ntree):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
         mesh = self.inputs.new("NodeSocketObject", "Mesh")
-        mesh.hide_value = True
         self.outputs.new("NodeSocketFloat", "Mask")
 
     def draw_buttons(self, context, layout):
-        mesh_socket = self.inputs.get("Mesh")
-        row = layout.row()
-        row.enabled = not (mesh_socket and mesh_socket.is_linked)
-        row.prop(self, "target_object")
         op = layout.operator("ldled.insidemesh_create_mesh", text="From Selection")
         op.node_tree_name = self.id_data.name
         op.node_name = self.name
 
     def build_code(self, inputs):
         out_var = self.output_var("Mask")
-        mesh_socket = self.inputs.get("Mesh") if hasattr(self, "inputs") else None
-        if mesh_socket and getattr(mesh_socket, "is_linked", False):
-            obj_expr = inputs.get("Mesh", "''")
-        else:
-            name = self.target_object.name if self.target_object else ""
-            obj_expr = repr(name) if name else "''"
+        obj_expr = inputs.get("Mesh", "''")
         return f"{out_var} = 1.0 if _point_in_mesh_bbox({obj_expr}, (pos[0], pos[1], pos[2])) else 0.0"
 
 
@@ -144,9 +128,12 @@ class LDLED_OT_insidemesh_create_mesh(bpy.types.Operator):
         name = _unique_name(f"{node.name}_Inside")
         obj = bpy.data.objects.new(name, mesh)
         _ensure_collection(context).objects.link(obj)
+        obj.display_type = 'BOUNDS'
         _apply_solidify(obj)
         _freeze_object_transform(obj)
-        node.target_object = obj
+        mesh_socket = node.inputs.get("Mesh")
+        if mesh_socket is not None and hasattr(mesh_socket, "default_value"):
+            mesh_socket.default_value = obj
         return {'FINISHED'}
 
 

@@ -646,7 +646,7 @@ def _map_show_neighbors(rows: list[dict[str, str]]) -> None:
         rows[idx]["next_show_idx"] = next_show_idx
 
 
-def _filter_transition_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+def _filter_transition_rows(rows: list[dict[str, str]], base_dir: str) -> list[dict[str, str]]:
     _map_show_neighbors(rows)
     display_rows: list[dict[str, str]] = []
     for idx, row in enumerate(rows):
@@ -661,9 +661,13 @@ def _filter_transition_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
         next_idx = row.get("next_show_idx")
         if prev_idx is None or next_idx is None:
             continue
+        if not base_dir:
+            continue
         prev_show = rows[prev_idx]
         next_show = rows[next_idx]
-        if prev_show.get("states") != "完了" or next_show.get("states") != "完了":
+        prev_status = _calc_asset_status(base_dir, prev_show)
+        next_status = _calc_asset_status(base_dir, next_show)
+        if prev_status != "OK" or next_status != "OK":
             continue
         row["row_index"] = idx
         display_rows.append(row)
@@ -829,6 +833,29 @@ def _ensure_formation_tree(context) -> bpy.types.NodeTree | None:
     return tree
 
 
+def _link_tree_to_workspace(workspace_name: str, tree: bpy.types.NodeTree, tree_type: str) -> None:
+    if tree is None:
+        return
+    ws = bpy.data.workspaces.get(workspace_name)
+    if ws is None:
+        return
+    screens = list(getattr(ws, "screens", []))
+    if not screens:
+        screens = list(getattr(bpy.data, "screens", []))
+    for screen in screens:
+        for area in getattr(screen, "areas", []):
+            if getattr(area, "type", "") != "NODE_EDITOR":
+                continue
+            for space in getattr(area, "spaces", []):
+                if getattr(space, "type", "") != "NODE_EDITOR":
+                    continue
+                try:
+                    space.tree_type = tree_type
+                    space.node_tree = tree
+                except Exception:
+                    pass
+
+
 def _cat_template_path() -> str:
     return os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "ledeffects", "sample", "CAT.json")
@@ -869,11 +896,18 @@ def _build_cat_led_graph(
         frame_nodes = [root]
     for node in frame_nodes:
         if getattr(node, "bl_idname", "") == "LDLEDFrameEntryNode":
-            try:
-                node.start = int(start_frame)
-                node.duration = int(duration)
-            except Exception:
-                pass
+            start_sock = node.inputs.get("Start") if hasattr(node, "inputs") else None
+            duration_sock = node.inputs.get("Duration") if hasattr(node, "inputs") else None
+            if start_sock is not None and hasattr(start_sock, "default_value"):
+                try:
+                    start_sock.default_value = float(start_frame)
+                except Exception:
+                    pass
+            if duration_sock is not None and hasattr(duration_sock, "default_value"):
+                try:
+                    duration_sock.default_value = float(duration)
+                except Exception:
+                    pass
         elif getattr(node, "bl_idname", "") == "LDLEDCatSamplerNode":
             try:
                 node.image = cat_image
@@ -1016,7 +1050,7 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             text = _fetch_csv(url)
             rows = _parse_rows(text)
             self._rows_all = rows
-            display_rows = _filter_transition_rows(rows)
+            display_rows = _filter_transition_rows(rows, base_dir)
         except Exception as exc:
             self.status_label.setText(f"Failed to load: {exc}")
             QtWidgets.QMessageBox.warning(self, "Import Error", str(exc))
@@ -1125,6 +1159,16 @@ class SheetImportWindow(QtWidgets.QMainWindow):
                 )
                 return
 
+        duration_frames: dict[int, int] = {}
+        start_frames: dict[int, int] = {}
+        cursor = 0
+        for row in rows_to_import:
+            idx = row["row_index"]
+            duration_int = _to_int(row.get("duration_frame")) or 0
+            duration_frames[idx] = duration_int
+            start_frames[idx] = int(cursor)
+            cursor += max(0, duration_int)
+
         def _should_create_vat(row, status: str, pos_img) -> bool:
             if pos_img is None:
                 return False
@@ -1222,8 +1266,8 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             pos_min = assets[idx]["pos_min"]
             pos_max = assets[idx]["pos_max"]
             duration = _to_float(row.get("duration_frame"))
-            duration_int = _to_int(row.get("duration_frame"))
-            start_frame = _to_int(row.get("start_frame")) or 0
+            duration_int = duration_frames.get(idx, 0)
+            start_frame = start_frames.get(idx, 0)
 
             if attr == "Transition" and status == "OK":
                 bl_idname = "FN_ShowNode"
@@ -1297,6 +1341,19 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             bpy.ops.liberadrone.setup_all()
         except Exception:
             pass
+        _link_tree_to_workspace("Formation", tree, "FN_FormationTree")
+        led_tree = led_panel._get_led_tree(bpy.context)
+        if led_tree is not None:
+            _link_tree_to_workspace("LED", led_tree, "LD_LedEffectsTree")
+        if all(
+            status_map.get(row["row_index"]) == "OK"
+            for row in rows_to_import
+            if row.get("name")
+        ):
+            try:
+                bpy.ops.fn.calculate_schedule()
+            except Exception:
+                pass
         try:
             from liberadronecore.util import view_setup
             view_setup.setup_glare_compositor(scene, glare_threshold=glare_threshold)
@@ -1481,5 +1538,3 @@ class SheetExportWindow(QtWidgets.QMainWindow):
         SheetExportWindow._instance.resize(900, 500)
         SheetExportWindow._instance.show()
         return SheetExportWindow._instance
-
-

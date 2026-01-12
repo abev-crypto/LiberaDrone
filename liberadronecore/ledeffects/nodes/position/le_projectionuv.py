@@ -11,27 +11,17 @@ class LDLEDProjectionUVNode(bpy.types.Node, LDLED_CodeNodeBase):
     bl_label = "Projection UV"
     bl_icon = "MOD_UVPROJECT"
 
-    target_object: bpy.props.PointerProperty(
-        name="Mesh",
-        type=bpy.types.Object,
-        poll=lambda self, obj: obj.type == 'MESH',
-    )
-
     @classmethod
     def poll(cls, ntree):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
-        mesh = self.inputs.new("NodeSocketObject", "Mesh")
-        mesh.hide_value = True
+        self.inputs.new("NodeSocketObject", "Mesh")
         self.outputs.new("NodeSocketFloat", "U")
         self.outputs.new("NodeSocketFloat", "V")
 
     def draw_buttons(self, context, layout):
-        mesh_socket = self.inputs.get("Mesh")
         row = layout.row()
-        row.enabled = not (mesh_socket and mesh_socket.is_linked)
-        row.prop(self, "target_object")
         row = layout.row(align=True)
         op = row.operator("ldled.projectionuv_create_mesh", text="Area XZ")
         op.node_tree_name = self.id_data.name
@@ -49,12 +39,7 @@ class LDLEDProjectionUVNode(bpy.types.Node, LDLED_CodeNodeBase):
     def build_code(self, inputs):
         out_u = self.output_var("U")
         out_v = self.output_var("V")
-        mesh_socket = self.inputs.get("Mesh") if hasattr(self, "inputs") else None
-        if mesh_socket and getattr(mesh_socket, "is_linked", False):
-            obj_expr = inputs.get("Mesh", "''")
-        else:
-            name = self.target_object.name if self.target_object else ""
-            obj_expr = repr(name) if name else "''"
+        obj_expr = inputs.get("Mesh", "''")
         return "\n".join(
             [
                 f"_uv = _project_bbox_uv({obj_expr}, (pos[0], pos[1], pos[2]))",
@@ -241,7 +226,10 @@ class LDLED_OT_projectionuv_create_mesh(bpy.types.Operator):
 
         name = _unique_name(f"{node.name}_Projection")
         obj = _create_xz_plane(name, bounds, context)
-        node.target_object = obj
+        obj.display_type = 'BOUNDS'
+        mesh_socket = node.inputs.get("Mesh")
+        if mesh_socket is not None and hasattr(mesh_socket, "default_value"):
+            mesh_socket.default_value = obj
         return {'FINISHED'}
 
 

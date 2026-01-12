@@ -42,6 +42,8 @@ def _default_for_socket(socket: bpy.types.NodeSocket) -> str:
 def _default_for_input(socket: bpy.types.NodeSocket) -> str:
     if hasattr(socket, "default_value"):
         value = socket.default_value
+        if isinstance(value, bpy.types.Object):
+            return repr(value.name)
         if isinstance(value, (float, int)):
             return repr(float(value))
         if isinstance(value, (list, tuple, mathutils.Vector)) or (

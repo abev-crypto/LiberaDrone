@@ -1,6 +1,7 @@
 from . import le_output
 from .effect import le_blend
 from .effect import le_clamp
+from .effect import le_cutoff
 from .effect import le_level
 from .effect import le_random
 from .entry import le_editentry
