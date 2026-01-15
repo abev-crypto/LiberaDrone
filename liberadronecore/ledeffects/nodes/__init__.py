@@ -3,7 +3,7 @@ from .effect import le_blend
 from .effect import le_clamp
 from .effect import le_cutoff
 from .effect import le_level
-from .effect import le_random
+from .mask import le_random
 from .entry import le_editentry
 from .entry import le_formationentry
 from .entry import le_frameentry
@@ -12,6 +12,7 @@ from .entry import le_loopentry
 from .entry import le_markerentry
 from .entry import le_entryswitch
 from .mask import le_distance
+from .mask import le_fade
 from .mask import le_idmask
 from .mask import le_insidemesh
 from .mask import le_time

@@ -39,11 +39,44 @@ def _append_workspace_from_library(blend_path: Path, name: str):
     return bpy.data.workspaces.get(name)
 
 
+def _get_fallback_window(context):
+    window = getattr(context, "window", None) or getattr(bpy.context, "window", None)
+    if window is not None:
+        return window
+    wm = getattr(bpy.context, "window_manager", None)
+    if wm is not None:
+        for win in getattr(wm, "windows", []):
+            return win
+    return None
+
+
+def _clone_workspace(window, name: str):
+    current = getattr(window, "workspace", None) if window else None
+    if current is not None:
+        try:
+            ws = current.copy()
+            ws.name = name
+            return ws
+        except Exception:
+            pass
+    try:
+        ws = bpy.data.workspaces.new(name)
+    except Exception:
+        return None
+    if current is not None and hasattr(ws, "screens"):
+        for screen in getattr(current, "screens", []):
+            try:
+                ws.screens.append(screen)
+            except Exception:
+                pass
+    return ws
+
+
 def _ensure_workspace(context, name: str):
     existing = bpy.data.workspaces.get(name)
     if existing is not None:
         return existing
-    ws_path = Path(__file__).resolve().parents[2] / "scene" / "ws.blend"
+    ws_path = Path(__file__).resolve().parents[1] / "scene" / "ws.blend"
     if not ws_path.exists():
         return None
 
@@ -62,7 +95,13 @@ def _ensure_workspace(context, name: str):
                 filename=name,
                 filepath=workspace_dir + name,
             )
-    return bpy.data.workspaces.get(name)
+    ws = bpy.data.workspaces.get(name)
+    if ws is not None:
+        return ws
+    fallback_window = _get_fallback_window(context)
+    if fallback_window is None:
+        return None
+    return _clone_workspace(fallback_window, name)
 
 
 def setup_workspace(context, mode: str):

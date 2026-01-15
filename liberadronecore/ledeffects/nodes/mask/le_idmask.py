@@ -97,6 +97,12 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
     bl_label = "ID Mask"
     bl_icon = "SORTSIZE"
 
+    combine_items = [
+        ("MULTIPLY", "Multiply", "Multiply the mask with the value"),
+        ("ADD", "Add", "Add the value to the mask"),
+        ("SUB", "Subtract", "Subtract the value from the mask"),
+    ]
+
     formation_id: bpy.props.IntProperty(
         name="Formation ID",
         default=0,
@@ -108,12 +114,23 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         options={'HIDDEN'},
     )
     ids: bpy.props.CollectionProperty(type=LDLEDIDMaskItem)
+    combine_mode: bpy.props.EnumProperty(
+        name="Combine",
+        items=combine_items,
+        default="MULTIPLY",
+    )
 
     @classmethod
     def poll(cls, ntree):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
+        value = self.inputs.new("NodeSocketFloat", "Value")
+        value.default_value = 1.0
+        try:
+            value.min_value = 0.0
+        except Exception:
+            pass
         self.outputs.new("NodeSocketFloat", "Mask")
 
     def draw_buttons(self, context, layout):
@@ -130,14 +147,24 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         op = row.operator("ldled.idmask_remove_selection", text="Remove Selection")
         op.node_tree_name = self.id_data.name
         op.node_name = self.name
+        layout.prop(self, "combine_mode", text="")
 
     def build_code(self, inputs):
         out_var = self.output_var("Mask")
         ids = _node_effective_ids(self, include_legacy=not self.use_custom_ids)
+        value = inputs.get("Value", "1.0")
         if not ids:
-            return f"{out_var} = 0.0"
-        if len(ids) == 1:
-            return f"{out_var} = 1.0 if idx == {ids[0]} else 0.0"
-        return f"{out_var} = 1.0 if idx in {tuple(ids)} else 0.0"
+            base_expr = "0.0"
+        elif len(ids) == 1:
+            base_expr = f"1.0 if idx == {ids[0]} else 0.0"
+        else:
+            base_expr = f"1.0 if idx in {tuple(ids)} else 0.0"
+        if self.combine_mode == "ADD":
+            expr = f"_clamp01(({base_expr}) + ({value}))"
+        elif self.combine_mode == "SUB":
+            expr = f"_clamp01(({base_expr}) - ({value}))"
+        else:
+            expr = f"_clamp01(({base_expr}) * ({value}))"
+        return f"{out_var} = {expr}"
 
 

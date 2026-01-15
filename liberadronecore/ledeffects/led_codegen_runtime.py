@@ -64,6 +64,18 @@ def _clamp01(x: float) -> float:
     return x
 
 
+def _fract(x: float) -> float:
+    return x - math.floor(x)
+
+
+def _loop_factor(value: float, mode: str = "REPEAT") -> float:
+    mode = (mode or "REPEAT").upper()
+    frac = _fract(float(value))
+    if mode in {"PINGPONG", "PING_PONG", "PING-PONG"}:
+        return 1.0 - abs(2.0 * frac - 1.0)
+    return frac
+
+
 def _alpha_over(dst: List[float], src: List[float], alpha: float) -> List[float]:
     inv = 1.0 - alpha
     return [
@@ -1078,6 +1090,57 @@ def _entry_progress(
     return _apply_ease(best, mode)
 
 
+def _entry_fade(
+    entry: Optional[Dict[str, List[Tuple[float, float]]]],
+    frame: float,
+    duration: float,
+    ease_mode: str = "LINEAR",
+    fade_mode: str = "IN",
+) -> float:
+    if not entry:
+        return 0.0
+    fr = float(frame)
+    dur = max(0.0, float(duration))
+    fade_mode = (fade_mode or "IN").upper()
+    best = 0.0
+    for spans in entry.values():
+        for start, end in spans:
+            start_f = float(start)
+            end_f = float(end)
+            if end_f <= start_f:
+                continue
+            if fr < start_f or fr >= end_f:
+                continue
+            if dur <= 0.0:
+                val = 1.0
+            elif fade_mode == "OUT":
+                fade_start = end_f - dur
+                if fr <= fade_start:
+                    val = 1.0
+                else:
+                    t = (fr - fade_start) / dur
+                    val = 1.0 - _apply_ease(t, ease_mode)
+            else:
+                if fr >= start_f + dur:
+                    in_val = 1.0
+                else:
+                    t = (fr - start_f) / dur
+                    in_val = _apply_ease(t, ease_mode)
+                if fade_mode == "IN_OUT":
+                    fade_start = end_f - dur
+                    if fr <= fade_start:
+                        out_val = 1.0
+                    else:
+                        t = (fr - fade_start) / dur
+                        out_val = 1.0 - _apply_ease(t, ease_mode)
+                    val = min(in_val, out_val)
+                else:
+                    val = in_val
+            if val > best:
+                best = val
+    return _clamp01(best)
+
+
 def _entry_active_index(
     entry: Optional[Dict[str, List[Tuple[float, float]]]],
     frame: float,
@@ -1137,6 +1200,9 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         node: bpy.types.Node,
         target_lines: List[str],
         emitted_nodes: set[int],
+        *,
+        fallback_entry: Optional[str] = None,
+        allow_entry_fallback: bool = True,
     ) -> None:
         if node.as_pointer() in emitted_nodes:
             return
@@ -1152,7 +1218,13 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         for sock in getattr(node, "inputs", []):
             if allowed_inputs is not None and sock.name not in allowed_inputs:
                 continue
-            inputs[sock.name] = resolve_input(sock, target_lines, emitted_nodes)
+            inputs[sock.name] = resolve_input(
+                sock,
+                target_lines,
+                emitted_nodes,
+                fallback_entry=fallback_entry,
+                allow_entry_fallback=allow_entry_fallback,
+            )
 
         output_vars = {
             sock.name: f"{node.codegen_id()}_{_sanitize_identifier(sock.name)}"
@@ -1169,6 +1241,9 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         socket: Optional[bpy.types.NodeSocket],
         target_lines: List[str],
         emitted_nodes: set[int],
+        *,
+        fallback_entry: Optional[str] = None,
+        allow_entry_fallback: bool = True,
     ) -> str:
         if socket is None:
             return "0.0"
@@ -1180,7 +1255,13 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
                     continue
                 from_node = link.from_node
                 from_socket = link.from_socket
-                emit_node(from_node, target_lines, emitted_nodes)
+                emit_node(
+                    from_node,
+                    target_lines,
+                    emitted_nodes,
+                    fallback_entry=fallback_entry,
+                    allow_entry_fallback=allow_entry_fallback,
+                )
                 if isinstance(from_node, LDLED_CodeNodeBase):
                     entry_vars.append(_get_output_var(from_node, from_socket))
             if not entry_vars:
@@ -1198,11 +1279,19 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
                 return _default_for_input(socket)
             from_node = link.from_node
             from_socket = link.from_socket
-            emit_node(from_node, target_lines, emitted_nodes)
+            emit_node(
+                from_node,
+                target_lines,
+                emitted_nodes,
+                fallback_entry=fallback_entry,
+                allow_entry_fallback=allow_entry_fallback,
+            )
             if isinstance(from_node, LDLED_CodeNodeBase):
                 return _get_output_var(from_node, from_socket)
             return _default_for_socket(from_socket)
         if is_entry:
+            if allow_entry_fallback and fallback_entry is not None:
+                return fallback_entry
             return "_entry_empty()"
         return _default_for_input(socket)
 
@@ -1213,9 +1302,24 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         out_key = output.name
         meta_lines: List[str] = []
         meta_emitted: set[int] = set()
-        intensity_in = resolve_input(output.inputs.get("Intensity"), meta_lines, meta_emitted)
-        alpha_in = resolve_input(output.inputs.get("Alpha"), meta_lines, meta_emitted)
-        entry_in = resolve_input(output.inputs.get("Entry"), meta_lines, meta_emitted)
+        entry_in = resolve_input(
+            output.inputs.get("Entry"),
+            meta_lines,
+            meta_emitted,
+            allow_entry_fallback=False,
+        )
+        intensity_in = resolve_input(
+            output.inputs.get("Intensity"),
+            meta_lines,
+            meta_emitted,
+            fallback_entry=entry_in,
+        )
+        alpha_in = resolve_input(
+            output.inputs.get("Alpha"),
+            meta_lines,
+            meta_emitted,
+            fallback_entry=entry_in,
+        )
         meta_lines.append(f"_intensity = {intensity_in}")
         meta_lines.append(f"_alpha = {alpha_in}")
         meta_lines.append(f"_entry = {entry_in}")
@@ -1223,7 +1327,12 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
 
         color_lines: List[str] = []
         color_emitted: set[int] = set()
-        color_in = resolve_input(output.inputs.get("Color"), color_lines, color_emitted)
+        color_in = resolve_input(
+            output.inputs.get("Color"),
+            color_lines,
+            color_emitted,
+            fallback_entry="_entry",
+        )
         color_lines.append(f"_color = {color_in}")
         output_color_blocks[out_key] = color_lines
 
@@ -1319,6 +1428,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
     env = {
         "_clamp": _clamp,
         "_clamp01": _clamp01,
+        "_loop_factor": _loop_factor,
         "_alpha_over": _alpha_over,
         "_blend_over": _blend_over,
         "_rand01": _rand01,
@@ -1354,6 +1464,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         "_entry_loop": _entry_loop,
         "_entry_active_count": _entry_active_count,
         "_entry_progress": _entry_progress,
+        "_entry_fade": _entry_fade,
         "_entry_active_index": _entry_active_index,
         "bpy": bpy,
         "math": math,
@@ -1466,6 +1577,7 @@ def compile_led_socket(
     env = {
         "_clamp": _clamp,
         "_clamp01": _clamp01,
+        "_loop_factor": _loop_factor,
         "_alpha_over": _alpha_over,
         "_blend_over": _blend_over,
         "_rand01": _rand01,
@@ -1500,6 +1612,7 @@ def compile_led_socket(
         "_entry_loop": _entry_loop,
         "_entry_active_count": _entry_active_count,
         "_entry_progress": _entry_progress,
+        "_entry_fade": _entry_fade,
         "_entry_active_index": _entry_active_index,
         "bpy": bpy,
         "math": math,
@@ -1608,6 +1721,7 @@ def get_output_activity(tree: bpy.types.NodeTree, frame: float) -> Dict[str, boo
         "_entry_loop": _entry_loop,
         "_entry_active_count": _entry_active_count,
         "_entry_progress": _entry_progress,
+        "_entry_fade": _entry_fade,
         "_entry_active_index": _entry_active_index,
         "bpy": bpy,
         "math": math,

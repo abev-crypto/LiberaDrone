@@ -2,14 +2,20 @@ import bpy
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 
 
-class LDLEDTimeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
-    """Output a 0-1 mask based on entry progress."""
+class LDLEDFadeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
+    """Fade a value in/out based on entry timing."""
 
-    bl_idname = "LDLEDTimeMaskNode"
-    bl_label = "Time"
-    bl_icon = "TIME"
+    bl_idname = "LDLEDFadeMaskNode"
+    bl_label = "Fade In/Out"
+    bl_icon = "IPO_SINE"
 
-    mode_items = [
+    direction_items = [
+        ("IN", "In", "Fade in from 0 to 1"),
+        ("OUT", "Out", "Fade out from 1 to 0"),
+        ("IN_OUT", "In/Out", "Fade in then out"),
+    ]
+
+    ease_items = [
         ("LINEAR", "Linear", "Linear progress"),
         ("EASE_IN", "Ease In", "Slow start, fast end"),
         ("EASE_OUT", "Ease Out", "Fast start, slow end"),
@@ -22,9 +28,15 @@ class LDLEDTimeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         ("SUB", "Subtract", "Subtract the value from the mask"),
     ]
 
-    mode: bpy.props.EnumProperty(
-        name="Mode",
-        items=mode_items,
+    direction: bpy.props.EnumProperty(
+        name="Direction",
+        items=direction_items,
+        default="IN",
+    )
+
+    ease_mode: bpy.props.EnumProperty(
+        name="Ease",
+        items=ease_items,
         default="LINEAR",
     )
 
@@ -40,23 +52,28 @@ class LDLEDTimeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def init(self, context):
         self.inputs.new("LDLEDEntrySocket", "Entry")
+        duration = self.inputs.new("NodeSocketFloat", "Duration")
         value = self.inputs.new("NodeSocketFloat", "Value")
+        duration.default_value = 1.0
         value.default_value = 1.0
         try:
+            duration.min_value = 0.0
             value.min_value = 0.0
         except Exception:
             pass
-        self.outputs.new("NodeSocketFloat", "Factor")
+        self.outputs.new("NodeSocketFloat", "Value")
 
     def draw_buttons(self, context, layout):
-        layout.prop(self, "mode", text="")
+        layout.prop(self, "direction", text="")
+        layout.prop(self, "ease_mode", text="")
         layout.prop(self, "combine_mode", text="")
 
     def build_code(self, inputs):
         entry = inputs.get("Entry", "_entry_empty()")
+        duration = inputs.get("Duration", "0.0")
         value = inputs.get("Value", "1.0")
-        out_var = self.output_var("Factor")
-        base_expr = f"_entry_progress({entry}, frame, {self.mode!r})"
+        out_var = self.output_var("Value")
+        base_expr = f"_entry_fade({entry}, frame, {duration}, {self.ease_mode!r}, {self.direction!r})"
         if self.combine_mode == "ADD":
             expr = f"_clamp01(({base_expr}) + ({value}))"
         elif self.combine_mode == "SUB":
