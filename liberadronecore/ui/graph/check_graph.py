@@ -1,7 +1,7 @@
 ﻿import bpy
 
 # -----------------------------------------
-# Matplotlib backend: Qt6(Pyside6) 対忁E
+# Matplotlib backend: Qt6 (PySide6)
 # -----------------------------------------
 import numpy as np
 import matplotlib
@@ -20,10 +20,10 @@ from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as Navigation
 
 
 # =========================
-# ���[�U�[��?E
+# Settings
 # =========================
 BIN_FRAMES = 4
-COLOR_BY = "high"            # "high" or "close" (�F?E??�Ɏg��E??�\�l)
+COLOR_BY = "high"            # "high" or "close" (value used for color)
 TARGET_COLLECTION_NAME = "Formation"
 
 COLOR_OK = "#2ecc71"
@@ -41,7 +41,7 @@ METRICS = [
 def _ensure_qapp():
     app = QtWidgets.QApplication.instance()
     if app is None:
-        # Blender冁E��Qtイベントループが無ぁE��ース用
+        # Blender may not have a Qt event loop running.
         app = QtWidgets.QApplication([])
     return app
 
@@ -332,5 +332,7 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
         return VelocityCandleWindow._instance
 
 if __name__ == "__main__":
-        VelocityCandleWindow.show_window()
+    VelocityCandleWindow.show_window()
+
+
 

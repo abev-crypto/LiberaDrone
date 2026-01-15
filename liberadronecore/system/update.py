@@ -1,4 +1,4 @@
-# updater_github_main.py
+﻿# updater_github_main.py
 # GitHub main ブランチを参照してアドオンをセルフアップデートする簡易実装
 
 from __future__ import annotations
@@ -265,84 +265,8 @@ def _auto_check_on_load(_scene) -> None:
         _notify_update_available("LiberaDrone update available. Open Preferences to update.")
     _AUTO_CHECK_DONE = True
 
-class LD_OT_check_update(bpy.types.Operator):
-    bl_idname = "liberadrone.check_update"
-    bl_label = "Check Update (GitHub main)"
-    bl_options = {'INTERNAL'}
-
-    def execute(self, context):
-        addon_key = __package__.split(".")[0]
-        prefs = context.preferences.addons[addon_key].preferences
-
-        repo = GithubRepo(
-            owner=prefs.gh_owner,
-            repo=prefs.gh_repo,
-            branch=prefs.gh_branch,
-            addon_subdir=prefs.gh_addon_subdir,
-        )
-
-        try:
-            local_v = get_local_version(addon_key)
-            remote_v = get_remote_version(repo)
-        except Exception as e:
-            self.report({'ERROR'}, f"更新チェック失敗: {e}")
-            return {'CANCELLED'}
-
-        prefs.last_local_version = str(local_v) if local_v else "None"
-        prefs.last_remote_version = str(remote_v) if remote_v else "None"
-
-        if not local_v or not remote_v:
-            prefs.update_available = False
-            self.report({'WARNING'}, "バージョン取得に失敗（bl_info を確認してください）")
-            return {'FINISHED'}
-
-        prefs.update_available = _version_gt(remote_v, local_v)
-        if prefs.update_available:
-            self.report({'INFO'}, f"更新あり: local {local_v} -> remote {remote_v}")
-        else:
-            self.report({'INFO'}, f"最新です: {local_v}")
-        return {'FINISHED'}
-
-
-class LD_OT_apply_update(bpy.types.Operator):
-    bl_idname = "liberadrone.apply_update"
-    bl_label = "Update Now (Download & Install)"
-    bl_options = {'INTERNAL'}
-
-    def execute(self, context):
-        addon_key = __package__.split(".")[0]
-        prefs = context.preferences.addons[addon_key].preferences
-        repo = GithubRepo(
-            owner=prefs.gh_owner,
-            repo=prefs.gh_repo,
-            branch=prefs.gh_branch,
-            addon_subdir=prefs.gh_addon_subdir,
-        )
-
-        try:
-            addon_dir = _addon_root_dir_from_module(addon_key)
-            zip_bytes = download_main_zip(repo)
-            install_from_zip_bytes(zip_bytes, repo, addon_dir)
-
-            # ここで再読込を試みることもできるが、自己更新は不安定になりがち。
-            # 基本は再起動推奨。
-            prefs.update_available = False
-            self.report({'INFO'}, "更新をインストールしました。Blenderを再起動してください。")
-            return {'FINISHED'}
-
-        except Exception as e:
-            self.report({'ERROR'}, f"更新に失敗: {e}")
-            return {'CANCELLED'}
-
-classes = (
-    LD_OT_check_update,
-    LD_OT_apply_update,
-)
-
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
     if _auto_check_on_load not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(_auto_check_on_load)
 
@@ -350,5 +274,3 @@ def register():
 def unregister():
     if _auto_check_on_load in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_auto_check_on_load)
-    for c in reversed(classes):
-        bpy.utils.unregister_class(c)

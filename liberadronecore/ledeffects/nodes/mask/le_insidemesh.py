@@ -1,7 +1,6 @@
 import bpy
 from mathutils import Matrix, Vector
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
-from liberadronecore.reg.base_reg import RegisterBase
 from liberadronecore.util.modeling import delaunay
 
 
@@ -104,44 +103,3 @@ def _apply_solidify(obj: bpy.types.Object) -> None:
                 pass
 
 
-class LDLED_OT_insidemesh_create_mesh(bpy.types.Operator):
-    bl_idname = "ldled.insidemesh_create_mesh"
-    bl_label = "Create Inside Mesh"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    node_tree_name: bpy.props.StringProperty()
-    node_name: bpy.props.StringProperty()
-
-    def execute(self, context):
-        tree = bpy.data.node_groups.get(self.node_tree_name)
-        node = tree.nodes.get(self.node_name) if tree else None
-        if node is None or not isinstance(node, LDLEDInsideMeshNode):
-            self.report({'ERROR'}, "Inside Mesh node not found")
-            return {'CANCELLED'}
-
-        points = _collect_points(context)
-        if len(points) < 3:
-            self.report({'ERROR'}, "Select at least 3 vertices or a mesh")
-            return {'CANCELLED'}
-
-        mesh = delaunay.build_planar_mesh_from_points(points)
-        name = _unique_name(f"{node.name}_Inside")
-        obj = bpy.data.objects.new(name, mesh)
-        _ensure_collection(context).objects.link(obj)
-        obj.display_type = 'BOUNDS'
-        _apply_solidify(obj)
-        _freeze_object_transform(obj)
-        mesh_socket = node.inputs.get("Mesh")
-        if mesh_socket is not None and hasattr(mesh_socket, "default_value"):
-            mesh_socket.default_value = obj
-        return {'FINISHED'}
-
-
-class LDLED_InsideMeshOps(RegisterBase):
-    @classmethod
-    def register(cls) -> None:
-        bpy.utils.register_class(LDLED_OT_insidemesh_create_mesh)
-
-    @classmethod
-    def unregister(cls) -> None:
-        bpy.utils.unregister_class(LDLED_OT_insidemesh_create_mesh)

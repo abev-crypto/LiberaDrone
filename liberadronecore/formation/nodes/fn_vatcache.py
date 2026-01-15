@@ -1,9 +1,9 @@
 ﻿from __future__ import annotations
 
 import bpy
-from bpy.props import PointerProperty, StringProperty
+from bpy.props import PointerProperty
 
-from liberadronecore.formation.fn_nodecategory import FN_Node, FN_Register
+from liberadronecore.formation.fn_nodecategory import FN_Node
 from liberadronecore.system.transition import vat_gn, transition_apply
 from liberadronecore.util import image_util
 
@@ -172,33 +172,6 @@ def _resolve_connected_range(node: bpy.types.Node, context) -> tuple[int, int] |
     if range_start is None or range_end is None or range_end <= range_start:
         return None
     return range_start, range_end - range_start
-
-
-class FN_OT_build_vat_cache(bpy.types.Operator, FN_Register):
-    bl_idname = "fn.build_vat_cache"
-    bl_label = "Build VAT Cache"
-    node_name: StringProperty()
-
-    def execute(self, context):
-        if not self.node_name:
-            self.report({'ERROR'}, "Missing node name.")
-            return {'CANCELLED'}
-        node = None
-        for ng in bpy.data.node_groups:
-            if getattr(ng, "bl_idname", "") != "FN_FormationTree":
-                continue
-            node = ng.nodes.get(self.node_name)
-            if node:
-                break
-        if node is None:
-            self.report({'ERROR'}, "Node not found.")
-            return {'CANCELLED'}
-        try:
-            node.build_cache(context)
-        except Exception as exc:
-            self.report({'ERROR'}, f"VAT cache failed: {exc}")
-            return {'CANCELLED'}
-        return {'FINISHED'}
 
 
 class FN_VATCacheNode(bpy.types.Node, FN_Node):

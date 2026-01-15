@@ -82,7 +82,7 @@ class FN_OT_calculate_schedule(bpy.types.Operator, FN_Register):
                     errors.append(message)
         schedule = compute_schedule(context, assign_pairs=True)
         try:
-            from liberadronecore.formation import fn_parse_ui
+            from liberadronecore.ui import fn_parse_ui
             fn_parse_ui.sync_transition_items(context, allow_index_update=True)
         except Exception:
             pass
@@ -132,7 +132,7 @@ class FN_OT_force_calculate_schedule(bpy.types.Operator, FN_Register):
                     errors.append(message)
         schedule = compute_schedule(context, assign_pairs=True)
         try:
-            from liberadronecore.formation import fn_parse_ui
+            from liberadronecore.ui import fn_parse_ui
             fn_parse_ui.sync_transition_items(context, allow_index_update=True)
         except Exception:
             pass

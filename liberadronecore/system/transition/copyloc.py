@@ -1,6 +1,6 @@
 ﻿"""
-Docstring for liberadronecore.system.transition.copyloc
-TODO 縺ゅｌ縺ｧ縺ゅ▲縺櫃opyLocation繧剃ｽｿ縺｣縺溘す繝ｳ繝励Ν縺ｪ遘ｻ蜍輔す繧ｹ繝・Β繧剃ｽ懈・縺吶ｋ
+Helpers for building Copy Location transition rigs.
+TODO: refine the Copy Location-based transition pipeline.
 """
 
 import bpy
@@ -9,7 +9,7 @@ from mathutils import Vector
 # -----------------------------
 # Settings
 # -----------------------------
-VG_PREFIX = "PT_vtx_"                 # 菴懊ｊ逶ｴ縺儼G縺ｮ繝励Ξ繝輔ぅ繝・け繧ｹ
+VG_PREFIX = "PT_vtx_"                 # Vertex group prefix for per-vertex targets.
 COLLECTION_PREFIX = "PT_VGBlend_"
 CONTROLLER_NAME = "PT_VGBlend_CTRL"
 EMPTY_PREFIX = "PT_vtxNull_"
@@ -49,7 +49,7 @@ def ensure_collection(name: str):
     return col
 
 def link_to_collection(obj, col):
-    # 縺吶〒縺ｫ縺ｩ縺薙°縺ｫ繝ｪ繝ｳ繧ｯ縺輔ｌ縺ｦ縺・ｋ蜑肴署縺ｧ縲∫岼逧・さ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｫ繧ゅΜ繝ｳ繧ｯ
+    # Link only if the object is not already in the collection.
     if obj.name not in col.objects:
         col.objects.link(obj)
 
@@ -59,13 +59,13 @@ def _link_only_to_collection(obj, col):
     col.objects.link(obj)
 
 def safe_remove_object(obj):
-    # 蜈ｨ繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺九ｉ unlink 縺励※蜑企勁
+    # Unlink from all collections before removal.
     for c in list(obj.users_collection):
         c.objects.unlink(obj)
     bpy.data.objects.remove(obj, do_unlink=True)
 
 def clear_old_objects_in_collection(col):
-    # 繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ蜀・・繧ｪ繝悶ず繧ｧ繧ｯ繝医ｒ蜑企勁・・mpty鄒､縺ｪ縺ｩ・・
+    # Remove all objects in the collection.
     for obj in list(col.objects):
         safe_remove_object(obj)
 
@@ -82,7 +82,7 @@ def ensure_blend_property(ctrl_obj):
     ui.update(min=0.0, max=1.0, soft_min=0.0, soft_max=1.0, description="0=A, 1=B")
 
 def set_influence_driver(con, ctrl_obj, invert=False):
-    # 譌｢蟄倥ラ繝ｩ繧､繝先ｶ医＠縺ｦ蠑ｵ繧顔峩縺・
+    # Clear existing driver before adding a new one.
     try:
         con.driver_remove("influence")
     except TypeError:
@@ -222,7 +222,7 @@ def build_copyloc(
     vcountA = len(A.data.vertices)
     vcountB = len(B.data.vertices)
     if vcountA != vcountB:
-        raise RuntimeError(f"頂点数が一致してぁE��せん: A={vcountA} / B={vcountB}")
+        raise RuntimeError(f"Vertex count mismatch: A={vcountA} / B={vcountB}")
 
     col_name = collection_name or f"{COLLECTION_PREFIX}{A.name}_to_{B.name}"
     ctrl_name = controller_name or f"{CONTROLLER_NAME}_{A.name}_to_{B.name}"
@@ -231,11 +231,11 @@ def build_copyloc(
     if clear_old:
         clear_old_objects_in_collection(col)
 
-    # VGは「�E利用しなぁE���E prefix一致を両方消して作り直ぁE
+    # Recreate per-vertex groups with the prefix.
     remove_prefixed_vertex_groups(A, VG_PREFIX)
     remove_prefixed_vertex_groups(B, VG_PREFIX)
 
-    # コントローラEmpty�E�Elend一本化！E
+    # Single controller empty for blend.
     ctrl = bpy.data.objects.new(ctrl_name, None)
     ctrl.empty_display_type = 'PLAIN_AXES'
     ctrl.empty_display_size = 0.2
@@ -243,11 +243,11 @@ def build_copyloc(
     link_to_collection(ctrl, col)
     ensure_blend_property(ctrl)
 
-    # 吁E��点刁E��VG作�E + Null作�E + CopyLoc 2本 + ドライチE
+    # Build per-vertex nulls, constraints, and drivers.
     for i in range(vcountA):
         vg_name = f"{VG_PREFIX}{i:06d}"
 
-        # VertexGroup�E�単一頂点 weight=1�E�E
+        # Vertex group: single vertex weight=1.0
         vgA = A.vertex_groups.new(name=vg_name)
         vgA.add([i], 1.0, 'REPLACE')
 
@@ -260,7 +260,7 @@ def build_copyloc(
         null.empty_display_type = 'SPHERE'
         null.empty_display_size = 0.03
 
-        # 初期位置はA頂点のワールド座樁E
+        # Start at A vertex world position.
         null.location = A.matrix_world @ A.data.vertices[i].co
 
         bpy.context.scene.collection.objects.link(null)

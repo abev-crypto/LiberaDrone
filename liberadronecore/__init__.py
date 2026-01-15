@@ -1,7 +1,7 @@
 bl_info = {
     "name": "LiberaDrone",
     "author": "Yuya Abe",
-    "version": (0, 1, 3),
+    "version": (1, 0, 0),
     "blender": (4, 3, 0),
     "location": "Node Editor > Add menu",
     "description": "Add not enough drone to Blender",
@@ -25,8 +25,10 @@ def register():
     global _REGISTERED_FULL, _REGISTERED_FALLBACK
     if _MISSING_PACKAGES:
         from liberadronecore.system import update as _update
+        from liberadronecore.operators import update as _update_ops
         from liberadronecore.ui import addon_pref as _addon_pref
         _update.register()
+        _update_ops.UpdateOps.register()
         _addon_pref.register()
         _REGISTERED_FALLBACK = True
         return
@@ -34,6 +36,7 @@ def register():
     import liberadronecore.reg
     import liberadronecore.formation
     import liberadronecore.ledeffects
+    import liberadronecore.operators
     from liberadronecore.reg.base_reg import RegisterBase
 
     RegisterBase.register_all()
@@ -50,7 +53,9 @@ def unregister():
 
     if _REGISTERED_FALLBACK:
         from liberadronecore.system import update as _update
+        from liberadronecore.operators import update as _update_ops
         from liberadronecore.ui import addon_pref as _addon_pref
         _addon_pref.unregister()
+        _update_ops.UpdateOps.unregister()
         _update.unregister()
         _REGISTERED_FALLBACK = False

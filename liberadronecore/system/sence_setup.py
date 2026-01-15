@@ -4,7 +4,7 @@ from typing import Optional
 from mathutils import Vector
 
 # -----------------------------
-# 險ｭ螳夲ｼ亥ｿ・ｦ√↑繧峨％縺薙□縺大､画峩・・
+# Settings (edit here).
 # -----------------------------
 ATTR_NAME = "color"
 
@@ -18,18 +18,18 @@ PREVIEW_NAME = "Iso"
 PREVIEW_PLANE_SIZE = 1.0
 
 ANY_MESH_NAME = "AnyMesh"
-ANY_MESH_VERTS = 1  # 莉ｻ諢上・鬆らせ謨ｰ・医％縺薙ｒ螟峨∴繧具ｼ・
+ANY_MESH_VERTS = 1  # Change to control the point count.
 COLLECTION_NAMES = [
     "LD_Objects",
 ]
 
-# 縺ｩ縺ｮ繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｫ菴輔ｒ蜈･繧後ｋ縺・
+# Collection assignments.
 COL_FOR_PREVIEW = "LD_Objects"
 COL_FOR_ANYMESH   = "LD_Objects"
 
 
 # -----------------------------
-# 繝ｦ繝ｼ繝・ぅ繝ｪ繝・ぅ
+# Utilities.
 # -----------------------------
 def get_or_create_collection(name, parent=None):
     col = bpy.data.collections.get(name)
@@ -42,7 +42,7 @@ def get_or_create_collection(name, parent=None):
     return col
 
 def move_object_to_collection(obj, target_col):
-    # 譌｢蟄倥さ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺九ｉ螟悶＠縲》arget 縺縺代↓蜈･繧後ｋ
+    # Unlink from existing collections and link to target.
     for c in list(obj.users_collection):
         c.objects.unlink(obj)
     target_col.objects.link(obj)
@@ -54,15 +54,15 @@ def _get_scene():
     return scene
 
 def ensure_color_attribute(mesh, name=ATTR_NAME):
-    # Blender縺ｮ繝舌・繧ｸ繝ｧ繝ｳ蟾ｮ繧貞精蜿弱＠縺ｦ "color" 繧ｫ繝ｩ繝ｼ螻樊ｧ繧堤畑諢上☆繧・
-    # 縺ｧ縺阪ｌ縺ｰ POINT(=鬆らせ) 繝峨Γ繧､繝ｳ縺ｧ菴懊ｋ
+    # Create or reuse a color attribute across Blender versions.
+    # Prefer POINT domain when available.
     if hasattr(mesh, "color_attributes"):
         ca = mesh.color_attributes.get(name)
         if ca is None:
             ca = mesh.color_attributes.new(name=name, domain='POINT', type='BYTE_COLOR')
         return ca
 
-    # 縺輔ｉ縺ｫ蜿､縺・驕輔≧API蜷代￠・井ｿ晞匱・・
+    # Fallback for older attribute APIs.
     if hasattr(mesh, "attributes"):
         a = mesh.attributes.get(name)
         if a is None:
@@ -72,7 +72,7 @@ def ensure_color_attribute(mesh, name=ATTR_NAME):
     raise RuntimeError("Color attribute API not found for this Blender version.")
 
 def set_viewport_solid_attribute(attr_name=ATTR_NAME):
-    # 4縺､縺ｮ鬆伜沺: Viewport Shading 繧・Solid + Attribute陦ｨ遉ｺ縺ｫ縺吶ｋ
+    # Set viewport shading to Solid + Attribute.
     for area in bpy.context.window.screen.areas:
         if area.type != 'VIEW_3D':
             continue
@@ -81,7 +81,7 @@ def set_viewport_solid_attribute(attr_name=ATTR_NAME):
                 continue
             shading = space.shading
             shading.type = 'SOLID'
-            # Blender縺ｮ繝舌・繧ｸ繝ｧ繝ｳ縺ｧ繝励Ο繝代ユ繧｣蜷阪′蠕ｮ螯吶↓驕輔≧縺ｮ縺ｧ蛻・ｲ・
+            # Property names differ slightly across Blender versions.
             if hasattr(shading, "color_type"):
                 items = getattr(shading.bl_rna.properties.get("color_type"), "enum_items", None)
                 if items and "ATTRIBUTE" in items:
@@ -259,13 +259,13 @@ def create_any_mesh_points(name=ANY_MESH_NAME, n_verts=ANY_MESH_VERTS):
     scene = _get_scene()
     if scene is None:
         raise RuntimeError("No active scene for AnyMesh.")
-    # 縲御ｻｻ諢城らせ謨ｰ縺ｮ繝｡繝・す繝･縲・ 縺薙％縺ｧ縺ｯ 窶懃せ縺縺鯛・縺ｮ繝｡繝・す繝･繧剃ｽ懊ｋ・亥ｾ後〒閾ｪ逕ｱ縺ｫ邱ｨ髮・＠繧・☆縺・ｼ・
+    # Create a point-only mesh with a configurable vertex count.
     mesh = bpy.data.meshes.new(f"{name}_Mesh")
     obj = bpy.data.objects.new(name, mesh)
     scene.collection.objects.link(obj)
 
     bm = bmesh.new()
-    # 驕ｩ蠖薙↓蛻・ｸ・ｼ・譁ｹ蜷代↓荳ｦ縺ｹ繧倶ｾ具ｼ・
+    # Place points along X for a simple preview.
     for i in range(n_verts):
         x = (i / max(1, n_verts - 1)) * 2.0 - 1.0
         bm.verts.new(Vector((x, 1.5, 0.0)))
@@ -278,7 +278,7 @@ def create_any_mesh_points(name=ANY_MESH_NAME, n_verts=ANY_MESH_VERTS):
 
 
 # -----------------------------
-# 螳溯｡梧悽菴・
+# Entry point.
 # -----------------------------
 def init_scene_env(n_verts=None, *, create_any_mesh: bool = True):
     global ANY_MESH_VERTS
@@ -287,31 +287,31 @@ def init_scene_env(n_verts=None, *, create_any_mesh: bool = True):
             ANY_MESH_VERTS = int(n_verts)
         except Exception:
             pass
-    # 5) 蟆ら畑繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ菴懈・
+    # 1) Collections.
     root = None
     cols = {n: get_or_create_collection(n, parent=root) for n in COLLECTION_NAMES}
 
-    # 1) Emission + Attribute color 縺ｮ繝槭ユ繝ｪ繧｢繝ｫ
+    # 2) Emission + attribute color materials.
     mat = get_or_create_emission_attr_material(MAT_NAME, ATTR_NAME, image_name=IMG_CIRCLE_NAME)
     get_or_create_emission_attr_material(MAT_RING_NAME, ATTR_NAME, image_name=IMG_RING_NAME)
 
-    # 2) Iso逅・ｽ難ｼ・cosphere・唄ubdiv=2, radius=0.5, ColorAttribute "color"
+    # 3) Preview plane (iso marker).
     iso = create_preview_plane(PREVIEW_NAME, PREVIEW_PLANE_SIZE)
     assign_material(iso, mat)
 
-    # 3) 莉ｻ諢城らせ謨ｰ繝｡繝・す繝･・育せ繝｡繝・す繝･・・
+    # 4) Any-mesh point cloud.
     any_obj = None
     if create_any_mesh:
         any_obj = create_any_mesh_points(ANY_MESH_NAME, ANY_MESH_VERTS)
         assign_material(any_obj, mat)
 
-    # 繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｸ驟咲ｽｮ
+    # Move objects into collections.
     if COL_FOR_PREVIEW in cols:
         move_object_to_collection(iso, cols[COL_FOR_PREVIEW])
     if create_any_mesh and COL_FOR_ANYMESH in cols and any_obj is not None:
         move_object_to_collection(any_obj, cols[COL_FOR_ANYMESH])
 
-    # 繝槭ユ繝ｪ繧｢繝ｫ閾ｪ菴薙・繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ縺ｫ蜈･繧峨↑縺・・縺ｧ縲∫ｮ｡逅・畑縺ｫ繝・く繧ｹ繝医〒邨ゅｏ繧・
+    # Materials are datablocks and do not live in collections.
     if create_any_mesh and any_obj is not None:
         print("[Init] Done:",
               f"Material={mat.name}, Preview={iso.name}, AnyMesh={any_obj.name}, Attr={ATTR_NAME}")

@@ -1,5 +1,7 @@
 import bpy
+
 import liberadronecore.system.request as request
+from liberadronecore.reg.base_reg import RegisterBase
 
 
 class LD_OT_install_deps(bpy.types.Operator):
@@ -49,3 +51,13 @@ class LD_OT_setup_all(bpy.types.Operator):
         bpy.ops.liberadrone.setup_workspace_formation()
         bpy.ops.liberadrone.setup_workspace_led()
         return {'FINISHED'}
+
+
+class AddonOps(RegisterBase):
+    @classmethod
+    def register(cls) -> None:
+        bpy.utils.register_class(LD_OT_setup_all)
+
+    @classmethod
+    def unregister(cls) -> None:
+        bpy.utils.unregister_class(LD_OT_setup_all)

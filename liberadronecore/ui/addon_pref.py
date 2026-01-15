@@ -1,10 +1,11 @@
-import bpy
+﻿import bpy
+
 import liberadronecore.system.request as request
-from liberadronecore.ui.operators import LD_OT_dummy, LD_OT_install_deps
+from liberadronecore.operators.addon import LD_OT_dummy, LD_OT_install_deps
 
 
 class LD_Preferences(bpy.types.AddonPreferences):
-    # ☁Eここはアドオンのモジュール名（フォルダ吁E/ __init__.py のパッケージ名！E
+    # Addon module id must match the package name in __init__.py.
     bl_idname = "liberadronecore"
     bl_label = "LiberaDrone Preferences"
     gh_owner: bpy.props.StringProperty(name="GitHub Owner", default="abev-crypto")
@@ -13,7 +14,7 @@ class LD_Preferences(bpy.types.AddonPreferences):
     gh_addon_subdir: bpy.props.StringProperty(
         name="Addon Subdir (in repo)",
         default="",
-        description="リポジトリ直下なら空。侁E src/my_addon",
+        description="Relative path in the repo, e.g. src/my_addon",
     )
 
     update_available: bpy.props.BoolProperty(name="Update Available", default=False)
@@ -66,7 +67,7 @@ class LD_Preferences(bpy.types.AddonPreferences):
         col.label(text=f"Remote: {self.last_remote_version}")
 
 
-# ---- (侁E 本体機�E�E�依存OKの時だけ登録したぁE��らここに入れる ----
+# ---- (Register core prefs/operators even when deps are missing) ----
 _bootstrap_classes = (
     LD_OT_install_deps,
     LD_Preferences,
@@ -85,7 +86,7 @@ def register():
     for c in _bootstrap_classes:
         bpy.utils.register_class(c)
 
-    # 依存が揁E��てぁE��ば本体も登録
+    # If deps are available, register optional operators.
     if not request.deps_missing():
         for c in _full_classes:
             bpy.utils.register_class(c)

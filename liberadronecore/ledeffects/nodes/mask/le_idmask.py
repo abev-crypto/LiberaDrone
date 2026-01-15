@@ -2,7 +2,6 @@ import bpy
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects.le_nodecategory import LDLED_Register
 from liberadronecore.formation import fn_parse_pairing
-from liberadronecore.reg.base_reg import RegisterBase
 
 
 class LDLEDIDMaskItem(bpy.types.PropertyGroup, LDLED_Register):
@@ -142,67 +141,3 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         return f"{out_var} = 1.0 if idx in {tuple(ids)} else 0.0"
 
 
-class LDLED_OT_idmask_add_selection(bpy.types.Operator):
-    bl_idname = "ldled.idmask_add_selection"
-    bl_label = "Add Formation IDs"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    node_tree_name: bpy.props.StringProperty()
-    node_name: bpy.props.StringProperty()
-
-    def execute(self, context):
-        tree = bpy.data.node_groups.get(self.node_tree_name)
-        node = tree.nodes.get(self.node_name) if tree else None
-        if node is None or not isinstance(node, LDLEDIDMaskNode):
-            self.report({'ERROR'}, "ID Mask node not found")
-            return {'CANCELLED'}
-
-        selected_ids, error = _read_selected_ids(context)
-        if error:
-            self.report({'ERROR'}, error)
-            return {'CANCELLED'}
-
-        existing = set(_node_effective_ids(node, include_legacy=True))
-        merged = existing | set(selected_ids or [])
-        _set_node_ids(node, _sorted_ids(merged))
-        node.use_custom_ids = True
-        return {'FINISHED'}
-
-
-class LDLED_OT_idmask_remove_selection(bpy.types.Operator):
-    bl_idname = "ldled.idmask_remove_selection"
-    bl_label = "Remove Formation IDs"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    node_tree_name: bpy.props.StringProperty()
-    node_name: bpy.props.StringProperty()
-
-    def execute(self, context):
-        tree = bpy.data.node_groups.get(self.node_tree_name)
-        node = tree.nodes.get(self.node_name) if tree else None
-        if node is None or not isinstance(node, LDLEDIDMaskNode):
-            self.report({'ERROR'}, "ID Mask node not found")
-            return {'CANCELLED'}
-
-        selected_ids, error = _read_selected_ids(context)
-        if error:
-            self.report({'ERROR'}, error)
-            return {'CANCELLED'}
-
-        existing = set(_node_effective_ids(node, include_legacy=True))
-        remaining = existing - set(selected_ids or [])
-        _set_node_ids(node, _sorted_ids(remaining))
-        node.use_custom_ids = True
-        return {'FINISHED'}
-
-
-class LDLED_IDMaskOps(RegisterBase):
-    @classmethod
-    def register(cls) -> None:
-        bpy.utils.register_class(LDLED_OT_idmask_add_selection)
-        bpy.utils.register_class(LDLED_OT_idmask_remove_selection)
-
-    @classmethod
-    def unregister(cls) -> None:
-        bpy.utils.unregister_class(LDLED_OT_idmask_remove_selection)
-        bpy.utils.unregister_class(LDLED_OT_idmask_add_selection)

@@ -515,33 +515,14 @@ def _tag_redraw(context):
             area.tag_redraw()
 
 
-class VIEW3D_OT_draw_gn_vertex_markers(bpy.types.Operator):
-    """Toggle drawing GN vertex markers in viewport"""
-    bl_idname = "view3d.draw_gn_vertex_markers"
-    bl_label = "Toggle GN Vertex Markers"
-
-    def execute(self, context):
-        set_enabled(not is_enabled())
-        self.report({'INFO'}, "GN vertex markers: ON" if is_enabled() else "GN vertex markers: OFF")
-        _tag_redraw(context)
-        return {'FINISHED'}
-
-
 def menu_func(self, context):
     self.layout.operator(
-        VIEW3D_OT_draw_gn_vertex_markers.bl_idname,
+        "view3d.draw_gn_vertex_markers",
         text="Toggle GN Vertex Markers"
     )
 
 
-classes = (
-    VIEW3D_OT_draw_gn_vertex_markers,
-)
-
-
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
     bpy.types.VIEW3D_MT_view.append(menu_func)
 
 
@@ -551,6 +532,3 @@ def unregister():
     if _text_handler is not None:
         bpy.types.SpaceView3D.draw_handler_remove(_text_handler, 'WINDOW')
     bpy.types.VIEW3D_MT_view.remove(menu_func)
-
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)

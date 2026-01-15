@@ -1,5 +1,8 @@
-import bpy
 from pathlib import Path
+
+import bpy
+
+from liberadronecore.reg.base_reg import RegisterBase
 
 
 def _get_area_region(area, region_type: str = "WINDOW"):
@@ -100,3 +103,15 @@ class LD_OT_setup_workspace_led(bpy.types.Operator):
             self.report({'ERROR'}, "Failed to create workspace (missing template or window)")
             return {'CANCELLED'}
         return {'FINISHED'}
+
+
+class WorkspaceOps(RegisterBase):
+    @classmethod
+    def register(cls) -> None:
+        bpy.utils.register_class(LD_OT_setup_workspace_formation)
+        bpy.utils.register_class(LD_OT_setup_workspace_led)
+
+    @classmethod
+    def unregister(cls) -> None:
+        bpy.utils.unregister_class(LD_OT_setup_workspace_led)
+        bpy.utils.unregister_class(LD_OT_setup_workspace_formation)

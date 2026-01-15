@@ -577,27 +577,6 @@ class LDLED_UL_OutputList(bpy.types.UIList):
             row.prop(node, "name", text="")
 
 
-class LDLED_OT_create_output_node(bpy.types.Operator):
-    bl_idname = "ldled.create_output_node"
-    bl_label = "CreateNode"
-    bl_description = "Create LED Effects tree and add an Output node"
-
-    def execute(self, context):
-        tree = _ensure_led_tree(context)
-        if tree is None:
-            self.report({'ERROR'}, "LED node tree not available")
-            return {'CANCELLED'}
-        node = tree.nodes.new("LDLEDOutputNode")
-        node.location = (200.0, 0.0)
-        _set_active_output(context, node)
-        _sync_output_items(context.scene, tree)
-        for idx, item in enumerate(context.scene.ld_led_output_items):
-            if item.node_name == node.name:
-                context.scene.ld_led_output_index = idx
-                break
-        return {'FINISHED'}
-
-
 def _sanitize_filename(name: str) -> str:
     safe = []
     for ch in name or "":
@@ -617,203 +596,6 @@ def _load_template_file(path: str) -> dict | None:
             return json.load(handle)
     except Exception:
         return None
-
-
-class LDLED_OT_export_template(bpy.types.Operator):
-    bl_idname = "ldled.export_template"
-    bl_label = "Export"
-    bl_description = "Export the selected LED output node graph to JSON"
-
-    filepath: bpy.props.StringProperty(subtype='FILE_PATH')
-    filter_glob: bpy.props.StringProperty(default="*.json", options={'HIDDEN'})
-
-    def invoke(self, context, event):
-        tree = _get_led_tree(context)
-        node = _get_selected_output_node(context, tree)
-        if node is None:
-            self.report({'ERROR'}, "Select an LED Output node")
-            return {'CANCELLED'}
-        base = _template_dir()
-        try:
-            os.makedirs(base, exist_ok=True)
-        except Exception:
-            pass
-        filename = _sanitize_filename(node.name) + ".json"
-        self.filepath = os.path.join(base, filename)
-        context.window_manager.fileselect_add(self)
-        return {'RUNNING_MODAL'}
-
-    def execute(self, context):
-        tree = _get_led_tree(context)
-        node = _get_selected_output_node(context, tree)
-        if node is None:
-            self.report({'ERROR'}, "Select an LED Output node")
-            return {'CANCELLED'}
-        payload = _serialize_led_graph(node)
-        if not self.filepath:
-            self.report({'ERROR'}, "Missing export path")
-            return {'CANCELLED'}
-        try:
-            os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
-            with open(self.filepath, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=True, indent=2)
-        except Exception as exc:
-            self.report({'ERROR'}, f"Export failed: {exc}")
-            return {'CANCELLED'}
-        self.report({'INFO'}, f"Exported: {os.path.basename(self.filepath)}")
-        return {'FINISHED'}
-
-
-class LDLED_OT_import_template(bpy.types.Operator):
-    bl_idname = "ldled.import_template"
-    bl_label = "Import"
-    bl_description = "Import an LED template JSON and build the node graph"
-
-    filepath: bpy.props.StringProperty(subtype='FILE_PATH')
-    filter_glob: bpy.props.StringProperty(default="*.json", options={'HIDDEN'})
-
-    def invoke(self, context, event):
-        base = _template_dir()
-        if os.path.isdir(base):
-            self.filepath = base
-        context.window_manager.fileselect_add(self)
-        return {'RUNNING_MODAL'}
-
-    def execute(self, context):
-        tree = _ensure_led_tree(context)
-        if tree is None:
-            self.report({'ERROR'}, "LED node tree not available")
-            return {'CANCELLED'}
-        payload = _load_template_file(self.filepath)
-        if not payload:
-            self.report({'ERROR'}, "Template load failed")
-            return {'CANCELLED'}
-        if payload.get("tree_type") != "LD_LedEffectsTree":
-            self.report({'ERROR'}, "Invalid template type")
-            return {'CANCELLED'}
-        root = _build_led_graph(tree, payload)
-        if root is not None:
-            _set_active_output(context, root)
-        _sync_output_items(context.scene, tree)
-        return {'FINISHED'}
-
-
-class LDLED_OT_build_template(bpy.types.Operator):
-    bl_idname = "ldled.build_template"
-    bl_label = "Build Template"
-    bl_description = "Build an LED node template from the sample directory"
-
-    filepath: bpy.props.StringProperty(subtype='FILE_PATH')
-
-    def execute(self, context):
-        tree = _ensure_led_tree(context)
-        if tree is None:
-            self.report({'ERROR'}, "LED node tree not available")
-            return {'CANCELLED'}
-        payload = _load_template_file(self.filepath)
-        if not payload:
-            self.report({'ERROR'}, "Template load failed")
-            return {'CANCELLED'}
-        if payload.get("tree_type") != "LD_LedEffectsTree":
-            self.report({'ERROR'}, "Invalid template type")
-            return {'CANCELLED'}
-        root = _build_led_graph(tree, payload)
-        if root is not None:
-            _set_active_output(context, root)
-        _sync_output_items(context.scene, tree)
-        return {'FINISHED'}
-
-
-class LDLED_OT_add_frame(bpy.types.Operator):
-    bl_idname = "ldled.add_frame"
-    bl_label = "Frame"
-    bl_description = "Wrap selected LED nodes in a frame"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        tree = _get_led_tree(context)
-        if tree is None:
-            self.report({'ERROR'}, "LED node tree not available")
-            return {'CANCELLED'}
-        selected = [n for n in tree.nodes if n.select]
-        frame = tree.nodes.new("NodeFrame")
-        frame.label = "Frame"
-        frame.shrink = True
-        if selected:
-            xs = [float(n.location.x) for n in selected if hasattr(n, "location")]
-            ys = [float(n.location.y) for n in selected if hasattr(n, "location")]
-            if xs and ys:
-                frame.location = (min(xs) - 60.0, max(ys) + 60.0)
-            for node in selected:
-                if node == frame:
-                    continue
-                node.parent = frame
-        else:
-            frame.location = _node_editor_cursor(context)
-        for node in tree.nodes:
-            node.select = False
-        frame.select = True
-        tree.nodes.active = frame
-        return {'FINISHED'}
-
-
-class LDLED_OT_add_reroute(bpy.types.Operator):
-    bl_idname = "ldled.add_reroute"
-    bl_label = "Reroute"
-    bl_description = "Add a reroute node at the cursor"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        tree = _get_led_tree(context)
-        if tree is None:
-            self.report({'ERROR'}, "LED node tree not available")
-            return {'CANCELLED'}
-        node = tree.nodes.new("NodeReroute")
-        node.location = _node_editor_cursor(context)
-        for n in tree.nodes:
-            n.select = False
-        node.select = True
-        tree.nodes.active = node
-        return {'FINISHED'}
-
-
-class LDLED_OT_group_selected(bpy.types.Operator):
-    bl_idname = "ldled.group_selected"
-    bl_label = "Group"
-    bl_description = "Group selected LED nodes (Output nodes are not allowed)"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        tree = _get_led_tree(context)
-        if tree is None:
-            self.report({'ERROR'}, "LED node tree not available")
-            return {'CANCELLED'}
-        selected = [n for n in tree.nodes if n.select]
-        if not selected:
-            self.report({'ERROR'}, "Select nodes to group")
-            return {'CANCELLED'}
-        if any(getattr(n, "bl_idname", "") == "LDLEDOutputNode" for n in selected):
-            self.report({'ERROR'}, "Output nodes cannot be grouped")
-            return {'CANCELLED'}
-        for node in selected:
-            tree.nodes.active = node
-            break
-        override = _node_editor_override(context)
-        if override:
-            with context.temp_override(**override):
-                if not bpy.ops.node.group_make.poll():
-                    self.report({'ERROR'}, "Grouping is not supported in this editor")
-                    return {'CANCELLED'}
-                result = bpy.ops.node.group_make()
-        else:
-            if not bpy.ops.node.group_make.poll():
-                self.report({'ERROR'}, "Grouping is not supported in this editor")
-                return {'CANCELLED'}
-            result = bpy.ops.node.group_make()
-        if result != {'FINISHED'}:
-            self.report({'ERROR'}, "Group creation failed")
-            return {'CANCELLED'}
-        return {'FINISHED'}
 
 
 class LDLED_PT_panel(bpy.types.Panel):
@@ -890,13 +672,6 @@ class LDLED_UI(RegisterBase):
     def register(cls) -> None:
         bpy.utils.register_class(LDLEDOutputItem)
         bpy.utils.register_class(LDLED_UL_OutputList)
-        bpy.utils.register_class(LDLED_OT_create_output_node)
-        bpy.utils.register_class(LDLED_OT_export_template)
-        bpy.utils.register_class(LDLED_OT_import_template)
-        bpy.utils.register_class(LDLED_OT_build_template)
-        bpy.utils.register_class(LDLED_OT_add_frame)
-        bpy.utils.register_class(LDLED_OT_add_reroute)
-        bpy.utils.register_class(LDLED_OT_group_selected)
         bpy.utils.register_class(LDLED_PT_panel)
         if not hasattr(bpy.types.Scene, "ld_led_output_items"):
             bpy.types.Scene.ld_led_output_items = bpy.props.CollectionProperty(type=LDLEDOutputItem)
@@ -914,12 +689,5 @@ class LDLED_UI(RegisterBase):
         if hasattr(bpy.types.Scene, "ld_led_output_items"):
             del bpy.types.Scene.ld_led_output_items
         bpy.utils.unregister_class(LDLED_PT_panel)
-        bpy.utils.unregister_class(LDLED_OT_group_selected)
-        bpy.utils.unregister_class(LDLED_OT_add_reroute)
-        bpy.utils.unregister_class(LDLED_OT_add_frame)
-        bpy.utils.unregister_class(LDLED_OT_build_template)
-        bpy.utils.unregister_class(LDLED_OT_import_template)
-        bpy.utils.unregister_class(LDLED_OT_export_template)
-        bpy.utils.unregister_class(LDLED_OT_create_output_node)
         bpy.utils.unregister_class(LDLED_UL_OutputList)
         bpy.utils.unregister_class(LDLEDOutputItem)

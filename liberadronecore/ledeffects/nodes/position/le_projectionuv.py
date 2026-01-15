@@ -1,7 +1,6 @@
 import bpy
 from mathutils import Matrix, Vector
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
-from liberadronecore.reg.base_reg import RegisterBase
 
 
 class LDLEDProjectionUVNode(bpy.types.Node, LDLED_CodeNodeBase):
@@ -165,79 +164,3 @@ def _create_xz_plane(name: str, bounds: tuple[Vector, Vector], context) -> bpy.t
     return obj
 
 
-class LDLED_OT_projectionuv_create_mesh(bpy.types.Operator):
-    bl_idname = "ldled.projectionuv_create_mesh"
-    bl_label = "Create Projection Mesh"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    node_tree_name: bpy.props.StringProperty()
-    node_name: bpy.props.StringProperty()
-    mode: bpy.props.EnumProperty(
-        items=[
-            ("AREA", "Area", ""),
-            ("FORMATION", "Formation", ""),
-            ("SELECT", "Select", ""),
-        ],
-        default="AREA",
-    )
-
-    def execute(self, context):
-        tree = bpy.data.node_groups.get(self.node_tree_name)
-        node = tree.nodes.get(self.node_name) if tree else None
-        if node is None or not isinstance(node, LDLEDProjectionUVNode):
-            self.report({'ERROR'}, "Projection UV node not found")
-            return {'CANCELLED'}
-
-        bounds = None
-        if self.mode == "AREA":
-            obj = bpy.data.objects.get("AreaObject")
-            bounds = _world_bbox_from_object(obj) if obj else None
-            if bounds is None:
-                self.report({'ERROR'}, "AreaObject not found")
-                return {'CANCELLED'}
-        elif self.mode == "FORMATION":
-            col = bpy.data.collections.get("Formation")
-            bounds = _world_bbox_from_collection(col)
-            if bounds is None:
-                self.report({'ERROR'}, "Formation collection not found")
-                return {'CANCELLED'}
-        else:
-            verts = _selected_world_vertices(context)
-            if verts:
-                bounds = _world_bbox_from_points(verts)
-            else:
-                bounds = None
-                for obj in _selected_mesh_objects(context):
-                    obj_bounds = _world_bbox_from_object(obj)
-                    if obj_bounds is None:
-                        continue
-                    if bounds is None:
-                        bounds = (obj_bounds[0].copy(), obj_bounds[1].copy())
-                    else:
-                        bounds[0].x = min(bounds[0].x, obj_bounds[0].x)
-                        bounds[0].y = min(bounds[0].y, obj_bounds[0].y)
-                        bounds[0].z = min(bounds[0].z, obj_bounds[0].z)
-                        bounds[1].x = max(bounds[1].x, obj_bounds[1].x)
-                        bounds[1].y = max(bounds[1].y, obj_bounds[1].y)
-                        bounds[1].z = max(bounds[1].z, obj_bounds[1].z)
-            if bounds is None:
-                self.report({'ERROR'}, "No selection mesh or vertices")
-                return {'CANCELLED'}
-
-        name = _unique_name(f"{node.name}_Projection")
-        obj = _create_xz_plane(name, bounds, context)
-        obj.display_type = 'BOUNDS'
-        mesh_socket = node.inputs.get("Mesh")
-        if mesh_socket is not None and hasattr(mesh_socket, "default_value"):
-            mesh_socket.default_value = obj
-        return {'FINISHED'}
-
-
-class LDLED_ProjectionUVOps(RegisterBase):
-    @classmethod
-    def register(cls) -> None:
-        bpy.utils.register_class(LDLED_OT_projectionuv_create_mesh)
-
-    @classmethod
-    def unregister(cls) -> None:
-        bpy.utils.unregister_class(LDLED_OT_projectionuv_create_mesh)
