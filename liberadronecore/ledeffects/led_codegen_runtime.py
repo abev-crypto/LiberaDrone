@@ -34,6 +34,10 @@ def _default_for_socket(socket: bpy.types.NodeSocket) -> str:
         return "(0.0, 0.0, 0.0)"
     if getattr(socket, "bl_idname", "") == "NodeSocketString":
         return "''"
+    if getattr(socket, "bl_idname", "") == "NodeSocketObject":
+        return "None"
+    if getattr(socket, "bl_idname", "") == "NodeSocketCollection":
+        return "None"
     if getattr(socket, "bl_idname", "") == "LDLEDEntrySocket":
         return "_entry_empty()"
     return "0.0"
@@ -43,6 +47,8 @@ def _default_for_input(socket: bpy.types.NodeSocket) -> str:
     if hasattr(socket, "default_value"):
         value = socket.default_value
         if isinstance(value, bpy.types.Object):
+            return repr(value.name)
+        if isinstance(value, bpy.types.Collection):
             return repr(value.name)
         if isinstance(value, (float, int)):
             return repr(float(value))
@@ -301,6 +307,26 @@ def _get_object(value) -> Optional[bpy.types.Object]:
     return None
 
 
+def _collection_name(value) -> str:
+    if isinstance(value, bpy.types.Collection):
+        return value.name
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _get_collection(value) -> Optional[bpy.types.Collection]:
+    if value is None:
+        return None
+    if isinstance(value, bpy.types.Collection):
+        return value
+    if isinstance(value, str):
+        if not value:
+            return None
+        return bpy.data.collections.get(value)
+    return None
+
+
 def _object_world_bbox(obj: bpy.types.Object) -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
     if obj is None:
         return None
@@ -331,11 +357,12 @@ def _collection_world_bbox(
     *,
     use_children: bool = True,
 ) -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
+    collection_name = _collection_name(collection_name)
     if not collection_name:
         return None
     names = _get_collection_cache(collection_name, use_children, build_mesh_cache=False)
     if names is None:
-        col = bpy.data.collections.get(collection_name)
+        col = _get_collection(collection_name)
         if col is None:
             return None
         candidates: List[bpy.types.Object] = []
@@ -521,6 +548,9 @@ def _get_collection_cache(
 ) -> Optional[List[str]]:
     if _LED_FRAME_CACHE.get("frame") is None:
         return None
+    collection_name = _collection_name(collection_name)
+    if not collection_name:
+        return []
     key = (collection_name, bool(use_children))
     cached = _LED_FRAME_CACHE["collection"].get(key)
     if cached is not None:
@@ -530,7 +560,7 @@ def _get_collection_cache(
                 if obj is not None and obj.type == 'MESH':
                     _get_mesh_cache(obj)
         return cached
-    col = bpy.data.collections.get(collection_name)
+    col = _get_collection(collection_name)
     if col is None:
         _LED_FRAME_CACHE["collection"][key] = []
         return []
@@ -742,7 +772,12 @@ def _nearest_vertex_uv_with_dist(
     return (0.0, 0.0), 1e30
 
 
-def _collection_nearest_uv(collection_name: str, pos: Tuple[float, float, float], use_children: bool) -> Tuple[float, float]:
+def _collection_nearest_uv(
+    collection_name: str,
+    pos: Tuple[float, float, float],
+    use_children: bool,
+) -> Tuple[float, float]:
+    collection_name = _collection_name(collection_name)
     candidates: List[bpy.types.Object] = []
     cached = _get_collection_cache(collection_name, use_children, build_mesh_cache=True)
     if cached is not None:
@@ -751,7 +786,7 @@ def _collection_nearest_uv(collection_name: str, pos: Tuple[float, float, float]
             if obj is not None and obj.type == 'MESH':
                 candidates.append(obj)
     else:
-        col = bpy.data.collections.get(collection_name)
+        col = _get_collection(collection_name)
         if col is None:
             return 0.0, 0.0
         stack = [col]

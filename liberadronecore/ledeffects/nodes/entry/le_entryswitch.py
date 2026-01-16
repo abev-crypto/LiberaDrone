@@ -12,7 +12,7 @@ class LDLEDEntrySwitchNode(bpy.types.Node, LDLED_CodeNodeBase):
     output_type_items = [
         ("VALUE", "Value", "Switch float values"),
         ("COLOR", "Color", "Switch colors"),
-        ("MESH", "Mesh", "Switch vector values"),
+        ("MESH", "Mesh", "Switch mesh objects"),
     ]
 
     output_type: bpy.props.EnumProperty(
@@ -45,14 +45,14 @@ class LDLEDEntrySwitchNode(bpy.types.Node, LDLED_CodeNodeBase):
         if self.output_type == "COLOR":
             return "NodeSocketColor"
         if self.output_type == "MESH":
-            return "NodeSocketVector"
+            return "NodeSocketObject"
         return "NodeSocketFloat"
 
     def _default_value(self):
         if self.output_type == "COLOR":
             return (0.0, 0.0, 0.0, 1.0)
         if self.output_type == "MESH":
-            return (0.0, 0.0, 0.0)
+            return None
         return 0.0
 
     def _sync_sockets(self):
@@ -83,7 +83,7 @@ class LDLEDEntrySwitchNode(bpy.types.Node, LDLED_CodeNodeBase):
         if self.output_type == "COLOR":
             default = "(0.0, 0.0, 0.0, 1.0)"
         elif self.output_type == "MESH":
-            default = "(0.0, 0.0, 0.0)"
+            default = "None"
         else:
             default = "0.0"
         choices = []

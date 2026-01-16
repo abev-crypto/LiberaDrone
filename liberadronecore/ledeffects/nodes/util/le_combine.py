@@ -28,8 +28,6 @@ class LDLEDCombineNode(bpy.types.Node, LDLED_CodeNodeBase):
         self.inputs.new("NodeSocketFloat", "X")
         self.inputs.new("NodeSocketFloat", "Y")
         self.inputs.new("NodeSocketFloat", "Z")
-        alpha = self.inputs.new("NodeSocketFloat", "A")
-        alpha.default_value = 1.0
         self.outputs.new("NodeSocketColor", "Color")
 
     def draw_buttons(self, context, layout):
@@ -39,7 +37,7 @@ class LDLEDCombineNode(bpy.types.Node, LDLED_CodeNodeBase):
         x = inputs.get("X", "0.0")
         y = inputs.get("Y", "0.0")
         z = inputs.get("Z", "0.0")
-        a = inputs.get("A", "1.0")
+        a = "1.0"
         out_var = self.output_var("Color")
         if self.mode == "HSV":
             combine_id = f"{self.codegen_id()}_{int(self.as_pointer())}"

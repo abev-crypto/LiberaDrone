@@ -16,7 +16,7 @@ from .mask import le_fade
 from .mask import le_idmask
 from .mask import le_insidemesh
 from .mask import le_time
-from .mask import le_vertexcolor
+from .sampler import le_vertexcolor
 from .position import le_formationuv
 from .position import le_meshuv
 from .position import le_projectionuv

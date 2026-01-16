@@ -20,6 +20,7 @@ class LDLEDVertexColorNode(bpy.types.Node, LDLED_CodeNodeBase):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
+        self.inputs.new("NodeSocketObject", "Mesh")
         self.outputs.new("NodeSocketColor", "Color")
 
     def draw_buttons(self, context, layout):
@@ -27,5 +28,7 @@ class LDLEDVertexColorNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def build_code(self, inputs):
         out_var = self.output_var("Color")
-        obj_name = self.target_object.name if self.target_object else ""
-        return f"{out_var} = _nearest_vertex_color({obj_name!r}, (pos[0], pos[1], pos[2]))"
+        obj_expr = inputs.get("Mesh", "None")
+        if obj_expr in {"None", "''"} and self.target_object:
+            obj_expr = repr(self.target_object.name)
+        return f"{out_var} = _nearest_vertex_color({obj_expr}, (pos[0], pos[1], pos[2]))"

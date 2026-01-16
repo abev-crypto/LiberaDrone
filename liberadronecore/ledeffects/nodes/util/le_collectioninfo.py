@@ -25,24 +25,13 @@ class LDLEDCollectionInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
-        self.outputs.new("NodeSocketColor", "Color")
-        self.outputs.new("NodeSocketFloat", "Intensity")
-        self.outputs.new("NodeSocketString", "Collection Name")
+        self.outputs.new("NodeSocketCollection", "Collection")
 
     def draw_buttons(self, context, layout):
         layout.prop(self, "collection")
         layout.prop(self, "use_children")
 
     def build_code(self, inputs):
-        out_color = self.output_var("Color")
-        out_intensity = self.output_var("Intensity")
-        out_name = self.output_var("Collection Name")
+        out_collection = self.output_var("Collection")
         col_name = self.collection.name if self.collection else ""
-        enabled = 1.0 if self.collection else 0.0
-        return "\n".join(
-            [
-                f"{out_name} = {col_name!r}",
-                f"{out_intensity} = {enabled}",
-                f"{out_color} = (1.0, 1.0, 1.0, 1.0) if {enabled} > 0.0 else (0.0, 0.0, 0.0, 1.0)",
-            ]
-        )
+        return f"{out_collection} = bpy.data.collections.get({col_name!r}) if {col_name!r} else None"

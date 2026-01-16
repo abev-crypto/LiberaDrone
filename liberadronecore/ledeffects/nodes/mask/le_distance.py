@@ -38,6 +38,7 @@ class LDLEDDistanceMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
+        self.inputs.new("NodeSocketObject", "Mesh")
         value = self.inputs.new("NodeSocketFloat", "Value")
         value.default_value = 1.0
         try:
@@ -53,7 +54,9 @@ class LDLEDDistanceMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def build_code(self, inputs):
         out_var = self.output_var("Mask")
-        obj_name = self.target_object.name if self.target_object else ""
+        obj_expr = inputs.get("Mesh", "None")
+        if obj_expr in {"None", "''"} and self.target_object:
+            obj_expr = repr(self.target_object.name)
         max_dist = max(0.0001, float(self.max_distance))
         value = inputs.get("Value", "1.0")
         base_expr = f"_clamp01(1.0 - (_dist / {max_dist!r}))"
@@ -65,7 +68,7 @@ class LDLEDDistanceMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
             expr = f"_clamp01(({base_expr}) * ({value}))"
         return "\n".join(
             [
-                f"_dist = _distance_to_mesh_bbox({obj_name!r}, (pos[0], pos[1], pos[2]))",
+                f"_dist = _distance_to_mesh_bbox({obj_expr}, (pos[0], pos[1], pos[2]))",
                 f"{out_var} = {expr}",
             ]
         )
