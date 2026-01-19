@@ -7,6 +7,7 @@ from liberadronecore.ledeffects.nodes.mask import le_collectionmask
 from liberadronecore.ledeffects.nodes.mask import le_idmask
 from liberadronecore.ledeffects.nodes.mask import le_insidemesh
 from liberadronecore.ledeffects.nodes.position import le_projectionuv
+from liberadronecore.ledeffects.nodes.sampler import le_image
 from liberadronecore.ledeffects.nodes.util import le_catcache
 from liberadronecore.reg.base_reg import RegisterBase
 from liberadronecore.ui import ledeffects_panel as led_panel
@@ -361,7 +362,7 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
 
         if img is not None:
             try:
-                le_catcache.led_codegen_runtime._IMAGE_CACHE.pop(int(img.as_pointer()), None)
+                le_image._IMAGE_CACHE.pop(int(img.as_pointer()), None)
             except Exception:
                 pass
         try:

@@ -1,5 +1,80 @@
 import bpy
+import math
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
+from liberadronecore.ledeffects.runtime_registry import register_runtime_function
+
+
+@register_runtime_function
+def _clamp01(x: float) -> float:
+    if x < 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return x
+
+
+@register_runtime_function
+def _clamp(x: float, low: float, high: float) -> float:
+    if x < low:
+        return low
+    if x > high:
+        return high
+    return x
+
+
+@register_runtime_function
+def _fract(x: float) -> float:
+    return x - math.floor(x)
+
+
+@register_runtime_function
+def _loop_factor(value: float, mode: str = "REPEAT") -> float:
+    mode = (mode or "REPEAT").upper()
+    frac = _fract(float(value))
+    if mode in {"PINGPONG", "PING_PONG", "PING-PONG"}:
+        return 1.0 - abs(2.0 * frac - 1.0)
+    return frac
+
+
+@register_runtime_function
+def _lerp(a: float, b: float, t: float) -> float:
+    return a + (b - a) * t
+
+
+@register_runtime_function
+def _ease(t: float) -> float:
+    return t * t * (3.0 - 2.0 * t)
+
+
+@register_runtime_function
+def _ease_in(t: float) -> float:
+    t = _clamp01(t)
+    return t * t
+
+
+@register_runtime_function
+def _ease_out(t: float) -> float:
+    t = _clamp01(t)
+    inv = 1.0 - t
+    return 1.0 - inv * inv
+
+
+@register_runtime_function
+def _ease_in_out(t: float) -> float:
+    t = _clamp01(t)
+    return _ease(t)
+
+
+@register_runtime_function
+def _apply_ease(t: float, mode: str) -> float:
+    mode = (mode or "LINEAR").upper()
+    if mode in {"EASEIN", "EASE_IN"}:
+        return _ease_in(t)
+    if mode in {"EASEOUT", "EASE_OUT"}:
+        return _ease_out(t)
+    if mode in {"EASEINOUT", "EASE_IN_OUT"}:
+        return _ease_in_out(t)
+    return _clamp01(t)
 
 
 class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):

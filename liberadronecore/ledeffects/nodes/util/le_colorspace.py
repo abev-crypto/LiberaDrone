@@ -1,5 +1,64 @@
 import bpy
+import colorsys
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
+from liberadronecore.ledeffects.runtime_registry import register_runtime_function
+
+
+@register_runtime_function
+def _rgb_to_hsv(color):
+    r, g, b, a = color
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    return h, s, v, a
+
+
+@register_runtime_function
+def _hsv_to_rgb(color):
+    h, s, v, a = color
+    r, g, b = colorsys.hsv_to_rgb(h, s, v)
+    return r, g, b, a
+
+
+@register_runtime_function
+def _srgb_to_linear_channel(c: float) -> float:
+    if c <= 0.04045:
+        return c / 12.92
+    return ((c + 0.055) / 1.055) ** 2.4
+
+
+@register_runtime_function
+def _linear_to_srgb_channel(c: float) -> float:
+    if c <= 0.0031308:
+        return c * 12.92
+    return 1.055 * (c ** (1.0 / 2.4)) - 0.055
+
+
+@register_runtime_function
+def _srgb_to_linear(color):
+    r, g, b, a = color
+    return (
+        _srgb_to_linear_channel(r),
+        _srgb_to_linear_channel(g),
+        _srgb_to_linear_channel(b),
+        a,
+    )
+
+
+@register_runtime_function
+def _linear_to_srgb(color):
+    r, g, b, a = color
+    return (
+        _linear_to_srgb_channel(r),
+        _linear_to_srgb_channel(g),
+        _linear_to_srgb_channel(b),
+        a,
+    )
+
+
+@register_runtime_function
+def _to_grayscale(color):
+    r, g, b, a = color
+    gray = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return gray, gray, gray, a
 
 
 class LDLEDColorSpaceNode(bpy.types.Node, LDLED_CodeNodeBase):

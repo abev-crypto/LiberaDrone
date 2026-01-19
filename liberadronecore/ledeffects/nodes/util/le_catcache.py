@@ -2,8 +2,22 @@ import bpy
 import os
 import numpy as np
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
+from liberadronecore.ledeffects.runtime_registry import register_runtime_function
 from liberadronecore.ledeffects import led_codegen_runtime
 from liberadronecore.util import image_util
+
+
+_CAT_CACHE: dict[str, tuple[tuple[float, float, float, float], float]] = {}
+
+
+@register_runtime_function
+def _cat_cache_write(name: str, color: tuple[float, float, float, float], intensity: float) -> None:
+    _CAT_CACHE[str(name)] = (tuple(color), float(intensity))
+
+
+@register_runtime_function
+def _cat_cache_read(name: str) -> tuple[tuple[float, float, float, float], float]:
+    return _CAT_CACHE.get(str(name), ((0.0, 0.0, 0.0, 1.0), 0.0))
 
 
 class LDLEDCatCacheNode(bpy.types.Node, LDLED_CodeNodeBase):
