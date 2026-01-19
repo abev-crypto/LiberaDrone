@@ -151,6 +151,12 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
     bl_label = "Setup Scene"
     bl_description = "Run scene setup using Start node drone count"
 
+    drone_count_override: bpy.props.IntProperty(
+        name="Drone Count",
+        default=0,
+        min=0,
+    )
+
     def execute(self, context):
         scene = context.scene
         if scene is not None:
@@ -261,7 +267,9 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
             tree = next((ng for ng in bpy.data.node_groups if getattr(ng, "bl_idname", "") == "FN_FormationTree"), None)
 
         drone_count: Optional[int] = None
-        if tree:
+        if getattr(self, "drone_count_override", 0) > 0:
+            drone_count = int(self.drone_count_override)
+        elif tree:
             for node in tree.nodes:
                 if getattr(node, "bl_idname", "") == "FN_StartNode":
                     drone_count = getattr(node, "drone_count", None)

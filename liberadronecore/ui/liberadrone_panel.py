@@ -251,6 +251,7 @@ class LD_PT_libera_panel_io(LD_PT_libera_panel_base):
         scene = context.scene
         layout.prop(scene, "ld_import_sheet_url", text="Sheet URL")
         layout.prop(scene, "ld_import_vat_dir", text="VAT/CAT Folder")
+        layout.operator("liberadrone.setup_all", text="Setup Without Import Sheet")
         layout.operator("liberadrone.show_import_sheet", text="Import Sheet")
         layout.operator("liberadrone.show_export_sheet", text="Export Sheet")
         layout.separator()
