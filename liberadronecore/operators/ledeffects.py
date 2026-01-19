@@ -3,6 +3,7 @@ import os
 
 import bpy
 
+from liberadronecore.ledeffects.nodes.mask import le_collectionmask
 from liberadronecore.ledeffects.nodes.mask import le_idmask
 from liberadronecore.ledeffects.nodes.mask import le_insidemesh
 from liberadronecore.ledeffects.nodes.position import le_projectionuv
@@ -481,6 +482,59 @@ class LDLED_OT_projectionuv_create_mesh(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class LDLED_OT_collectionmask_create_collection(bpy.types.Operator):
+    bl_idname = "ldled.collectionmask_create_collection"
+    bl_label = "Create Mask Collection"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        tree = bpy.data.node_groups.get(self.node_tree_name)
+        node = tree.nodes.get(self.node_name) if tree else None
+        if node is None or not isinstance(node, le_collectionmask.LDLEDCollectionMaskNode):
+            self.report({'ERROR'}, "Collection Mask node not found")
+            return {'CANCELLED'}
+
+        selected = getattr(context, "selected_objects", None) or []
+        meshes = [obj for obj in selected if obj.type == 'MESH']
+        if not meshes:
+            self.report({'ERROR'}, "Select mesh objects")
+            return {'CANCELLED'}
+
+        scene = context.scene or bpy.context.scene
+        if scene is None:
+            self.report({'ERROR'}, "No active scene")
+            return {'CANCELLED'}
+
+        name = le_collectionmask._unique_collection_name(f"{node.name}_Mask")
+        col = bpy.data.collections.new(name)
+        try:
+            scene.collection.children.link(col)
+        except Exception:
+            pass
+
+        for obj in meshes:
+            if obj.name not in col.objects:
+                col.objects.link(obj)
+
+        if hasattr(node, "collection"):
+            try:
+                node.collection = col
+            except Exception:
+                pass
+
+        col_socket = node.inputs.get("Collection") if hasattr(node, "inputs") else None
+        if col_socket is not None and hasattr(col_socket, "default_value"):
+            try:
+                col_socket.default_value = col
+            except Exception:
+                pass
+
+        return {'FINISHED'}
+
+
 class LDLED_OT_idmask_add_selection(bpy.types.Operator):
     bl_idname = "ldled.idmask_add_selection"
     bl_label = "Add Formation IDs"
@@ -548,6 +602,7 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.register_class(LDLED_OT_cat_cache_bake)
         bpy.utils.register_class(LDLED_OT_insidemesh_create_mesh)
         bpy.utils.register_class(LDLED_OT_projectionuv_create_mesh)
+        bpy.utils.register_class(LDLED_OT_collectionmask_create_collection)
         bpy.utils.register_class(LDLED_OT_idmask_add_selection)
         bpy.utils.register_class(LDLED_OT_idmask_remove_selection)
 
@@ -555,6 +610,7 @@ class LDLEDEffectsOps(RegisterBase):
     def unregister(cls) -> None:
         bpy.utils.unregister_class(LDLED_OT_idmask_remove_selection)
         bpy.utils.unregister_class(LDLED_OT_idmask_add_selection)
+        bpy.utils.unregister_class(LDLED_OT_collectionmask_create_collection)
         bpy.utils.unregister_class(LDLED_OT_projectionuv_create_mesh)
         bpy.utils.unregister_class(LDLED_OT_insidemesh_create_mesh)
         bpy.utils.unregister_class(LDLED_OT_cat_cache_bake)

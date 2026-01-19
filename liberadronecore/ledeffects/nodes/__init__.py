@@ -13,6 +13,7 @@ from .entry import le_markerentry
 from .entry import le_entryswitch
 from .mask import le_distance
 from .mask import le_fade
+from .mask import le_collectionmask
 from .mask import le_idmask
 from .mask import le_insidemesh
 from .mask import le_time

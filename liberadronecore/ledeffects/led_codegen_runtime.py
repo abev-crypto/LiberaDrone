@@ -10,6 +10,7 @@ import bpy
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.system.video.cvcache import FrameSampler
 from liberadronecore.formation import fn_parse
+from liberadronecore.formation import fn_parse_pairing
 import numpy as np
 
 def _sanitize_identifier(text: str) -> str:
@@ -440,7 +441,13 @@ def _point_in_mesh_bbox(obj_name: str, pos: Tuple[float, float, float]) -> bool:
     return _point_in_bbox(pos, bounds)
 
 
-_LED_FRAME_CACHE: Dict[str, Any] = {"frame": None, "mesh": {}, "collection": {}, "bbox": {}}
+_LED_FRAME_CACHE: Dict[str, Any] = {
+    "frame": None,
+    "mesh": {},
+    "collection": {},
+    "collection_ids": {},
+    "bbox": {},
+}
 _LED_CURRENT_INDEX: Optional[int] = None
 
 
@@ -448,6 +455,7 @@ def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, floa
     _LED_FRAME_CACHE["frame"] = float(frame)
     _LED_FRAME_CACHE["mesh"] = {}
     _LED_FRAME_CACHE["collection"] = {}
+    _LED_FRAME_CACHE["collection_ids"] = {}
     _LED_FRAME_CACHE["bbox"] = {}
 
 
@@ -455,6 +463,7 @@ def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["frame"] = None
     _LED_FRAME_CACHE["mesh"] = {}
     _LED_FRAME_CACHE["collection"] = {}
+    _LED_FRAME_CACHE["collection_ids"] = {}
     _LED_FRAME_CACHE["bbox"] = {}
 
 
@@ -577,6 +586,79 @@ def _get_collection_cache(
             _get_mesh_cache(obj)
     _LED_FRAME_CACHE["collection"][key] = names
     return names
+
+
+def _mesh_formation_ids(mesh: Optional[bpy.types.Mesh]) -> List[int]:
+    if mesh is None:
+        return []
+    attr = mesh.attributes.get(fn_parse_pairing.FORMATION_ATTR_NAME)
+    if (
+        attr is None
+        or attr.domain != 'POINT'
+        or attr.data_type != 'INT'
+        or len(attr.data) != len(mesh.vertices)
+    ):
+        attr = mesh.attributes.get(fn_parse_pairing.FORMATION_ID_ATTR)
+    if (
+        attr is None
+        or attr.domain != 'POINT'
+        or attr.data_type != 'INT'
+        or len(attr.data) != len(mesh.vertices)
+    ):
+        attr = mesh.attributes.get(fn_parse_pairing.PAIR_ATTR_NAME)
+    if (
+        attr is None
+        or attr.domain != 'POINT'
+        or attr.data_type != 'INT'
+        or len(attr.data) != len(mesh.vertices)
+    ):
+        return list(range(len(mesh.vertices)))
+
+    values = [0] * len(mesh.vertices)
+    attr.data.foreach_get("value", values)
+    return values
+
+
+def _collection_formation_ids(
+    collection_name: str,
+    use_children: bool = True,
+) -> set[int]:
+    collection_name = _collection_name(collection_name)
+    if not collection_name:
+        return set()
+    key = (collection_name, bool(use_children))
+    if _LED_FRAME_CACHE.get("frame") is not None:
+        cached = _LED_FRAME_CACHE["collection_ids"].get(key)
+        if cached is not None:
+            return cached
+
+    ids: set[int] = set()
+    names = _get_collection_cache(collection_name, use_children, build_mesh_cache=False)
+    if names is not None:
+        for name in names:
+            obj = bpy.data.objects.get(name)
+            if obj is None or obj.type != 'MESH':
+                continue
+            ids.update(_mesh_formation_ids(obj.data))
+    else:
+        col = _get_collection(collection_name)
+        if col is None:
+            if _LED_FRAME_CACHE.get("frame") is not None:
+                _LED_FRAME_CACHE["collection_ids"][key] = ids
+            return ids
+        stack = [col]
+        while stack:
+            current = stack.pop()
+            for obj in current.objects:
+                if obj.type != 'MESH':
+                    continue
+                ids.update(_mesh_formation_ids(obj.data))
+            if use_children:
+                stack.extend(list(current.children))
+
+    if _LED_FRAME_CACHE.get("frame") is not None:
+        _LED_FRAME_CACHE["collection_ids"][key] = ids
+    return ids
 
 
 def _nearest_vertex_color(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[float, float, float, float]:
@@ -1480,6 +1562,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         "_nearest_vertex_color": _nearest_vertex_color,
         "_nearest_vertex_uv": _nearest_vertex_uv,
         "_collection_nearest_uv": _collection_nearest_uv,
+        "_collection_formation_ids": _collection_formation_ids,
         "_formation_bbox_uv": _formation_bbox_uv,
         "_formation_bbox_relpos": _formation_bbox_relpos,
         "_sample_image": _sample_image,
@@ -1629,6 +1712,7 @@ def compile_led_socket(
         "_nearest_vertex_color": _nearest_vertex_color,
         "_nearest_vertex_uv": _nearest_vertex_uv,
         "_collection_nearest_uv": _collection_nearest_uv,
+        "_collection_formation_ids": _collection_formation_ids,
         "_formation_bbox_uv": _formation_bbox_uv,
         "_formation_bbox_relpos": _formation_bbox_relpos,
         "_sample_image": _sample_image,
