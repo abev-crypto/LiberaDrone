@@ -124,6 +124,7 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
         items=math_items,
         default="ADD",
         update=lambda self, _context: self._sync_inputs(),
+        options={'LIBRARY_EDITABLE'},
     )
 
     input_count: bpy.props.IntProperty(
@@ -132,12 +133,14 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
         min=2,
         max=8,
         update=lambda self, _context: self._sync_inputs(),
+        options={'LIBRARY_EDITABLE'},
     )
 
     clamp_result: bpy.props.BoolProperty(
         name="Clamp",
         description="Clamp the result between 0 and 1",
         default=False,
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

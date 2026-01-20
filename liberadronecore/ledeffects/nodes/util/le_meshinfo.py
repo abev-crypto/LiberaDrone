@@ -662,6 +662,7 @@ class LDLEDMeshInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Mesh",
         type=bpy.types.Object,
         poll=lambda self, obj: obj.type == 'MESH',
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

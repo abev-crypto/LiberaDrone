@@ -13,12 +13,14 @@ class LDLEDDistanceMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Mesh",
         type=bpy.types.Object,
         poll=lambda self, obj: obj.type == 'MESH',
+        options={'LIBRARY_EDITABLE'},
     )
 
     max_distance: bpy.props.FloatProperty(
         name="Max Distance",
         default=1.0,
         min=0.0,
+        options={'LIBRARY_EDITABLE'},
     )
 
     combine_items = [
@@ -31,6 +33,7 @@ class LDLEDDistanceMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Combine",
         items=combine_items,
         default="MULTIPLY",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

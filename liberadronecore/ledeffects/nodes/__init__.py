@@ -32,6 +32,7 @@ from .util import le_combine
 from .util import le_imageinfo
 from .util import le_math
 from .util import le_meshinfo
+from .util import le_objectinfo
 from .util import le_split
 from .util import le_value
 from .util import le_valuefloat

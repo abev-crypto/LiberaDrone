@@ -26,6 +26,7 @@ class LDLEDRandomNode(bpy.types.Node, LDLED_CodeNodeBase):
     seed: bpy.props.FloatProperty(
         name="Seed",
         default=0.0,
+        options={'LIBRARY_EDITABLE'},
     )
 
     combine_items = [
@@ -38,6 +39,7 @@ class LDLEDRandomNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Combine",
         items=combine_items,
         default="MULTIPLY",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

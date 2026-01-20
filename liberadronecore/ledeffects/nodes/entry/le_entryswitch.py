@@ -20,6 +20,7 @@ class LDLEDEntrySwitchNode(bpy.types.Node, LDLED_CodeNodeBase):
         items=output_type_items,
         default="VALUE",
         update=lambda self, context: self._sync_sockets(),
+        options={'LIBRARY_EDITABLE'},
     )
 
     length: bpy.props.IntProperty(
@@ -27,6 +28,7 @@ class LDLEDEntrySwitchNode(bpy.types.Node, LDLED_CodeNodeBase):
         default=2,
         min=1,
         update=lambda self, context: self._sync_sockets(),
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

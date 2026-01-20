@@ -76,6 +76,7 @@ class LDLEDColorRampNode(bpy.types.Node, LDLED_CodeNodeBase):
     color_ramp_tex: bpy.props.PointerProperty(
         name="Color Ramp",
         type=bpy.types.Texture,
+        options={'LIBRARY_EDITABLE'},
     )
 
     loop_items = [
@@ -87,6 +88,7 @@ class LDLEDColorRampNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Loop",
         items=loop_items,
         default="REPEAT",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

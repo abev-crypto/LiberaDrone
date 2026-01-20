@@ -21,6 +21,7 @@ class LDLEDInsideMeshNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Combine",
         items=combine_items,
         default="MULTIPLY",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

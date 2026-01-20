@@ -82,12 +82,14 @@ class LDLEDOutputNode(bpy.types.Node, LDLED_Node):
         name="Blend Mode",
         items=blend_modes,
         default="MIX",
+        options={'LIBRARY_EDITABLE'},
     )
 
     priority: bpy.props.IntProperty(
         name="Priority",
         default=0,
         description="Higher values are composited on top",
+        options={'LIBRARY_EDITABLE'},
     )
 
     random: bpy.props.FloatProperty(
@@ -96,6 +98,7 @@ class LDLEDOutputNode(bpy.types.Node, LDLED_Node):
         min=0.0,
         max=1.0,
         description="Chance to shuffle output order within the same priority",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

@@ -12,12 +12,14 @@ class LDLEDCollectionInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
     collection: bpy.props.PointerProperty(
         name="Collection",
         type=bpy.types.Collection,
+        options={'LIBRARY_EDITABLE'},
     )
 
     use_children: bpy.props.BoolProperty(
         name="Include Children",
         default=True,
         description="Include objects from child collections",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

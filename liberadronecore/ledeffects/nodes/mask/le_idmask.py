@@ -9,6 +9,7 @@ class LDLEDIDMaskItem(bpy.types.PropertyGroup, LDLED_Register):
         name="ID",
         default=0,
         min=0,
+        options={'LIBRARY_EDITABLE'},
     )
 
 
@@ -107,17 +108,19 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Formation ID",
         default=0,
         min=0,
+        options={'LIBRARY_EDITABLE'},
     )
     use_custom_ids: bpy.props.BoolProperty(
         name="Use Custom IDs",
         default=False,
         options={'HIDDEN'},
     )
-    ids: bpy.props.CollectionProperty(type=LDLEDIDMaskItem)
+    ids: bpy.props.CollectionProperty(type=LDLEDIDMaskItem, options={'LIBRARY_EDITABLE'})
     combine_mode: bpy.props.EnumProperty(
         name="Combine",
         items=combine_items,
         default="MULTIPLY",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

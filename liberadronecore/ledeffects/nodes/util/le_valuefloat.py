@@ -12,6 +12,7 @@ class LDLEDFloatValueNode(bpy.types.Node, LDLED_CodeNodeBase):
     value: bpy.props.FloatProperty(
         name="Value",
         default=0.0,
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

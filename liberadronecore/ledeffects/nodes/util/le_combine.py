@@ -18,6 +18,7 @@ class LDLEDCombineNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Mode",
         items=mode_items,
         default="RGB",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

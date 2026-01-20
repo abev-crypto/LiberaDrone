@@ -30,6 +30,7 @@ class LDLEDCatCacheNode(bpy.types.Node, LDLED_CodeNodeBase):
     image: bpy.props.PointerProperty(
         name="Image",
         type=bpy.types.Image,
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

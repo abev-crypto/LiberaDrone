@@ -78,6 +78,7 @@ class LDLEDColorSpaceNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Mode",
         items=mode_items,
         default="SRGB_TO_LINEAR",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

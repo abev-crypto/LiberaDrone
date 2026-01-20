@@ -53,6 +53,7 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Video",
         subtype='FILE_PATH',
         default="",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

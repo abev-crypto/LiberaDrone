@@ -26,6 +26,7 @@ class LDLEDBlendNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Blend Type",
         items=blend_modes,
         default="MIX",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

@@ -32,18 +32,21 @@ class LDLEDFadeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Direction",
         items=direction_items,
         default="IN",
+        options={'LIBRARY_EDITABLE'},
     )
 
     ease_mode: bpy.props.EnumProperty(
         name="Ease",
         items=ease_items,
         default="LINEAR",
+        options={'LIBRARY_EDITABLE'},
     )
 
     combine_mode: bpy.props.EnumProperty(
         name="Combine",
         items=combine_items,
         default="MULTIPLY",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

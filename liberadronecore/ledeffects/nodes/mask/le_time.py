@@ -26,12 +26,14 @@ class LDLEDTimeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Mode",
         items=mode_items,
         default="LINEAR",
+        options={'LIBRARY_EDITABLE'},
     )
 
     combine_mode: bpy.props.EnumProperty(
         name="Combine",
         items=combine_items,
         default="MULTIPLY",
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

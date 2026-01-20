@@ -12,15 +12,18 @@ class LDLEDFormationEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
     formation_name: bpy.props.StringProperty(
         name="Formation",
         default="",
+        options={'LIBRARY_EDITABLE'},
     )
     duration: bpy.props.IntProperty(
         name="Duration",
         default=0,
         min=0,
+        options={'LIBRARY_EDITABLE'},
     )
     from_end: bpy.props.BoolProperty(
         name="From End",
         default=False,
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

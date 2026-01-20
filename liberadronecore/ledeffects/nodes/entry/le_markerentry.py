@@ -12,15 +12,18 @@ class LDLEDMarkerEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
     marker_name: bpy.props.StringProperty(
         name="Marker",
         default="",
+        options={'LIBRARY_EDITABLE'},
     )
     offset: bpy.props.IntProperty(
         name="Offset",
         default=0,
+        options={'LIBRARY_EDITABLE'},
     )
     duration: bpy.props.IntProperty(
         name="Duration",
         default=0,
         min=0,
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

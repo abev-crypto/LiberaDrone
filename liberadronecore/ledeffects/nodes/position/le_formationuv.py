@@ -13,6 +13,7 @@ class LDLEDFormationUVNode(bpy.types.Node, LDLED_CodeNodeBase):
         name="Static",
         description="Reuse cached formation bounds while the effect runs",
         default=False,
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod

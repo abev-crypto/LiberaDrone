@@ -16,6 +16,7 @@ class LDLEDValueNode(bpy.types.Node, LDLED_CodeNodeBase):
         min=0.0,
         max=1.0,
         size=4,
+        options={'LIBRARY_EDITABLE'},
     )
 
     @classmethod
