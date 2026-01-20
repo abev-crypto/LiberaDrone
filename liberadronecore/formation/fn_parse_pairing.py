@@ -100,28 +100,7 @@ def _collect_mesh_objects(col: bpy.types.Collection) -> List[bpy.types.Object]:
     col = _as_collection(col)
     if col is None:
         return []
-    meshes: List[bpy.types.Object] = []
-    seen: set[int] = set()
-
-    def _walk(obj: bpy.types.Object) -> None:
-        if obj is None:
-            return
-        try:
-            key = int(obj.as_pointer())
-        except Exception:
-            key = id(obj)
-        if key in seen:
-            return
-        seen.add(key)
-        if obj.type == 'MESH':
-            meshes.append(obj)
-        for child in getattr(obj, "children", []) or []:
-            _walk(child)
-
-    for obj in col.all_objects:
-        _walk(obj)
-    meshes.sort(key=lambda o: o.name)
-    return meshes
+    return [obj for obj in col.objects if obj.type == 'MESH']
 
 
 def _assign_ids_for_collections(cols: Sequence[bpy.types.Collection]) -> None:
@@ -166,8 +145,13 @@ def _ensure_int_point_attr(mesh: bpy.types.Mesh, name: str) -> bpy.types.Attribu
     return mesh.attributes.new(name=name, type='INT', domain='POINT')
 
 
-def _assign_formation_ids(col: bpy.types.Collection, drone_count: Optional[int]) -> bool:
-    """Assign formation_id/pair_id once per collection if missing."""
+def _assign_formation_ids(
+    col: bpy.types.Collection,
+    drone_count: Optional[int],
+    *,
+    force: bool = False,
+) -> bool:
+    """Assign formation_id/pair_id for a collection (rebuild when forced)."""
     meshes = _collect_mesh_objects(col)
     if not meshes:
         return False
@@ -178,7 +162,7 @@ def _assign_formation_ids(col: bpy.types.Collection, drone_count: Optional[int])
         if not attr or attr.domain != 'POINT' or attr.data_type != 'INT' or len(attr.data) != len(obj.data.vertices):
             need_assign = True
             break
-    if not need_assign:
+    if not force and not need_assign:
         return False
 
     count = max(0, int(drone_count)) if drone_count else None

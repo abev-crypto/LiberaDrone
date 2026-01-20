@@ -532,7 +532,7 @@ def compute_schedule(context: Optional[bpy.types.Context] = None, *, assign_pair
                     seen_cols.add(col)
 
             for col in ordered_unique:
-                _assign_formation_ids(col, drone_count)
+                _assign_formation_ids(col, drone_count, force=True)
 
             pair_steps: List[tuple[int, List[bpy.types.Node], List[bpy.types.Node]]] = []
             seen_steps: set[tuple[frozenset[int], frozenset[int]]] = set()
