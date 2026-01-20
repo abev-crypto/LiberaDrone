@@ -111,10 +111,26 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
         "ONE_MINUS",
     }
 
+    multi_input_ops = {
+        "ADD",
+        "SUBTRACT",
+        "MULTIPLY",
+        "MAX",
+        "MIN",
+    }
+
     operation: bpy.props.EnumProperty(
         name="Operation",
         items=math_items,
         default="ADD",
+        update=lambda self, _context: self._sync_inputs(),
+    )
+
+    input_count: bpy.props.IntProperty(
+        name="Inputs",
+        default=2,
+        min=2,
+        max=8,
         update=lambda self, _context: self._sync_inputs(),
     )
 
@@ -137,13 +153,43 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
     def update(self):
         self._sync_inputs()
 
+    def _value_socket_names(self, count: int) -> list[str]:
+        count = max(1, int(count))
+        return [f"Value {chr(ord('A') + idx)}" for idx in range(count)]
+
     def _sync_inputs(self):
-        socket = self.inputs.get("Value B")
-        if socket is not None:
-            socket.hide = self.operation in self.single_input_ops
+        is_single = self.operation in self.single_input_ops
+        is_multi = self.operation in self.multi_input_ops
+        desired_count = max(2, int(self.input_count)) if is_multi else 2
+        desired_names = self._value_socket_names(desired_count)
+
+        for name in desired_names:
+            if self.inputs.get(name) is None:
+                sock = self.inputs.new("NodeSocketFloat", name)
+                try:
+                    sock.default_value = 0.0
+                except Exception:
+                    pass
+
+        for sock in list(self.inputs):
+            if not sock.name.startswith("Value "):
+                continue
+            if sock.name not in desired_names:
+                self.inputs.remove(sock)
+
+        socket_b = self.inputs.get("Value B")
+        if socket_b is not None:
+            socket_b.hide = is_single
+        if not is_single:
+            for name in desired_names:
+                sock = self.inputs.get(name)
+                if sock is not None:
+                    sock.hide = False
 
     def draw_buttons(self, context, layout):
         layout.prop(self, "operation", text="")
+        if self.operation in self.multi_input_ops:
+            layout.prop(self, "input_count")
         layout.prop(self, "clamp_result")
 
     def build_code(self, inputs):
@@ -151,18 +197,26 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
         b = inputs.get("Value B", "0.0")
         out_var = self.output_var("Value")
         op = self.operation
-        if op == "ADD":
-            expr = f"({a}) + ({b})"
-        elif op == "SUBTRACT":
-            expr = f"({a}) - ({b})"
-        elif op == "MULTIPLY":
-            expr = f"({a}) * ({b})"
+        if op in self.multi_input_ops:
+            count = max(2, int(self.input_count))
+            names = self._value_socket_names(count)
+            values = [inputs.get(name, "0.0") for name in names]
+            if op == "ADD":
+                expr = " + ".join(f"({val})" for val in values)
+            elif op == "MULTIPLY":
+                expr = " * ".join(f"({val})" for val in values)
+            elif op == "SUBTRACT":
+                expr = values[0]
+                for val in values[1:]:
+                    expr = f"({expr}) - ({val})"
+            elif op == "MAX":
+                expr = f"max({', '.join(values)})"
+            elif op == "MIN":
+                expr = f"min({', '.join(values)})"
+            else:
+                expr = f"({a})"
         elif op == "DIVIDE":
             expr = f"({a}) / ({b}) if ({b}) != 0.0 else 0.0"
-        elif op == "MAX":
-            expr = f"({a}) if ({a}) > ({b}) else ({b})"
-        elif op == "MIN":
-            expr = f"({a}) if ({a}) < ({b}) else ({b})"
         elif op == "STEP":
             expr = f"1.0 if ({a}) >= ({b}) else 0.0"
         elif op == "SATURATE":

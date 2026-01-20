@@ -9,6 +9,18 @@ _LED_OUTPUT_ACTIVITY: dict[str, bool] = {}
 _LED_OUTPUT_SYNC_PENDING = False
 _UNSUPPORTED = object()
 _LED_TEMPLATE_GLOB = ".json"
+_BLEND_MODE_ICONS = {
+    "MIX": "SEQUENCE_COLOR_01",
+    "ADD": "SEQUENCE_COLOR_02",
+    "MULTIPLY": "SEQUENCE_COLOR_03",
+    "OVERLAY": "SEQUENCE_COLOR_04",
+    "SCREEN": "SEQUENCE_COLOR_05",
+    "HARD_LIGHT": "SEQUENCE_COLOR_06",
+    "SOFT_LIGHT": "SEQUENCE_COLOR_07",
+    "BURN": "SEQUENCE_COLOR_08",
+    "SUBTRACT": "SEQUENCE_COLOR_02",
+    "MAX": "SEQUENCE_COLOR_05",
+}
 
 
 def _template_dir() -> str:
@@ -411,6 +423,24 @@ def _schedule_output_sync(scene: bpy.types.Scene, tree: bpy.types.NodeTree) -> N
     bpy.app.timers.register(_do_sync, first_interval=0.0)
 
 
+def _output_sort_key(node: bpy.types.Node) -> tuple[int, str]:
+    try:
+        priority = int(getattr(node, "priority", 0))
+    except Exception:
+        priority = 0
+    return priority, node.name
+
+
+def _sorted_output_nodes(tree: bpy.types.NodeTree) -> list[bpy.types.Node]:
+    nodes = [n for n in tree.nodes if getattr(n, "bl_idname", "") == "LDLEDOutputNode"]
+    nodes.sort(key=_output_sort_key)
+    return nodes
+
+
+def _blend_mode_icon(mode: str | None) -> str:
+    return _BLEND_MODE_ICONS.get((mode or "MIX").upper(), "SEQUENCE_COLOR_01")
+
+
 def _sync_output_items(
     scene: bpy.types.Scene,
     tree: bpy.types.NodeTree,
@@ -419,12 +449,14 @@ def _sync_output_items(
     allow_write: bool = True,
 ) -> None:
     items = scene.ld_led_output_items
-    output_nodes = [n for n in tree.nodes if getattr(n, "bl_idname", "") == "LDLEDOutputNode"]
-    output_names = {n.name for n in output_nodes}
-    item_names = {item.node_name for item in items}
+    output_nodes = _sorted_output_nodes(tree)
+    output_names = [n.name for n in output_nodes]
+    output_name_set = set(output_names)
+    item_names = [item.node_name for item in items]
+    item_name_set = set(item_names)
 
     if not allow_write:
-        if item_names != output_names:
+        if item_name_set != output_name_set or item_names != output_names:
             _schedule_output_sync(scene, tree)
         return
 
@@ -432,15 +464,10 @@ def _sync_output_items(
     if 0 <= scene.ld_led_output_index < len(items):
         active_name = items[scene.ld_led_output_index].node_name
 
-    for idx in reversed(range(len(items))):
-        if items[idx].node_name not in output_names:
-            items.remove(idx)
-
-    existing = {item.node_name for item in items}
+    items.clear()
     for node in output_nodes:
-        if node.name not in existing:
-            item = items.add()
-            item.node_name = node.name
+        item = items.add()
+        item.node_name = node.name
 
     if not allow_index_update:
         return
@@ -569,12 +596,14 @@ class LDLED_UL_OutputList(bpy.types.UIList):
         node = tree.nodes.get(item.node_name) if tree else None
         row = layout.row(align=True)
         is_active = bool(_LED_OUTPUT_ACTIVITY.get(item.node_name, False))
-        row.alert = is_active
-        row.label(text="", icon='CHECKMARK' if is_active else 'BLANK1')
+        active_row = row.row(align=True)
+        active_row.alert = is_active
+        active_row.label(text="", icon='CHECKMARK' if is_active else 'BLANK1')
         if node is None:
             row.label(text=item.node_name)
-        else:
-            row.prop(node, "name", text="")
+            return
+        row.label(text="", icon=_blend_mode_icon(getattr(node, "blend_mode", "MIX")))
+        row.prop(node, "label", text="")
 
 
 def _sanitize_filename(name: str) -> str:
@@ -651,7 +680,7 @@ class LDLED_PT_panel(bpy.types.Panel):
         if node is not None and getattr(node, "bl_idname", "") == "LDLEDOutputNode":
             box = layout.box()
             box.label(text="Active Output")
-            box.prop(node, "name", text="Name")
+            box.prop(node, "label", text="Label")
             if hasattr(node, "draw_buttons"):
                 node.draw_buttons(context, box)
 

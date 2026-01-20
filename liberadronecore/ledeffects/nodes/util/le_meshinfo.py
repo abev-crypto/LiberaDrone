@@ -601,13 +601,6 @@ def _mesh_formation_ids(mesh: Optional[bpy.types.Mesh]) -> List[int]:
         or attr.data_type != 'INT'
         or len(attr.data) != len(mesh.vertices)
     ):
-        attr = mesh.attributes.get(fn_parse_pairing.PAIR_ATTR_NAME)
-    if (
-        attr is None
-        or attr.domain != 'POINT'
-        or attr.data_type != 'INT'
-        or len(attr.data) != len(mesh.vertices)
-    ):
         return list(range(len(mesh.vertices)))
 
     values = [0] * len(mesh.vertices)
