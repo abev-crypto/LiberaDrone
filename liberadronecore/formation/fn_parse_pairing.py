@@ -100,7 +100,26 @@ def _collect_mesh_objects(col: bpy.types.Collection) -> List[bpy.types.Object]:
     col = _as_collection(col)
     if col is None:
         return []
-    meshes = [obj for obj in col.all_objects if obj.type == 'MESH']
+    meshes: List[bpy.types.Object] = []
+    seen: set[int] = set()
+
+    def _walk(obj: bpy.types.Object) -> None:
+        if obj is None:
+            return
+        try:
+            key = int(obj.as_pointer())
+        except Exception:
+            key = id(obj)
+        if key in seen:
+            return
+        seen.add(key)
+        if obj.type == 'MESH':
+            meshes.append(obj)
+        for child in getattr(obj, "children", []) or []:
+            _walk(child)
+
+    for obj in col.all_objects:
+        _walk(obj)
     meshes.sort(key=lambda o: o.name)
     return meshes
 
@@ -131,8 +150,8 @@ def _count_collection_vertices(col: Optional[bpy.types.Collection]) -> int:
     if col is None:
         return -1
     count = 0
-    for obj in col.all_objects:
-        if obj.type == 'MESH' and obj.data is not None:
+    for obj in _collect_mesh_objects(col):
+        if obj.data is not None:
             count += len(obj.data.vertices)
     return count
 
