@@ -15,11 +15,11 @@ class LDLEDEditEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def init(self, context):
         self.inputs.new("LDLEDEntrySocket", "Entry")
-        start_offset = self.inputs.new("NodeSocketFloat", "Start Offset")
-        duration_offset = self.inputs.new("NodeSocketFloat", "Duration Offset")
+        start_offset = self.inputs.new("NodeSocketInt", "Start Offset")
+        duration_offset = self.inputs.new("NodeSocketInt", "Duration Offset")
         speed = self.inputs.new("NodeSocketFloat", "Speed")
-        start_offset.default_value = 0.0
-        duration_offset.default_value = 0.0
+        start_offset.default_value = 0
+        duration_offset.default_value = 0
         speed.default_value = 1.0
         self.outputs.new("LDLEDEntrySocket", "Entry")
 

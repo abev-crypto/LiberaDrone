@@ -16,6 +16,7 @@ import numpy as np
 _color_column_cache: dict[int, list[list[float]]] = {}
 _UNDO_DEPTH = 0
 _SUSPEND_LED_EFFECTS = 0
+_LED_UPDATE_PENDING = False
 
 
 def _set_undo_block(active: bool) -> None:
@@ -64,6 +65,29 @@ def suspend_led_effects(active: bool) -> None:
 
 def _is_led_suspended() -> bool:
     return _SUSPEND_LED_EFFECTS > 0
+
+
+def schedule_led_effects_update(scene: bpy.types.Scene) -> None:
+    global _LED_UPDATE_PENDING
+    if _LED_UPDATE_PENDING:
+        return
+    scene_name = scene.name if scene else ""
+
+    def _do_update():
+        global _LED_UPDATE_PENDING
+        if _is_undo_running():
+            return 0.1
+        _LED_UPDATE_PENDING = False
+        if not scene_name:
+            return None
+        scn = bpy.data.scenes.get(scene_name)
+        if scn is None:
+            return None
+        update_led_effects(scn)
+        return None
+
+    _LED_UPDATE_PENDING = True
+    bpy.app.timers.register(_do_update, first_interval=0.0)
 
 def _is_any_viewport_wireframe() -> bool:
     wm = getattr(bpy.context, "window_manager", None)

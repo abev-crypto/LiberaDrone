@@ -35,6 +35,11 @@ class LDLEDDistanceMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         default="MULTIPLY",
         options={'LIBRARY_EDITABLE'},
     )
+    invert: bpy.props.BoolProperty(
+        name="Invert",
+        default=False,
+        options={'LIBRARY_EDITABLE'},
+    )
 
     @classmethod
     def poll(cls, ntree):
@@ -54,6 +59,7 @@ class LDLEDDistanceMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         layout.prop(self, "target_object")
         layout.prop(self, "max_distance")
         layout.prop(self, "combine_mode", text="")
+        layout.prop(self, "invert")
 
     def build_code(self, inputs):
         out_var = self.output_var("Mask")
@@ -63,6 +69,8 @@ class LDLEDDistanceMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         max_dist = max(0.0001, float(self.max_distance))
         value = inputs.get("Value", "1.0")
         base_expr = f"_clamp01(1.0 - (_dist / {max_dist!r}))"
+        if self.invert:
+            base_expr = f"(1.0 - ({base_expr}))"
         if self.combine_mode == "ADD":
             expr = f"_clamp01(({base_expr}) + ({value}))"
         elif self.combine_mode == "SUB":

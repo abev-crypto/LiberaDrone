@@ -265,8 +265,8 @@ class LDLEDFrameEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
-        self.inputs.new("NodeSocketFloat", "Start")
-        self.inputs.new("NodeSocketFloat", "Duration")
+        self.inputs.new("NodeSocketInt", "Start")
+        self.inputs.new("NodeSocketInt", "Duration")
         self.outputs.new("LDLEDEntrySocket", "Entry")
 
     def build_code(self, inputs):

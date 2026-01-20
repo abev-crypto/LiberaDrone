@@ -35,6 +35,11 @@ class LDLEDTimeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         default="MULTIPLY",
         options={'LIBRARY_EDITABLE'},
     )
+    invert: bpy.props.BoolProperty(
+        name="Invert",
+        default=False,
+        options={'LIBRARY_EDITABLE'},
+    )
 
     @classmethod
     def poll(cls, ntree):
@@ -53,12 +58,15 @@ class LDLEDTimeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
     def draw_buttons(self, context, layout):
         layout.prop(self, "mode", text="")
         layout.prop(self, "combine_mode", text="")
+        layout.prop(self, "invert")
 
     def build_code(self, inputs):
         entry = inputs.get("Entry", "_entry_empty()")
         value = inputs.get("Value", "1.0")
         out_var = self.output_var("Factor")
         base_expr = f"_entry_progress({entry}, frame, {self.mode!r})"
+        if self.invert:
+            base_expr = f"(1.0 - ({base_expr}))"
         if self.combine_mode == "ADD":
             expr = f"_clamp01(({base_expr}) + ({value}))"
         elif self.combine_mode == "SUB":

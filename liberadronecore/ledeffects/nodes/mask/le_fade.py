@@ -48,6 +48,11 @@ class LDLEDFadeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         default="MULTIPLY",
         options={'LIBRARY_EDITABLE'},
     )
+    invert: bpy.props.BoolProperty(
+        name="Invert",
+        default=False,
+        options={'LIBRARY_EDITABLE'},
+    )
 
     @classmethod
     def poll(cls, ntree):
@@ -55,12 +60,12 @@ class LDLEDFadeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def init(self, context):
         self.inputs.new("LDLEDEntrySocket", "Entry")
-        duration = self.inputs.new("NodeSocketFloat", "Duration")
+        duration = self.inputs.new("NodeSocketInt", "Duration")
         value = self.inputs.new("NodeSocketFloat", "Value")
-        duration.default_value = 1.0
+        duration.default_value = 1
         value.default_value = 1.0
         try:
-            duration.min_value = 0.0
+            duration.min_value = 0
             value.min_value = 0.0
         except Exception:
             pass
@@ -70,6 +75,7 @@ class LDLEDFadeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         layout.prop(self, "direction", text="")
         layout.prop(self, "ease_mode", text="")
         layout.prop(self, "combine_mode", text="")
+        layout.prop(self, "invert")
 
     def build_code(self, inputs):
         entry = inputs.get("Entry", "_entry_empty()")
@@ -77,6 +83,8 @@ class LDLEDFadeMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         value = inputs.get("Value", "1.0")
         out_var = self.output_var("Value")
         base_expr = f"_entry_fade({entry}, frame, {duration}, {self.ease_mode!r}, {self.direction!r})"
+        if self.invert:
+            base_expr = f"(1.0 - ({base_expr}))"
         if self.combine_mode == "ADD":
             expr = f"_clamp01(({base_expr}) + ({value}))"
         elif self.combine_mode == "SUB":

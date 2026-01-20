@@ -81,9 +81,9 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
     def init(self, context):
         self.inputs.new("NodeSocketFloat", "U")
         self.inputs.new("NodeSocketFloat", "V")
-        start_offset = self.inputs.new("NodeSocketFloat", "Start Offset")
+        start_offset = self.inputs.new("NodeSocketInt", "Start Offset")
         speed = self.inputs.new("NodeSocketFloat", "Speed")
-        start_offset.default_value = 0.0
+        start_offset.default_value = 0
         speed.default_value = 1.0
         self.inputs.new("LDLEDEntrySocket", "Entry")
         self.outputs.new("NodeSocketColor", "Color")

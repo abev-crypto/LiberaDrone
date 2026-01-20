@@ -15,10 +15,14 @@ class LDLEDLoopEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def init(self, context):
         self.inputs.new("LDLEDEntrySocket", "Entry")
-        offset = self.inputs.new("NodeSocketFloat", "Offset")
-        loops = self.inputs.new("NodeSocketFloat", "Loops")
-        offset.default_value = 0.0
-        loops.default_value = 0.0
+        offset = self.inputs.new("NodeSocketInt", "Offset")
+        loops = self.inputs.new("NodeSocketInt", "Loops")
+        offset.default_value = 0
+        loops.default_value = 0
+        try:
+            loops.min_value = 0
+        except Exception:
+            pass
         self.outputs.new("LDLEDEntrySocket", "Entry")
 
     def build_code(self, inputs):
