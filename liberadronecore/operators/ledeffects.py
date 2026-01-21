@@ -362,6 +362,10 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
 
         if img is not None:
             try:
+                img.reload()
+            except Exception:
+                pass
+            try:
                 le_image._IMAGE_CACHE.pop(int(img.as_pointer()), None)
             except Exception:
                 pass

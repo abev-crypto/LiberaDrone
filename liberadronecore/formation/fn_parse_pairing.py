@@ -167,8 +167,13 @@ def _ensure_int_point_attr(mesh: bpy.types.Mesh, name: str) -> bpy.types.Attribu
     return mesh.attributes.new(name=name, type='INT', domain='POINT')
 
 
-def _assign_formation_ids(col: bpy.types.Collection, drone_count: Optional[int]) -> bool:
-    """Assign formation_id/pair_id once per collection if missing."""
+def _assign_formation_ids(
+    col: bpy.types.Collection,
+    drone_count: Optional[int],
+    *,
+    force: bool = False,
+) -> bool:
+    """Assign formation_id/pair_id for a collection (rebuild when forced)."""
     meshes = _collect_mesh_objects(col)
     if not meshes:
         return False

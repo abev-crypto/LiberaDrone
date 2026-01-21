@@ -11,14 +11,25 @@ from liberadronecore.ledeffects.runtime_registry import register_runtime_functio
 from liberadronecore.ledeffects.nodes.util.le_math import _clamp
 
 
-_LED_FRAME_CACHE: Dict[str, Any] = {"frame": None, "mesh": {}, "collection": {}, "collection_ids": {}, "bbox": {}}
+_LED_FRAME_CACHE: Dict[str, Any] = {
+    "frame": None,
+    "object": {},
+    "mesh": {},
+    "collection_ref": {},
+    "collection": {},
+    "collection_ids": {},
+    "bbox": {},
+}
 _LED_CURRENT_INDEX: Optional[int] = None
 _FORMATION_BBOX_CACHE: Dict[str, Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = {}
+_COLLECTION_IDS_CACHE: Dict[Tuple[str, bool], set[int]] = {}
 
 
 def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, float]]) -> None:
     _LED_FRAME_CACHE["frame"] = float(frame)
+    _LED_FRAME_CACHE["object"] = {}
     _LED_FRAME_CACHE["mesh"] = {}
+    _LED_FRAME_CACHE["collection_ref"] = {}
     _LED_FRAME_CACHE["collection"] = {}
     _LED_FRAME_CACHE["collection_ids"] = {}
     _LED_FRAME_CACHE["bbox"] = {}
@@ -26,7 +37,9 @@ def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, floa
 
 def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["frame"] = None
+    _LED_FRAME_CACHE["object"] = {}
     _LED_FRAME_CACHE["mesh"] = {}
+    _LED_FRAME_CACHE["collection_ref"] = {}
     _LED_FRAME_CACHE["collection"] = {}
     _LED_FRAME_CACHE["collection_ids"] = {}
     _LED_FRAME_CACHE["bbox"] = {}
@@ -46,6 +59,13 @@ def _get_object(value) -> Optional[bpy.types.Object]:
     if isinstance(value, str):
         if not value:
             return None
+        if _LED_FRAME_CACHE.get("frame") is not None:
+            cache = _LED_FRAME_CACHE["object"]
+            if value in cache:
+                return cache[value]
+            obj = bpy.data.objects.get(value)
+            cache[value] = obj
+            return obj
         return bpy.data.objects.get(value)
     return None
 
@@ -67,6 +87,13 @@ def _get_collection(value) -> Optional[bpy.types.Collection]:
     if isinstance(value, str):
         if not value:
             return None
+        if _LED_FRAME_CACHE.get("frame") is not None:
+            cache = _LED_FRAME_CACHE["collection_ref"]
+            if value in cache:
+                return cache[value]
+            col = bpy.data.collections.get(value)
+            cache[value] = col
+            return col
         return bpy.data.collections.get(value)
     return None
 
@@ -617,13 +644,19 @@ def _collection_formation_ids(
     if not collection_name:
         return set()
     key = (collection_name, bool(use_children))
+    cached_static = _COLLECTION_IDS_CACHE.get(key)
+    if cached_static is not None:
+        return cached_static
     if _LED_FRAME_CACHE.get("frame") is not None:
         cached = _LED_FRAME_CACHE["collection_ids"].get(key)
         if cached is not None:
+            _COLLECTION_IDS_CACHE[key] = cached
             return cached
 
     ids: set[int] = set()
-    names = _get_collection_cache(collection_name, use_children, build_mesh_cache=False)
+    names = None
+    if _LED_FRAME_CACHE.get("frame") is not None:
+        names = _LED_FRAME_CACHE["collection"].get(key)
     if names is not None:
         for name in names:
             obj = bpy.data.objects.get(name)
@@ -648,6 +681,7 @@ def _collection_formation_ids(
 
     if _LED_FRAME_CACHE.get("frame") is not None:
         _LED_FRAME_CACHE["collection_ids"][key] = ids
+    _COLLECTION_IDS_CACHE[key] = ids
     return ids
 
 

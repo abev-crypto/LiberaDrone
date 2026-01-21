@@ -65,6 +65,9 @@ class LDLEDCatCacheNode(bpy.types.Node, LDLED_CodeNodeBase):
             return f"{out_color} = {color_in}"
         return "\n".join(
             [
+                f"_active_{cat_id} = _entry_active_count({entry}, frame)",
+                f"if _entry_is_empty({entry}):",
+                f"    _active_{cat_id} = 1",
                 f"_progress_{cat_id} = _entry_progress({entry}, frame)",
                 f"_img_{cat_id} = {image_name!r}",
                 f"_v_{cat_id} = 0.0",
@@ -72,7 +75,7 @@ class LDLEDCatCacheNode(bpy.types.Node, LDLED_CodeNodeBase):
                 f"    _im_{cat_id} = bpy.data.images.get(_img_{cat_id})",
                 f"    if _im_{cat_id} and _im_{cat_id}.size[1] > 1:",
                 f"        _v_{cat_id} = _clamp(idx / float(_im_{cat_id}.size[1] - 1), 0.0, 1.0)",
-                f"{out_color} = _sample_image(_img_{cat_id}, (_progress_{cat_id}, _v_{cat_id})) if _progress_{cat_id} > 0.0 else (0.0, 0.0, 0.0, 1.0)",
+                f"{out_color} = _sample_image(_img_{cat_id}, (_progress_{cat_id}, _v_{cat_id})) if _active_{cat_id} > 0 else (0.0, 0.0, 0.0, 1.0)",
             ]
         )
 
