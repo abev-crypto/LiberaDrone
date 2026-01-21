@@ -23,7 +23,7 @@ _LED_FRAME_CACHE: Dict[str, Any] = {
 }
 _LED_CURRENT_INDEX: Optional[int] = None
 _FORMATION_BBOX_CACHE: Dict[str, Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = {}
-_COLLECTION_IDS_CACHE: Dict[Tuple[str, bool], set[int]] = {}
+_COLLECTION_IDS_CACHE: Dict[Tuple[str, bool], list[int]] = {}
 
 
 def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, float]]) -> None:
@@ -666,10 +666,10 @@ def _mesh_formation_ids(mesh: Optional[bpy.types.Mesh]) -> List[int]:
 def _collection_formation_ids(
     collection_name: str,
     use_children: bool = True,
-) -> set[int]:
+) -> list[int]:
     collection_name = _collection_name(collection_name)
     if not collection_name:
-        return set()
+        return []
     key = (collection_name, bool(use_children))
     cached_static = _COLLECTION_IDS_CACHE.get(key)
     if cached_static is not None:
@@ -680,7 +680,20 @@ def _collection_formation_ids(
             _COLLECTION_IDS_CACHE[key] = cached
             return cached
 
-    ids: set[int] = set()
+    mask: list[int] = []
+
+    def _mark_ids(values: list[int]) -> None:
+        for val in values:
+            try:
+                idx = int(val)
+            except (TypeError, ValueError):
+                continue
+            if idx < 0:
+                continue
+            if idx >= len(mask):
+                mask.extend([0] * (idx + 1 - len(mask)))
+            mask[idx] = 1
+
     names = None
     if _LED_FRAME_CACHE.get("frame") is not None:
         names = _LED_FRAME_CACHE["collection"].get(key)
@@ -689,27 +702,27 @@ def _collection_formation_ids(
             obj = bpy.data.objects.get(name)
             if obj is None or obj.type != 'MESH':
                 continue
-            ids.update(_mesh_formation_ids(obj.data))
+            _mark_ids(_mesh_formation_ids(obj.data))
     else:
         col = _get_collection(collection_name)
         if col is None:
             if _LED_FRAME_CACHE.get("frame") is not None:
-                _LED_FRAME_CACHE["collection_ids"][key] = ids
-            return ids
+                _LED_FRAME_CACHE["collection_ids"][key] = mask
+            return mask
         stack = [col]
         while stack:
             current = stack.pop()
             for obj in current.objects:
                 if obj.type != 'MESH':
                     continue
-                ids.update(_mesh_formation_ids(obj.data))
+                _mark_ids(_mesh_formation_ids(obj.data))
             if use_children:
                 stack.extend(list(current.children))
 
     if _LED_FRAME_CACHE.get("frame") is not None:
-        _LED_FRAME_CACHE["collection_ids"][key] = ids
-    _COLLECTION_IDS_CACHE[key] = ids
-    return ids
+        _LED_FRAME_CACHE["collection_ids"][key] = mask
+    _COLLECTION_IDS_CACHE[key] = mask
+    return mask
 
 
 class LDLEDMeshInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
