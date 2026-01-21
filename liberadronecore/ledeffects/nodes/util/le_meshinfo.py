@@ -14,6 +14,7 @@ from liberadronecore.ledeffects.nodes.util.le_math import _clamp
 _LED_FRAME_CACHE: Dict[str, Any] = {
     "frame": None,
     "object": {},
+    "object_transform": {},
     "mesh": {},
     "collection_ref": {},
     "collection": {},
@@ -28,6 +29,7 @@ _COLLECTION_IDS_CACHE: Dict[Tuple[str, bool], set[int]] = {}
 def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, float]]) -> None:
     _LED_FRAME_CACHE["frame"] = float(frame)
     _LED_FRAME_CACHE["object"] = {}
+    _LED_FRAME_CACHE["object_transform"] = {}
     _LED_FRAME_CACHE["mesh"] = {}
     _LED_FRAME_CACHE["collection_ref"] = {}
     _LED_FRAME_CACHE["collection"] = {}
@@ -38,6 +40,7 @@ def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, floa
 def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["frame"] = None
     _LED_FRAME_CACHE["object"] = {}
+    _LED_FRAME_CACHE["object_transform"] = {}
     _LED_FRAME_CACHE["mesh"] = {}
     _LED_FRAME_CACHE["collection_ref"] = {}
     _LED_FRAME_CACHE["collection"] = {}
@@ -96,6 +99,30 @@ def _get_collection(value) -> Optional[bpy.types.Collection]:
             return col
         return bpy.data.collections.get(value)
     return None
+
+
+@register_runtime_function
+def _object_world_transform(obj_name: str):
+    obj = _get_object(obj_name)
+    if obj is None:
+        return None
+    if _LED_FRAME_CACHE.get("frame") is not None:
+        cache = _LED_FRAME_CACHE["object_transform"]
+        cached = cache.get(obj.name)
+        if cached is not None:
+            return cached
+    mw = obj.matrix_world
+    pos = mw.translation
+    rot = mw.to_euler()
+    scale = mw.to_scale()
+    result = (
+        (float(pos.x), float(pos.y), float(pos.z)),
+        (float(rot.x), float(rot.y), float(rot.z)),
+        (float(scale.x), float(scale.y), float(scale.z)),
+    )
+    if _LED_FRAME_CACHE.get("frame") is not None:
+        _LED_FRAME_CACHE["object_transform"][obj.name] = result
+    return result
 
 
 def _object_world_bbox(obj: bpy.types.Object) -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:

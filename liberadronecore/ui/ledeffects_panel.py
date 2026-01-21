@@ -590,6 +590,17 @@ class LDLEDOutputItem(bpy.types.PropertyGroup):
     node_name: bpy.props.StringProperty(name="Output Node")
 
 
+class LDLEDSceneInputItem(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(
+        name="Name",
+        default="Input",
+    )
+    value: bpy.props.FloatProperty(
+        name="Value",
+        default=0.0,
+    )
+
+
 class LDLED_UL_OutputList(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         tree = _get_led_tree(context)
@@ -604,6 +615,54 @@ class LDLED_UL_OutputList(bpy.types.UIList):
             return
         row.label(text="", icon=_blend_mode_icon(getattr(node, "blend_mode", "MIX")))
         row.prop(node, "label", text="")
+
+
+class LDLED_UL_InputList(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        split = layout.split(factor=0.6, align=True)
+        split.prop(item, "name", text="")
+        split.prop(item, "value", text="")
+
+
+def _unique_input_name(scene, base: str = "Input") -> str:
+    existing = {item.name for item in getattr(scene, "ld_led_inputs", [])}
+    if base not in existing:
+        return base
+    idx = 1
+    while True:
+        name = f"{base}.{idx:03d}"
+        if name not in existing:
+            return name
+        idx += 1
+
+
+class LDLED_OT_input_add(bpy.types.Operator):
+    bl_idname = "ldled.input_add"
+    bl_label = "Add Input"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        scene = context.scene
+        item = scene.ld_led_inputs.add()
+        item.name = _unique_input_name(scene)
+        item.value = 0.0
+        scene.ld_led_input_index = len(scene.ld_led_inputs) - 1
+        return {'FINISHED'}
+
+
+class LDLED_OT_input_remove(bpy.types.Operator):
+    bl_idname = "ldled.input_remove"
+    bl_label = "Remove Input"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        scene = context.scene
+        idx = int(getattr(scene, "ld_led_input_index", -1))
+        if idx < 0 or idx >= len(scene.ld_led_inputs):
+            return {'CANCELLED'}
+        scene.ld_led_inputs.remove(idx)
+        scene.ld_led_input_index = min(idx, len(scene.ld_led_inputs) - 1)
+        return {'FINISHED'}
 
 
 def _sanitize_filename(name: str) -> str:
@@ -655,6 +714,22 @@ class LDLED_PT_panel(bpy.types.Panel):
             layout.label(text="No LED node tree", icon='ERROR')
             return
 
+        input_box = layout.box()
+        input_box.label(text="Inputs")
+        row = input_box.row()
+        row.template_list(
+            "LDLED_UL_InputList",
+            "",
+            scene,
+            "ld_led_inputs",
+            scene,
+            "ld_led_input_index",
+            rows=3,
+        )
+        col = row.column(align=True)
+        col.operator("ldled.input_add", text="", icon='ADD')
+        col.operator("ldled.input_remove", text="", icon='REMOVE')
+
         _sync_output_items(scene, tree, allow_index_update=False, allow_write=False)
         global _LED_OUTPUT_ACTIVITY
         try:
@@ -700,7 +775,11 @@ class LDLED_UI(RegisterBase):
     @classmethod
     def register(cls) -> None:
         bpy.utils.register_class(LDLEDOutputItem)
+        bpy.utils.register_class(LDLEDSceneInputItem)
         bpy.utils.register_class(LDLED_UL_OutputList)
+        bpy.utils.register_class(LDLED_UL_InputList)
+        bpy.utils.register_class(LDLED_OT_input_add)
+        bpy.utils.register_class(LDLED_OT_input_remove)
         bpy.utils.register_class(LDLED_PT_panel)
         if not hasattr(bpy.types.Scene, "ld_led_output_items"):
             bpy.types.Scene.ld_led_output_items = bpy.props.CollectionProperty(type=LDLEDOutputItem)
@@ -710,13 +789,25 @@ class LDLED_UI(RegisterBase):
                 default=0,
                 update=_update_output_index,
             )
+        if not hasattr(bpy.types.Scene, "ld_led_inputs"):
+            bpy.types.Scene.ld_led_inputs = bpy.props.CollectionProperty(type=LDLEDSceneInputItem)
+        if not hasattr(bpy.types.Scene, "ld_led_input_index"):
+            bpy.types.Scene.ld_led_input_index = bpy.props.IntProperty(name="Input Index", default=0)
 
     @classmethod
     def unregister(cls) -> None:
+        if hasattr(bpy.types.Scene, "ld_led_input_index"):
+            del bpy.types.Scene.ld_led_input_index
+        if hasattr(bpy.types.Scene, "ld_led_inputs"):
+            del bpy.types.Scene.ld_led_inputs
         if hasattr(bpy.types.Scene, "ld_led_output_index"):
             del bpy.types.Scene.ld_led_output_index
         if hasattr(bpy.types.Scene, "ld_led_output_items"):
             del bpy.types.Scene.ld_led_output_items
         bpy.utils.unregister_class(LDLED_PT_panel)
+        bpy.utils.unregister_class(LDLED_OT_input_remove)
+        bpy.utils.unregister_class(LDLED_OT_input_add)
+        bpy.utils.unregister_class(LDLED_UL_InputList)
         bpy.utils.unregister_class(LDLED_UL_OutputList)
+        bpy.utils.unregister_class(LDLEDSceneInputItem)
         bpy.utils.unregister_class(LDLEDOutputItem)

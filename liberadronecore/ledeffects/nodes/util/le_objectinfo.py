@@ -39,15 +39,15 @@ class LDLEDObjectInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
         out_sz = self.output_var("Scale Z")
 
         cache_key = f"{self.codegen_id()}_{int(self.as_pointer())}"
-        obj_var = f"_obj_{cache_key}"
         pos_var = f"_pos_{cache_key}"
         rot_var = f"_rot_{cache_key}"
         scale_var = f"_scale_{cache_key}"
+        transform_var = f"_xf_{cache_key}"
 
         return "\n".join(
             [
-                f"{obj_var} = _get_object({obj_name})",
-                f"if {obj_var} is None:",
+                f"{transform_var} = _object_world_transform({obj_name})",
+                f"if {transform_var} is None:",
                 f"    {out_px} = 0.0",
                 f"    {out_py} = 0.0",
                 f"    {out_pz} = 0.0",
@@ -58,17 +58,17 @@ class LDLEDObjectInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
                 f"    {out_sy} = 0.0",
                 f"    {out_sz} = 0.0",
                 "else:",
-                f"    {pos_var} = {obj_var}.matrix_world.translation",
-                f"    {rot_var} = {obj_var}.matrix_world.to_euler()",
-                f"    {scale_var} = {obj_var}.matrix_world.to_scale()",
-                f"    {out_px} = float({pos_var}.x)",
-                f"    {out_py} = float({pos_var}.y)",
-                f"    {out_pz} = float({pos_var}.z)",
-                f"    {out_rx} = float({rot_var}.x)",
-                f"    {out_ry} = float({rot_var}.y)",
-                f"    {out_rz} = float({rot_var}.z)",
-                f"    {out_sx} = float({scale_var}.x)",
-                f"    {out_sy} = float({scale_var}.y)",
-                f"    {out_sz} = float({scale_var}.z)",
+                f"    {pos_var} = {transform_var}[0]",
+                f"    {rot_var} = {transform_var}[1]",
+                f"    {scale_var} = {transform_var}[2]",
+                f"    {out_px} = float({pos_var}[0])",
+                f"    {out_py} = float({pos_var}[1])",
+                f"    {out_pz} = float({pos_var}[2])",
+                f"    {out_rx} = float({rot_var}[0])",
+                f"    {out_ry} = float({rot_var}[1])",
+                f"    {out_rz} = float({rot_var}[2])",
+                f"    {out_sx} = float({scale_var}[0])",
+                f"    {out_sy} = float({scale_var}[1])",
+                f"    {out_sz} = float({scale_var}[2])",
             ]
         )
