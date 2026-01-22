@@ -502,6 +502,10 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
             self.report({"ERROR"}, "Invalid color data")
             return {"CANCELLED"}
 
+        positions_arr = np.concatenate([positions_arr, positions_arr[-1:]], axis=0)
+        colors_arr = np.concatenate([colors_arr, colors_arr[-1:]], axis=0)
+        frame_count, drone_count, _ = positions_arr.shape
+
         pos_min = positions_arr.min(axis=(0, 1))
         pos_max = positions_arr.max(axis=(0, 1))
         rx = float(pos_max[0] - pos_min[0]) or 1.0
@@ -661,6 +665,10 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
             if colors_arr.shape[0] != frame_count or colors_arr.shape[1] != drone_count:
                 errors.append(f"{node.name}: Invalid color data")
                 continue
+
+            positions_arr = np.concatenate([positions_arr, positions_arr[-1:]], axis=0)
+            colors_arr = np.concatenate([colors_arr, colors_arr[-1:]], axis=0)
+            frame_count, drone_count, _ = positions_arr.shape
 
             pos_min = positions_arr.min(axis=(0, 1))
             pos_max = positions_arr.max(axis=(0, 1))
