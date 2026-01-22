@@ -269,6 +269,7 @@ class LD_PT_libera_panel_compatibility(LD_PT_libera_panel_base):
         layout.prop(scene, "ld_import_vat_dir", text="VAT/CAT Folder")
         layout.operator("liberadrone.compat_import_vatcat", text="Import VAT/CAT")
         layout.operator("liberadrone.export_vatcat_renderrange", text="Export VAT/CAT (Render Range)")
+        layout.operator("liberadrone.export_vatcat_transitions", text="Export VAT/CAT (Transitions)")
 
 
 classes = (

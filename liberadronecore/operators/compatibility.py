@@ -5,6 +5,7 @@ import re
 import bpy
 import numpy as np
 
+from liberadronecore.formation import fn_parse
 from liberadronecore.reg.base_reg import RegisterBase
 from liberadronecore.system.transition import transition_apply
 from liberadronecore.ui.import_sheet import sheetutils
@@ -454,7 +455,7 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
             scene.frame_set(frame)
             if view_layer is not None:
                 view_layer.update()
-            positions, pair_ids = transition_apply._collect_positions_for_collection(
+            positions, pair_ids, _ = transition_apply._collect_positions_for_collection(
                 col, frame, depsgraph
             )
             if not positions:
@@ -553,13 +554,188 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class LD_OT_export_vatcat_transitions(bpy.types.Operator):
+    bl_idname = "liberadrone.export_vatcat_transitions"
+    bl_label = "Export VAT/CAT (Transitions)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        scene = context.scene
+        export_dir = bpy.path.abspath(getattr(scene, "ld_import_vat_dir", "") or "")
+        if not export_dir:
+            self.report({"ERROR"}, "Set VAT/CAT folder")
+            return {"CANCELLED"}
+        try:
+            os.makedirs(export_dir, exist_ok=True)
+        except Exception as exc:
+            self.report({"ERROR"}, f"Export folder error: {exc}")
+            return {"CANCELLED"}
+
+        schedule = fn_parse.compute_schedule(context, assign_pairs=False)
+        tree_map = {
+            tree.name: tree
+            for tree in bpy.data.node_groups
+            if getattr(tree, "bl_idname", "") == "FN_FormationTree"
+        }
+        transition_types = {
+            "FN_TransitionNode",
+            "FN_SplitTransitionNode",
+            "FN_MergeTransitionNode",
+        }
+        transition_entries: list[tuple[fn_parse.ScheduleEntry, bpy.types.Node]] = []
+        for entry in schedule:
+            tree = tree_map.get(entry.tree_name)
+            if tree is None:
+                continue
+            node = tree.nodes.get(entry.node_name)
+            if node is None or getattr(node, "bl_idname", "") not in transition_types:
+                continue
+            if entry.collection is None:
+                continue
+            transition_entries.append((entry, node))
+
+        if not transition_entries:
+            self.report({"WARNING"}, "No transition entries found")
+            return {"CANCELLED"}
+
+        original_frame = scene.frame_current
+        view_layer = context.view_layer
+        depsgraph = context.evaluated_depsgraph_get()
+
+        transitions_dir = os.path.join(export_dir, "Transitions")
+        os.makedirs(transitions_dir, exist_ok=True)
+
+        exported = 0
+        errors: list[str] = []
+        for entry, node in transition_entries:
+            start = int(entry.start)
+            end = int(entry.end)
+            duration = max(0, end - start)
+            if duration <= 0:
+                continue
+            positions_frames: list[list[tuple[float, float, float]]] = []
+            colors_frames: list[list[tuple[float, float, float, float]]] = []
+            failed = False
+            for frame in range(start, end):
+                scene.frame_set(frame)
+                if view_layer is not None:
+                    view_layer.update()
+                positions, pair_ids, _ = transition_apply._collect_positions_for_collection(
+                    entry.collection,
+                    frame,
+                    depsgraph,
+                )
+                if not positions:
+                    errors.append(f"{node.name}: No positions at frame {frame}")
+                    failed = True
+                    break
+                mapped_positions = _order_by_pair_id(positions, pair_ids)
+                ordered_pos = [(float(p.x), float(p.y), float(p.z)) for p in mapped_positions]
+
+                color_data = _read_color_verts()
+                if color_data is None:
+                    errors.append(f"{node.name}: ColorVerts not available")
+                    failed = True
+                    break
+                colors, color_pair_ids = color_data
+                if len(colors) != len(ordered_pos):
+                    errors.append(f"{node.name}: ColorVerts count mismatch")
+                    failed = True
+                    break
+                mapped_colors = _order_by_pair_id(colors, color_pair_ids)
+                colors_frames.append(
+                    [(float(c[0]), float(c[1]), float(c[2]), float(c[3])) for c in mapped_colors]
+                )
+                positions_frames.append(ordered_pos)
+
+            if failed:
+                continue
+
+            positions_arr = np.asarray(positions_frames, dtype=np.float32)
+            colors_arr = np.asarray(colors_frames, dtype=np.float32)
+            if positions_arr.ndim != 3 or positions_arr.shape[2] != 3:
+                errors.append(f"{node.name}: Invalid position data")
+                continue
+
+            frame_count, drone_count, _ = positions_arr.shape
+            if colors_arr.shape[0] != frame_count or colors_arr.shape[1] != drone_count:
+                errors.append(f"{node.name}: Invalid color data")
+                continue
+
+            pos_min = positions_arr.min(axis=(0, 1))
+            pos_max = positions_arr.max(axis=(0, 1))
+            rx = float(pos_max[0] - pos_min[0]) or 1.0
+            ry = float(pos_max[1] - pos_min[1]) or 1.0
+            rz = float(pos_max[2] - pos_min[2]) or 1.0
+
+            pos_pixels = np.empty((drone_count, frame_count, 4), dtype=np.float32)
+            pos_pixels[:, :, 3] = 1.0
+            pos_pixels[:, :, 0] = (positions_arr[:, :, 0].T - pos_min[0]) / rx
+            pos_pixels[:, :, 1] = (positions_arr[:, :, 1].T - pos_min[1]) / ry
+            pos_pixels[:, :, 2] = (positions_arr[:, :, 2].T - pos_min[2]) / rz
+
+            col_pixels = np.empty((drone_count, frame_count, 4), dtype=np.float32)
+            col_pixels[:, :, :] = colors_arr.transpose((1, 0, 2))
+
+            base_label = getattr(node, "label", "") or node.name
+            safe_name = _sanitize_name(base_label)
+            target_dir = os.path.join(transitions_dir, safe_name)
+            os.makedirs(target_dir, exist_ok=True)
+
+            bounds_suffix = _format_bounds_suffix(pos_min, pos_max)
+            vat_base = f"{safe_name}_VAT_{bounds_suffix}"
+            cat_base = f"{safe_name}_CAT"
+            pos_path = os.path.join(target_dir, f"{vat_base}.exr")
+            cat_path = os.path.join(target_dir, f"{cat_base}.png")
+
+            if not image_util.write_exr_rgba(pos_path, pos_pixels):
+                pos_img = bpy.data.images.new(
+                    name=vat_base,
+                    width=frame_count,
+                    height=drone_count,
+                    alpha=True,
+                    float_buffer=True,
+                )
+                pos_img.pixels[:] = pos_pixels.ravel()
+                image_util.save_image(pos_img, pos_path, "OPEN_EXR", use_float=True, colorspace="Non-Color")
+
+            if not image_util.write_png_rgba(cat_path, col_pixels):
+                col_img = bpy.data.images.new(
+                    name=cat_base,
+                    width=frame_count,
+                    height=drone_count,
+                    alpha=True,
+                    float_buffer=False,
+                )
+                col_img.pixels[:] = col_pixels.ravel()
+                image_util.save_image(col_img, cat_path, "PNG")
+
+            exported += 1
+
+        scene.frame_set(original_frame)
+        if view_layer is not None:
+            view_layer.update()
+
+        if exported == 0:
+            message = errors[0] if errors else "No transitions exported"
+            self.report({"ERROR"}, message)
+            return {"CANCELLED"}
+        if errors:
+            self.report({"WARNING"}, f"Exported {exported} transition(s); first error: {errors[0]}")
+        else:
+            self.report({"INFO"}, f"Exported {exported} transition(s)")
+        return {"FINISHED"}
+
+
 class CompatibilityOps(RegisterBase):
     @classmethod
     def register(cls) -> None:
         bpy.utils.register_class(LD_OT_compat_import_vatcat)
         bpy.utils.register_class(LD_OT_export_vatcat_renderrange)
+        bpy.utils.register_class(LD_OT_export_vatcat_transitions)
 
     @classmethod
     def unregister(cls) -> None:
+        bpy.utils.unregister_class(LD_OT_export_vatcat_transitions)
         bpy.utils.unregister_class(LD_OT_export_vatcat_renderrange)
         bpy.utils.unregister_class(LD_OT_compat_import_vatcat)

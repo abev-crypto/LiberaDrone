@@ -175,7 +175,7 @@ def _collect_formation_positions(scene) -> tuple[list[tuple[float, float, float]
     if col is None:
         return [], None
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    positions, pair_ids = transition_apply._collect_positions_for_collection(
+    positions, pair_ids, _ = transition_apply._collect_positions_for_collection(
         col,
         int(getattr(scene, "frame_current", 0)),
         depsgraph,

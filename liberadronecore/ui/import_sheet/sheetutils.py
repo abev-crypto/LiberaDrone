@@ -537,7 +537,7 @@ def _export_cut_to_vat_cat(context, cut: dict[str, object], export_dir: str) -> 
                 view_layer.update()
             return False, f"Missing collection at frame {frame}."
 
-        positions, pair_ids = transition_apply._collect_positions_for_collection(
+        positions, pair_ids, _ = transition_apply._collect_positions_for_collection(
             entry.collection, frame, depsgraph
         )
         if not positions:

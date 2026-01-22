@@ -223,7 +223,7 @@ class FN_VATCacheNode(bpy.types.Node, FN_Node):
             scene.frame_set(frame)
             if view_layer is not None:
                 view_layer.update()
-            positions, pair_ids = transition_apply._collect_positions_for_collection(
+            positions, pair_ids, _ = transition_apply._collect_positions_for_collection(
                 source,
                 frame,
                 depsgraph,
