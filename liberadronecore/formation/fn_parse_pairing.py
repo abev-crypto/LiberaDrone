@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import bpy
 from mathutils.kdtree import KDTree
@@ -228,44 +228,91 @@ def _collect_meshes_from_cols(cols: Sequence[bpy.types.Collection]) -> List[bpy.
     return meshes
 
 
-def _pair_from_previous(prev_meshes: List[bpy.types.Object], next_meshes: List[bpy.types.Object]) -> bool:
-    """Assign pair_id on next_meshes as mapping from previous formation_id to next formation_id."""
-    if not prev_meshes or not next_meshes:
+def _pair_from_previous(
+    prev_entries: Sequence[Tuple[bpy.types.Collection, int]],
+    next_entries: Sequence[Tuple[bpy.types.Collection, int]],
+    scene: bpy.types.Scene,
+    depsgraph: bpy.types.Depsgraph,
+) -> bool:
+    """Assign pair_id on next collections using prev formation_id and evaluated positions."""
+    if not prev_entries or not next_entries or scene is None or depsgraph is None:
         return False
     from liberadronecore.system.drone import calculate_mapping
     import numpy as np
 
-    def _flatten(meshes, attr_name: Optional[str]) -> tuple[np.ndarray, List[int], List[tuple[bpy.types.Mesh, int]]]:
-        coords = []
-        ids: List[int] = []
-        spans: List[tuple[bpy.types.Mesh, int]] = []
-        for obj in meshes:
-            mesh = obj.data
-            mat = obj.matrix_world
-            spans.append((mesh, len(mesh.vertices)))
-            coords.extend([(mat @ v.co)[:] for v in mesh.vertices])
-            if attr_name:
-                attr = mesh.attributes.get(attr_name)
-                if attr and attr.data_type == 'INT' and attr.domain == 'POINT' and len(attr.data) == len(mesh.vertices):
-                    values = [0] * len(mesh.vertices)
-                    attr.data.foreach_get("value", values)
-                    ids.extend(values)
-                    continue
-            ids.extend(list(range(len(mesh.vertices))))
-        return np.asarray(coords, dtype=np.float64), ids, spans
+    def _read_int_attr(mesh, fallback_mesh, name: str, length: int) -> List[int]:
+        attr = getattr(mesh, "attributes", None)
+        attr = attr.get(name) if attr else None
+        if (
+            attr is None
+            or attr.data_type != 'INT'
+            or attr.domain != 'POINT'
+            or len(attr.data) != length
+        ):
+            attr = fallback_mesh.attributes.get(name) if fallback_mesh else None
+        if (
+            attr is None
+            or attr.data_type != 'INT'
+            or attr.domain != 'POINT'
+            or len(attr.data) != length
+        ):
+            return list(range(length))
+        values = [0] * length
+        attr.data.foreach_get("value", values)
+        return values
 
-    pts_prev, _prev_ids, _prev_spans = _flatten(prev_meshes, FORMATION_ATTR_NAME)
-    pts_next, next_ids, next_spans = _flatten(next_meshes, FORMATION_ATTR_NAME)
-    if len(pts_prev) != len(pts_next) or len(pts_prev) == 0:
+    def _collect_entries(
+        entries: Sequence[Tuple[bpy.types.Collection, int]],
+        *,
+        collect_form_ids: bool,
+    ) -> Tuple[List[Tuple[float, float, float]], Optional[List[int]], List[Tuple[bpy.types.Mesh, int]]]:
+        positions: List[Tuple[float, float, float]] = []
+        form_ids: List[int] | None = [] if collect_form_ids else None
+        spans: List[Tuple[bpy.types.Mesh, int]] = []
+        for col, frame in entries:
+            if col is None:
+                continue
+            scene.frame_set(int(frame))
+            for obj in _collect_mesh_objects(col):
+                eval_obj = obj.evaluated_get(depsgraph)
+                eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+                positions.extend([(eval_obj.matrix_world @ v.co)[:] for v in eval_mesh.vertices])
+                if collect_form_ids and form_ids is not None:
+                    form_ids.extend(
+                        _read_int_attr(eval_mesh, obj.data, FORMATION_ATTR_NAME, len(eval_mesh.vertices))
+                    )
+                spans.append((obj.data, len(eval_mesh.vertices)))
+                eval_obj.to_mesh_clear()
+        return positions, form_ids, spans
+
+    original_frame = scene.frame_current
+    try:
+        prev_positions, prev_form_ids, _prev_spans = _collect_entries(
+            prev_entries,
+            collect_form_ids=True,
+        )
+        next_positions, _next_form_ids, next_spans = _collect_entries(
+            next_entries,
+            collect_form_ids=False,
+        )
+    finally:
+        scene.frame_set(original_frame)
+
+    if len(prev_positions) != len(next_positions) or len(prev_positions) == 0:
+        return False
+    if prev_form_ids is None or len(prev_form_ids) != len(prev_positions):
         return False
 
-    pairA, _ = calculate_mapping.hungarian_from_points(pts_prev, pts_next)
+    pts_prev = np.asarray(prev_positions, dtype=np.float64)
+    pts_next = np.asarray(next_positions, dtype=np.float64)
+    _pairA, pairB = calculate_mapping.hungarian_from_points(pts_prev, pts_next)
 
-    # Build flat array of mapped ids for next (prev formation_id -> next formation_id)
-    mapped_ids = [next_ids[p] for p in pairA]
+    mapped_ids = [prev_form_ids[p] for p in pairB]
 
     offset = 0
     for mesh, span in next_spans:
+        if offset + span > len(mapped_ids):
+            return False
         attr = _ensure_int_point_attr(mesh, PAIR_ATTR_NAME)
         values = mapped_ids[offset:offset + span]
         attr.data.foreach_set("value", values)

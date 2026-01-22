@@ -870,10 +870,10 @@ def _build_cat_led_graph(
     start_frame: int,
     duration: int,
 ):
-
     tree = led_panel._ensure_led_tree(context)
     if tree is None:
         return None
+    before_nodes = set(tree.nodes)
     payload = led_panel._load_template_file(_cat_template_path())
     if not payload:
         return None
@@ -894,25 +894,27 @@ def _build_cat_led_graph(
         frame_nodes = [n for n in tree.nodes if getattr(n, "parent", None) == frame]
     else:
         frame_nodes = [root]
+    new_nodes = [n for n in tree.nodes if n not in before_nodes]
     for node in frame_nodes:
         if getattr(node, "bl_idname", "") == "LDLEDFrameEntryNode":
             start_sock = node.inputs.get("Start") if hasattr(node, "inputs") else None
             duration_sock = node.inputs.get("Duration") if hasattr(node, "inputs") else None
             if start_sock is not None and hasattr(start_sock, "default_value"):
-                try:
-                    start_sock.default_value = float(start_frame)
-                except Exception:
-                    pass
+                start_sock.default_value = start_frame
             if duration_sock is not None and hasattr(duration_sock, "default_value"):
-                try:
-                    duration_sock.default_value = float(duration)
-                except Exception:
-                    pass
+                duration_sock.default_value = duration
         elif getattr(node, "bl_idname", "") == "LDLEDCatSamplerNode":
-            try:
-                node.image = cat_image
-            except Exception:
-                pass
+            node.image = cat_image
+    if new_nodes:
+        for node in new_nodes:
+            if getattr(node, "bl_idname", "") != "LDLEDFrameEntryNode":
+                continue
+            start_sock = node.inputs.get("Start") if hasattr(node, "inputs") else None
+            duration_sock = node.inputs.get("Duration") if hasattr(node, "inputs") else None
+            if start_sock is not None and hasattr(start_sock, "default_value"):
+                start_sock.default_value = start_frame
+            if duration_sock is not None and hasattr(duration_sock, "default_value"):
+                duration_sock.default_value = duration
     led_panel._sync_output_items(context.scene, tree)
     return root
 

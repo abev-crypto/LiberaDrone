@@ -8,7 +8,6 @@ from mathutils import Vector
 
 from liberadronecore.formation import fn_parse, fn_parse_pairing
 from liberadronecore.formation.fn_parse_pairing import _collect_mesh_objects
-from liberadronecore.system.drone import calculate_mapping
 from liberadronecore.system.transition import bakedt, copyloc, vat_gn
 from liberadronecore.system.vat import create_vat
 
@@ -150,10 +149,14 @@ def _collect_positions_for_collection(
     col: bpy.types.Collection,
     frame: int,
     depsgraph: bpy.types.Depsgraph,
-) -> Tuple[List[Vector], Optional[List[int]]]:
+    *,
+    collect_form_ids: bool = False,
+) -> Tuple[List[Vector], Optional[List[int]], Optional[List[int]]]:
     positions: List[Vector] = []
     pair_ids: List[int] | None = []
+    form_ids: List[int] | None = [] if collect_form_ids else None
     pairs_ok = True
+    forms_ok = True
     meshes = _collect_mesh_objects(col)
     for obj in meshes:
         eval_obj = obj.evaluated_get(depsgraph)
@@ -180,10 +183,32 @@ def _collect_positions_for_collection(
                 values = [0] * len(eval_mesh.vertices)
                 attr.data.foreach_get("value", values)
                 pair_ids.extend(values)
+        if collect_form_ids and forms_ok and form_ids is not None:
+            attr = eval_mesh.attributes.get(fn_parse_pairing.FORMATION_ATTR_NAME)
+            if (
+                attr is None
+                or attr.data_type != 'INT'
+                or attr.domain != 'POINT'
+                or len(attr.data) != len(eval_mesh.vertices)
+            ):
+                attr = obj.data.attributes.get(fn_parse_pairing.FORMATION_ATTR_NAME)
+            if (
+                attr is None
+                or attr.data_type != 'INT'
+                or attr.domain != 'POINT'
+                or len(attr.data) != len(eval_mesh.vertices)
+            ):
+                forms_ok = False
+            else:
+                values = [0] * len(eval_mesh.vertices)
+                attr.data.foreach_get("value", values)
+                form_ids.extend(values)
         eval_obj.to_mesh_clear()
     if not pairs_ok:
         pair_ids = None
-    return positions, pair_ids
+    if collect_form_ids and not forms_ok:
+        form_ids = None
+    return positions, pair_ids, form_ids
 
 
 def _collect_positions_for_nodes(
@@ -192,26 +217,40 @@ def _collect_positions_for_nodes(
     frame_selector,
     scene: bpy.types.Scene,
     depsgraph: bpy.types.Depsgraph,
-) -> Tuple[List[Vector], Optional[List[int]]]:
+) -> Tuple[List[Vector], Optional[List[int]], Optional[List[int]]]:
     positions: List[Vector] = []
     pair_ids: List[int] | None = []
     pairs_ok = True
+    form_ids: List[int] | None = []
+    forms_ok = True
     for node in nodes:
         entry = entry_map.get(node.name)
         if not entry or not entry.collection:
             continue
         frame = frame_selector(entry)
         scene.frame_set(frame)
-        pos, pairs = _collect_positions_for_collection(entry.collection, frame, depsgraph)
+        pos, pairs, forms = _collect_positions_for_collection(
+            entry.collection,
+            frame,
+            depsgraph,
+            collect_form_ids=True,
+        )
         positions.extend(pos)
         if pairs_ok:
             if pairs is None:
                 pairs_ok = False
             elif pair_ids is not None:
                 pair_ids.extend(pairs)
+        if forms_ok:
+            if forms is None:
+                forms_ok = False
+            elif form_ids is not None:
+                form_ids.extend(forms)
     if not pairs_ok:
         pair_ids = None
-    return positions, pair_ids
+    if not forms_ok:
+        form_ids = None
+    return positions, pair_ids, form_ids
 
 
 def _valid_pair_ids(pair_ids: Optional[Sequence[int]], count: int) -> bool:
@@ -225,8 +264,18 @@ def _valid_pair_ids(pair_ids: Optional[Sequence[int]], count: int) -> bool:
     return True
 
 
-def _apply_pair_id_order(positions: Sequence[Vector], pair_ids: Sequence[int]) -> List[Vector]:
-    return [positions[idx] for idx in pair_ids]
+def _apply_pair_id_order(values: Sequence, pair_ids: Sequence[int]) -> List:
+    count = len(values)
+    if count != len(pair_ids):
+        return list(values)
+    ordered: list = [None] * count
+    for idx, pid in enumerate(pair_ids):
+        if pid < 0 or pid >= count or ordered[pid] is not None:
+            return list(values)
+        ordered[pid] = values[idx]
+    if any(item is None for item in ordered):
+        return list(values)
+    return ordered
 
 
 def _node_tree_from_context(context, node_name: str) -> Tuple[Optional[bpy.types.NodeTree], Optional[bpy.types.Node]]:
@@ -273,14 +322,14 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
             return max(entry.start, entry.end - 1)
         return entry.start
 
-    prev_positions, prev_pair_ids = _collect_positions_for_nodes(
+    prev_positions, _prev_pair_ids, prev_form_ids = _collect_positions_for_nodes(
         prev_nodes,
         entry_map,
         _prev_frame,
         scene,
         depsgraph,
     )
-    next_positions, next_pair_ids = _collect_positions_for_nodes(
+    next_positions, next_pair_ids, _next_form_ids = _collect_positions_for_nodes(
         next_nodes,
         entry_map,
         lambda entry: entry.start,
@@ -298,20 +347,14 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
     prev_list = list(prev_positions)
     next_list = list(next_positions)
 
-    use_prev_pairs = _valid_pair_ids(prev_pair_ids, len(prev_list))
-    use_next_pairs = _valid_pair_ids(next_pair_ids, len(next_list))
-    if use_prev_pairs:
-        prev_list = _apply_pair_id_order(prev_list, prev_pair_ids or [])
-    if use_next_pairs:
-        next_list = _apply_pair_id_order(next_list, next_pair_ids or [])
+    if prev_form_ids is None or not _valid_pair_ids(prev_form_ids, len(prev_list)):
+        raise RuntimeError("formation_id not set on previous formation")
+    if next_pair_ids is None or not _valid_pair_ids(next_pair_ids, len(next_list)):
+        raise RuntimeError("pair_id not set on next formation")
 
-    if not (use_prev_pairs and use_next_pairs):
-        import numpy as np
-
-        pts_prev = np.asarray([[p.x, p.y, p.z] for p in prev_list], dtype=np.float64)
-        pts_next = np.asarray([[p.x, p.y, p.z] for p in next_list], dtype=np.float64)
-        pairA, _ = calculate_mapping.hungarian_from_points(pts_prev, pts_next)
-        next_list = [next_list[idx] for idx in pairA]
+    prev_list = _apply_pair_id_order(prev_list, prev_form_ids)
+    next_list = _apply_pair_id_order(next_list, next_pair_ids)
+    prev_form_ids = list(range(len(prev_list)))
 
     start_frame = int(getattr(node, "computed_start_frame", 0) or 0)
     duration_value = fn_parse._resolve_input_value(node, "Duration", 0.0, "duration")
@@ -331,7 +374,7 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
         fps=fps,
         prev_positions=prev_list,
         next_positions=next_list,
-        pair_ids=list(range(len(prev_list))),
+        pair_ids=prev_form_ids,
     )
 
 

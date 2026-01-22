@@ -258,12 +258,26 @@ class LD_PT_libera_panel_io(LD_PT_libera_panel_base):
         layout.operator("liberadrone.pack_scene_images", text="Pack Cache Images")
 
 
+class LD_PT_libera_panel_compatibility(LD_PT_libera_panel_base):
+    bl_label = "Compatibility"
+    bl_idname = "LD_PT_libera_panel_compatibility"
+    bl_order = 5
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        layout.prop(scene, "ld_import_vat_dir", text="VAT/CAT Folder")
+        layout.operator("liberadrone.compat_import_vatcat", text="Import VAT/CAT")
+        layout.operator("liberadrone.export_vatcat_renderrange", text="Export VAT/CAT (Render Range)")
+
+
 classes = (
     LD_PT_libera_panel_preview,
     LD_PT_libera_panel_errorcheck,
     LD_PT_libera_panel_overlay,
     LD_PT_libera_panel_view_setup,
     LD_PT_libera_panel_io,
+    LD_PT_libera_panel_compatibility,
 )
 
 

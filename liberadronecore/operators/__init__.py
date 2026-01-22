@@ -1,6 +1,7 @@
 """Operator registrations and definitions."""
 
 from . import addon
+from . import compatibility
 from . import graph
 from . import ledeffects
 from . import liberadrone

@@ -10,7 +10,6 @@ from liberadronecore.formation.fn_parse_pairing import (
     _as_collection,
     _assign_formation_ids,
     _collect_mesh_objects,
-    _collect_meshes_from_cols,
     _count_collection_vertices,
     _pair_from_previous,
     _seed_pair_ids,
@@ -534,6 +533,22 @@ def compute_schedule(context: Optional[bpy.types.Context] = None, *, assign_pair
             for col in ordered_unique:
                 _assign_formation_ids(col, drone_count, force=True)
 
+            entry_map = {entry.node_name: entry for entry in schedule if entry.tree_name == tree.name}
+            scene = _get_scene(context)
+            if scene is None:
+                scene = bpy.context.scene if getattr(bpy.context, "scene", None) else None
+            depsgraph = None
+            if context is not None and hasattr(context, "evaluated_depsgraph_get"):
+                try:
+                    depsgraph = context.evaluated_depsgraph_get()
+                except Exception:
+                    depsgraph = None
+            if depsgraph is None:
+                try:
+                    depsgraph = bpy.context.evaluated_depsgraph_get()
+                except Exception:
+                    depsgraph = None
+
             pair_steps: List[tuple[int, List[bpy.types.Node], List[bpy.types.Node]]] = []
             seen_steps: set[tuple[frozenset[int], frozenset[int]]] = set()
 
@@ -578,28 +593,35 @@ def compute_schedule(context: Optional[bpy.types.Context] = None, *, assign_pair
                     _seed_pair_ids(meshes)
 
             for _, prev_nodes, next_nodes in pair_steps:
-                prev_cols: List[bpy.types.Collection] = []
+                if scene is None or depsgraph is None:
+                    continue
+                prev_entries: List[tuple[bpy.types.Collection, int]] = []
                 prev_seen: set[bpy.types.Collection] = set()
                 for node in prev_nodes:
-                    col = _resolve_input_value(node, "Collection", None, "collection")
-                    col = _as_collection(col)
-                    if col is not None and col not in prev_seen:
-                        prev_cols.append(col)
-                        prev_seen.add(col)
-                next_cols: List[bpy.types.Collection] = []
+                    entry = entry_map.get(node.name)
+                    if entry is None or entry.collection is None:
+                        continue
+                    if entry.collection in prev_seen:
+                        continue
+                    prev_seen.add(entry.collection)
+                    if entry.end > entry.start:
+                        frame = max(entry.start, entry.end - 1)
+                    else:
+                        frame = entry.start
+                    prev_entries.append((entry.collection, int(frame)))
+                next_entries: List[tuple[bpy.types.Collection, int]] = []
                 next_seen: set[bpy.types.Collection] = set()
                 for node in next_nodes:
-                    col = _resolve_input_value(node, "Collection", None, "collection")
-                    col = _as_collection(col)
-                    if col is not None and col not in next_seen:
-                        next_cols.append(col)
-                        next_seen.add(col)
-                if not prev_cols or not next_cols:
+                    entry = entry_map.get(node.name)
+                    if entry is None or entry.collection is None:
+                        continue
+                    if entry.collection in next_seen:
+                        continue
+                    next_seen.add(entry.collection)
+                    next_entries.append((entry.collection, int(entry.start)))
+                if not prev_entries or not next_entries:
                     continue
-                prev_meshes = _collect_meshes_from_cols(prev_cols)
-                next_meshes = _collect_meshes_from_cols(next_cols)
-                if prev_meshes and next_meshes:
-                    _pair_from_previous(prev_meshes, next_meshes)
+                _pair_from_previous(prev_entries, next_entries, scene, depsgraph)
 
     scene = _get_scene(context)
     _store_schedule_in_scene(scene, schedule)
