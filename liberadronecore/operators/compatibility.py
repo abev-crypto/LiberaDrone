@@ -344,7 +344,7 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
                 except Exception:
                     pass
                 start_frame_vat = int(start_frame) - 1
-                frame_count_vat = max(1, int(frame_count) - 1)
+                frame_count_vat = max(1, int(frame_count))
                 sheetutils._apply_vat_to_object(
                     obj,
                     pos_img,
