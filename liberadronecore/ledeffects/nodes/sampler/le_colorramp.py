@@ -1,8 +1,45 @@
 import bpy
 import colorsys
+from typing import Dict, Sequence, Tuple
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects.runtime_registry import register_runtime_function
 from liberadronecore.ledeffects.nodes.util.le_math import _clamp01, _ease, _lerp
+
+
+_COLOR_RAMP_LUTS: Dict[str, Tuple[Tuple[float, float, float, float], ...]] = {}
+
+
+def _register_color_ramp_lut(key: str, lut: Sequence[Tuple[float, float, float, float]]) -> None:
+    _COLOR_RAMP_LUTS[str(key)] = tuple(tuple(float(c) for c in color) for color in lut)
+
+
+@register_runtime_function
+def _color_ramp_lut(key: str):
+    return _COLOR_RAMP_LUTS.get(str(key), ())
+
+
+@register_runtime_function
+def _color_ramp_eval_lut(lut, factor: float):
+    if not lut:
+        return 0.0, 0.0, 0.0, 1.0
+    t = _clamp01(float(factor))
+    steps = len(lut)
+    if steps <= 1:
+        return tuple(lut[0])
+    pos = t * (steps - 1)
+    idx0 = int(pos)
+    if idx0 >= steps - 1:
+        return tuple(lut[-1])
+    idx1 = idx0 + 1
+    local_t = pos - idx0
+    c0 = lut[idx0]
+    c1 = lut[idx1]
+    return (
+        _lerp(c0[0], c1[0], local_t),
+        _lerp(c0[1], c1[1], local_t),
+        _lerp(c0[2], c1[2], local_t),
+        _lerp(c0[3], c1[3], local_t),
+    )
 
 
 @register_runtime_function
@@ -46,6 +83,31 @@ def _color_ramp_eval(elements, interpolation: str, color_mode: str, factor: floa
         return 0.0, 0.0, 0.0, 1.0
     t = _clamp01(float(factor))
     elements = sorted(elements, key=lambda e: e[0])
+    if t <= elements[0][0]:
+        return tuple(elements[0][1])
+    if t >= elements[-1][0]:
+        return tuple(elements[-1][1])
+    interp = (interpolation or "LINEAR").upper()
+    for idx in range(len(elements) - 1):
+        p0, c0 = elements[idx]
+        p1, c1 = elements[idx + 1]
+        if p0 <= t <= p1:
+            if p1 <= p0:
+                return tuple(c1)
+            local_t = (t - p0) / (p1 - p0)
+            if interp == "CONSTANT":
+                return tuple(c0)
+            if interp in {"EASE", "CARDINAL", "B_SPLINE"}:
+                local_t = _ease(local_t)
+            return _lerp_color(tuple(c0), tuple(c1), local_t, color_mode)
+    return tuple(elements[-1][1])
+
+
+@register_runtime_function
+def _color_ramp_eval_sorted(elements, interpolation: str, color_mode: str, factor: float):
+    if not elements:
+        return 0.0, 0.0, 0.0, 1.0
+    t = _clamp01(float(factor))
     if t <= elements[0][0]:
         return tuple(elements[0][1])
     if t >= elements[-1][0]:
@@ -122,7 +184,18 @@ class LDLEDColorRampNode(bpy.types.Node, LDLED_CodeNodeBase):
         if ramp:
             for element in ramp.elements:
                 elements.append((float(element.position), tuple(float(c) for c in element.color)))
+        elements.sort(key=lambda e: e[0])
         interpolation = ramp.interpolation if ramp else "LINEAR"
         color_mode = ramp.color_mode if ramp else "RGB"
+        steps = 256
+        if not elements:
+            lut = [(0.0, 0.0, 0.0, 1.0)] * steps
+        else:
+            lut = [
+                _color_ramp_eval_sorted(elements, interpolation, color_mode, idx / (steps - 1))
+                for idx in range(steps)
+            ]
+        lut_key = f"{self.codegen_id()}_{int(self.as_pointer())}"
+        _register_color_ramp_lut(lut_key, lut)
         factor_expr = f"_loop_factor(({factor}) * ({loop}), {self.loop_mode!r})"
-        return f"{out_var} = _color_ramp_eval({elements!r}, {interpolation!r}, {color_mode!r}, {factor_expr})"
+        return f"{out_var} = _color_ramp_eval_lut(_color_ramp_lut({lut_key!r}), {factor_expr})"
