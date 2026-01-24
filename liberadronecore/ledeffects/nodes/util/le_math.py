@@ -1,11 +1,14 @@
 import bpy
 import math
+import numpy as np
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects.runtime_registry import register_runtime_function
 
 
 @register_runtime_function
 def _clamp01(x: float) -> float:
+    if isinstance(x, np.ndarray):
+        return np.clip(x, 0.0, 1.0)
     if x < 0.0:
         return 0.0
     if x > 1.0:
@@ -15,6 +18,8 @@ def _clamp01(x: float) -> float:
 
 @register_runtime_function
 def _clamp(x: float, low: float, high: float) -> float:
+    if isinstance(x, np.ndarray) or isinstance(low, np.ndarray) or isinstance(high, np.ndarray):
+        return np.clip(x, low, high)
     if x < low:
         return low
     if x > high:
@@ -24,13 +29,22 @@ def _clamp(x: float, low: float, high: float) -> float:
 
 @register_runtime_function
 def _fract(x: float) -> float:
+    if isinstance(x, np.ndarray):
+        return x - np.floor(x)
     return x - math.floor(x)
 
 
 @register_runtime_function
 def _loop_factor(value: float, mode: str = "REPEAT") -> float:
     mode = (mode or "REPEAT").upper()
-    frac = _fract(float(value))
+    if isinstance(value, np.ndarray):
+        frac = _fract(value)
+    else:
+        frac = _fract(float(value))
+    if isinstance(frac, np.ndarray):
+        if mode in {"PINGPONG", "PING_PONG", "PING-PONG"}:
+            return 1.0 - np.abs(2.0 * frac - 1.0)
+        return frac
     if mode in {"PINGPONG", "PING_PONG", "PING-PONG"}:
         return 1.0 - abs(2.0 * frac - 1.0)
     return frac
@@ -75,6 +89,69 @@ def _apply_ease(t: float, mode: str) -> float:
     if mode in {"EASEINOUT", "EASE_IN_OUT"}:
         return _ease_in_out(t)
     return _clamp01(t)
+
+
+@register_runtime_function
+def _where(cond, a, b):
+    if isinstance(cond, np.ndarray) or isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
+        return np.where(cond, a, b)
+    return a if cond else b
+
+
+@register_runtime_function
+def _vmax(*values):
+    if any(isinstance(val, np.ndarray) for val in values):
+        stacked = [np.asarray(val) for val in values]
+        return np.maximum.reduce(stacked)
+    return max(values)
+
+
+@register_runtime_function
+def _vmin(*values):
+    if any(isinstance(val, np.ndarray) for val in values):
+        stacked = [np.asarray(val) for val in values]
+        return np.minimum.reduce(stacked)
+    return min(values)
+
+
+@register_runtime_function
+def _safe_div(a, b):
+    if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
+        return np.where(b != 0.0, a / b, 0.0)
+    return (a / b) if b != 0.0 else 0.0
+
+
+@register_runtime_function
+def _idmask(idx, ids):
+    if isinstance(idx, np.ndarray):
+        if not ids:
+            return np.zeros(idx.shape, dtype=np.float32)
+        return np.isin(idx, np.asarray(ids)).astype(np.float32)
+    try:
+        key = int(idx)
+    except (TypeError, ValueError):
+        return 0.0
+    return 1.0 if key in set(ids) else 0.0
+
+
+@register_runtime_function
+def _index_or_zero(values, indices):
+    if isinstance(indices, np.ndarray):
+        if values is None:
+            return np.zeros(indices.shape, dtype=np.float32)
+        vals = np.asarray(values)
+        out = np.zeros(indices.shape, dtype=vals.dtype)
+        mask = (indices >= 0) & (indices < len(vals))
+        if mask.any():
+            out[mask] = vals[indices[mask].astype(int)]
+        return out
+    try:
+        idx = int(indices)
+    except (TypeError, ValueError):
+        return 0.0
+    if values is None or idx < 0 or idx >= len(values):
+        return 0.0
+    return values[idx]
 
 
 class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
@@ -213,15 +290,15 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
                 for val in values[1:]:
                     expr = f"({expr}) - ({val})"
             elif op == "MAX":
-                expr = f"max({', '.join(values)})"
+                expr = f"_vmax({', '.join(values)})"
             elif op == "MIN":
-                expr = f"min({', '.join(values)})"
+                expr = f"_vmin({', '.join(values)})"
             else:
                 expr = f"({a})"
         elif op == "DIVIDE":
-            expr = f"({a}) / ({b}) if ({b}) != 0.0 else 0.0"
+            expr = f"_safe_div({a}, {b})"
         elif op == "STEP":
-            expr = f"1.0 if ({a}) >= ({b}) else 0.0"
+            expr = f"_where(({a}) >= ({b}), 1.0, 0.0)"
         elif op == "SATURATE":
             expr = f"_clamp01({a})"
         elif op == "FRACTION":

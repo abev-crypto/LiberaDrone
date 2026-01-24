@@ -162,12 +162,7 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         out_var = self.output_var("Mask")
         ids = _node_effective_ids(self, include_legacy=not self.use_custom_ids)
         value = inputs.get("Value", "1.0")
-        if not ids:
-            base_expr = "0.0"
-        elif len(ids) == 1:
-            base_expr = f"1.0 if idx == {ids[0]} else 0.0"
-        else:
-            base_expr = f"1.0 if idx in {tuple(ids)} else 0.0"
+        base_expr = f"_idmask(idx, {tuple(ids)!r})"
         if self.invert:
             base_expr = f"(1.0 - ({base_expr}))"
         if self.combine_mode == "ADD":

@@ -1,17 +1,24 @@
 import bpy
 import math
+import numpy as np
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects.runtime_registry import register_runtime_function
 
 
 @register_runtime_function
 def _rand01(idx: int, frame: float, seed: float) -> float:
+    if isinstance(idx, np.ndarray):
+        value = np.sin(idx * 12.9898 + frame * 78.233 + seed * 37.719)
+        return value - np.floor(value)
     value = math.sin(idx * 12.9898 + frame * 78.233 + seed * 37.719)
     return value - math.floor(value)
 
 
 @register_runtime_function
 def _rand01_static(idx: int, seed: float) -> float:
+    if isinstance(idx, np.ndarray):
+        value = np.sin(idx * 12.9898 + seed * 78.233)
+        return value - np.floor(value)
     value = math.sin(idx * 12.9898 + seed * 78.233)
     return value - math.floor(value)
 
@@ -92,10 +99,7 @@ class LDLEDRandomNode(bpy.types.Node, LDLED_CodeNodeBase):
             expr = f"_clamp01(({base_expr}) * ({value}))"
         lines = [
             f"_rand_{rand_id} = _rand01_static(idx, {seed})",
-            f"if _rand_{rand_id} < ({chance_expr}):",
-            f"    {base_var} = _rand01_static(idx, {seed} + 1.0)",
-            "else:",
-            f"    {base_var} = {value}",
+            f"{base_var} = _where(_rand_{rand_id} < ({chance_expr}), _rand01_static(idx, {seed} + 1.0), {value})",
             f"{out_var} = {expr}",
         ]
         legacy_color = None

@@ -48,6 +48,17 @@ def _sample_video(path: str, frame: float, u: float, v: float, loop: bool = Fals
             frame_idx = max(0, min(frame_idx, frame_count - 1))
     else:
         frame_idx = max(0, frame_idx)
+    if isinstance(u, np.ndarray) or isinstance(v, np.ndarray):
+        frame_img = sampler.get_frame(frame_idx)
+        if frame_img is None:
+            return 0.0, 0.0, 0.0, 1.0
+        height, width = frame_img.shape[0], frame_img.shape[1]
+        u = np.clip(u, 0.0, 1.0)
+        v = np.clip(v, 0.0, 1.0)
+        x = (u * (width - 1)).astype(np.int64)
+        y = (v * (height - 1)).astype(np.int64)
+        return frame_img[y, x]
+
     rgba = sampler.sample_uv(frame_idx, float(u), float(v))
     if hasattr(rgba, "__len__") and len(rgba) >= 4:
         return float(rgba[0]), float(rgba[1]), float(rgba[2]), float(rgba[3])

@@ -47,42 +47,4 @@ class LDLEDBlendNode(bpy.types.Node, LDLED_CodeNodeBase):
         color_2 = inputs.get("Color 2", "(0.0, 0.0, 0.0, 1.0)")
         factor = inputs.get("Factor", "0.0")
         out_var = self.output_var("Color")
-        inv = f"(1.0 - ({factor}))"
-        mode = self.blend_type
-        if mode == "ADD":
-            expr = "({a} + {b})"
-        elif mode == "MULTIPLY":
-            expr = "({a} * {b})"
-        elif mode == "SCREEN":
-            expr = "(1.0 - (1.0 - {a}) * (1.0 - {b}))"
-        elif mode == "OVERLAY":
-            expr = "((2.0 * {a} * {b}) if ({a} < 0.5) else (1.0 - 2.0 * (1.0 - {a}) * (1.0 - {b})))"
-        elif mode == "HARD_LIGHT":
-            expr = "((2.0 * {a} * {b}) if ({b} < 0.5) else (1.0 - 2.0 * (1.0 - {a}) * (1.0 - {b})))"
-        elif mode == "SOFT_LIGHT":
-            expr = "(({a} - (1.0 - 2.0 * {b}) * {a} * (1.0 - {a})) if ({b} < 0.5) else ({a} + (2.0 * {b} - 1.0) * (_clamp01({a}) ** 0.5 - {a})))"
-        elif mode == "BURN":
-            expr = "(_clamp01(1.0 - (1.0 - {a}) / ({b} if {b} > 0.0 else 1e-5)))"
-        elif mode == "SUBTRACT":
-            expr = "({a} - {b})"
-        elif mode == "MAX":
-            expr = "({a} if {a} > {b} else {b})"
-        else:
-            expr = "{b}"
-
-        def blend_channel(channel_index: int) -> str:
-            a = f"{color_1}[{channel_index}]"
-            b = f"{color_2}[{channel_index}]"
-            blended = expr.format(a=a, b=b)
-            return f"(({a} * {inv}) + ({blended} * ({factor})))"
-
-        return "\n".join(
-            [
-                f"{out_var} = [",
-                f"    {blend_channel(0)},",
-                f"    {blend_channel(1)},",
-                f"    {blend_channel(2)},",
-                f"    ({color_1}[3] * {inv}) + ({color_2}[3] * ({factor})),",
-                "]",
-            ]
-        )
+        return f"{out_var} = _blend_colors({color_1}, {color_2}, {factor}, {self.blend_type!r})"

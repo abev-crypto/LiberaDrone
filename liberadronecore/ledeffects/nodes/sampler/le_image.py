@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 import bpy
+import numpy as np
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects.runtime_registry import register_runtime_function
 from liberadronecore.ledeffects.nodes.util.le_math import _clamp
 
 
-_IMAGE_CACHE: Dict[int, Tuple[int, int, List[float]]] = {}
+_IMAGE_CACHE: Dict[int, Tuple[int, int, np.ndarray]] = {}
 
 
 def _cache_static_image(image: Optional[bpy.types.Image]) -> None:
@@ -25,7 +26,7 @@ def _cache_static_image(image: Optional[bpy.types.Image]) -> None:
     if cached is not None and cached[0] == width and cached[1] == height:
         return
     try:
-        pixels = list(image.pixels)
+        pixels = np.asarray(image.pixels, dtype=np.float32).reshape((height, width, 4))
     except Exception:
         return
     _IMAGE_CACHE[key] = (width, height, pixels)
@@ -50,11 +51,8 @@ def _sample_image(image_name, uv: Tuple[float, float]) -> Tuple[float, float, fl
     width, height = image.size
     if width <= 0 or height <= 0:
         return 0.0, 0.0, 0.0, 1.0
-    u = _clamp(float(uv[0]), 0.0, 1.0)
-    v = _clamp(float(uv[1]), 0.0, 1.0)
-    x = int(u * (width - 1))
-    y = int(v * (height - 1))
-    idx = (y * width + x) * 4
+    u = uv[0]
+    v = uv[1]
     pixels = None
     source = getattr(image, "source", "")
     if source not in {"MOVIE", "SEQUENCE", "VIEWER", "COMPOSITED"}:
@@ -64,16 +62,30 @@ def _sample_image(image_name, uv: Tuple[float, float]) -> Tuple[float, float, fl
             pixels = cached[2]
         else:
             try:
-                pixels = list(image.pixels)
+                pixels = np.asarray(image.pixels, dtype=np.float32).reshape((height, width, 4))
             except Exception:
                 pixels = None
             if pixels is not None:
                 _IMAGE_CACHE[key] = (width, height, pixels)
     if pixels is None:
-        pixels = image.pixels
-    if idx + 3 >= len(pixels):
-        return 0.0, 0.0, 0.0, 1.0
-    return float(pixels[idx]), float(pixels[idx + 1]), float(pixels[idx + 2]), float(pixels[idx + 3])
+        try:
+            pixels = np.asarray(image.pixels, dtype=np.float32).reshape((height, width, 4))
+        except Exception:
+            return 0.0, 0.0, 0.0, 1.0
+
+    if isinstance(u, np.ndarray) or isinstance(v, np.ndarray):
+        u = np.clip(u, 0.0, 1.0)
+        v = np.clip(v, 0.0, 1.0)
+        x = (u * (width - 1)).astype(np.int64)
+        y = (v * (height - 1)).astype(np.int64)
+        return pixels[y, x]
+
+    u = _clamp(float(u), 0.0, 1.0)
+    v = _clamp(float(v), 0.0, 1.0)
+    x = int(u * (width - 1))
+    y = int(v * (height - 1))
+    rgba = pixels[y, x]
+    return float(rgba[0]), float(rgba[1]), float(rgba[2]), float(rgba[3])
 
 
 class LDLEDImageSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):

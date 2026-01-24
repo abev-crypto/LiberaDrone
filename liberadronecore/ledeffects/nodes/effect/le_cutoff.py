@@ -23,10 +23,4 @@ class LDLEDCutoffNode(bpy.types.Node, LDLED_CodeNodeBase):
         threshold = inputs.get("Threshold", "0.0")
         color = inputs.get("Color", "(0.0, 0.0, 0.0, 1.0)")
         out_var = self.output_var("Color")
-        return "\n".join(
-            [
-                f"_cutoff_src = {color}",
-                f"_cutoff_val = max(_cutoff_src[0], _cutoff_src[1], _cutoff_src[2])",
-                f"{out_var} = (0.0, 0.0, 0.0, _cutoff_src[3]) if _cutoff_val <= {threshold} else _cutoff_src",
-            ]
-        )
+        return f"{out_var} = _cutoff_color({color}, {threshold})"

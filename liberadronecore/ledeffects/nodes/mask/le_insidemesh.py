@@ -54,7 +54,7 @@ class LDLEDInsideMeshNode(bpy.types.Node, LDLED_CodeNodeBase):
         out_var = self.output_var("Mask")
         obj_expr = inputs.get("Mesh", "''")
         value = inputs.get("Value", "1.0")
-        base_expr = f"1.0 if _point_in_mesh_bbox({obj_expr}, (pos[0], pos[1], pos[2])) else 0.0"
+        base_expr = f"_where(_point_in_mesh_bbox({obj_expr}, (pos[0], pos[1], pos[2])), 1.0, 0.0)"
         if self.invert:
             base_expr = f"(1.0 - ({base_expr}))"
         if self.combine_mode == "ADD":

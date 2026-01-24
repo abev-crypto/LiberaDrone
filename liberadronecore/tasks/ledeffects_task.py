@@ -234,7 +234,8 @@ def update_led_effects(scene):
         return
 
     effect_fn = le_codegen.get_compiled_effect(tree)
-    if effect_fn is None:
+    effect_fn_bulk = le_codegen.get_compiled_effect_bulk(tree)
+    if effect_fn is None and effect_fn_bulk is None:
         return
 
     frame = scene.frame_current
@@ -244,18 +245,48 @@ def update_led_effects(scene):
     if not positions:
         return
 
-    le_codegen.begin_led_frame_cache(frame, positions)
+    runtime_indices = None
+    if pair_ids is not None:
+        runtime_indices = []
+        for idx, pid in enumerate(pair_ids):
+            runtime_idx = idx
+            if pid is not None:
+                try:
+                    runtime_idx = int(pid)
+                except (TypeError, ValueError):
+                    runtime_idx = idx
+            runtime_indices.append(runtime_idx)
+
+    le_codegen.begin_led_frame_cache(frame, positions, runtime_indices)
+    if effect_fn_bulk is not None:
+        colors = None
+        try:
+            idx_array = np.asarray(
+                runtime_indices if runtime_indices is not None else range(len(positions)),
+                dtype=np.int64,
+            )
+            pos_array = np.asarray(positions, dtype=np.float32)
+            if pos_array.ndim == 2 and pos_array.shape[1] >= 3:
+                pos_tuple = (pos_array[:, 0], pos_array[:, 1], pos_array[:, 2])
+            else:
+                pos_tuple = (np.array([], dtype=np.float32),) * 3
+            colors = effect_fn_bulk(idx_array, pos_tuple, frame)
+        except Exception:
+            colors = None
+        finally:
+            le_codegen.end_led_frame_cache()
+
+        if colors is not None:
+            _write_led_color_attribute(colors, pair_ids)
+            return
+
+    if effect_fn is None:
+        return
+
     colors = np.zeros((len(positions), 4), dtype=np.float32)
     try:
         for idx, pos in enumerate(positions):
-            runtime_idx = idx
-            if pair_ids is not None:
-                pid = pair_ids[idx]
-                if pid is not None:
-                    try:
-                        runtime_idx = int(pid)
-                    except (TypeError, ValueError):
-                        runtime_idx = idx
+            runtime_idx = runtime_indices[idx] if runtime_indices is not None else idx
             le_codegen.set_led_runtime_index(runtime_idx)
             color = effect_fn(runtime_idx, pos, frame)
             if not color:
