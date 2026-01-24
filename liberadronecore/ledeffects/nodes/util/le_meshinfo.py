@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import bpy
 import math
 import mathutils
-import numpy as np
 from liberadronecore.formation import fn_parse_pairing
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects.runtime_registry import register_runtime_function
@@ -21,28 +20,13 @@ _LED_FRAME_CACHE: Dict[str, Any] = {
     "collection": {},
     "collection_ids": {},
     "bbox": {},
-    "positions_np": None,
-    "positions_count": 0,
-    "index_map": None,
-    "positions_index_mode": False,
-    "mesh_bbox_mask": {},
-    "mesh_bbox_dist": {},
-    "formation_relpos": {},
-    "formation_uv": {},
-    "mesh_uv_batch": {},
-    "mesh_color_batch": {},
-    "mesh_uv_dist_batch": {},
 }
 _LED_CURRENT_INDEX: Optional[int] = None
 _FORMATION_BBOX_CACHE: Dict[str, Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = {}
-_COLLECTION_IDS_CACHE: Dict[Tuple[str, bool], np.ndarray] = {}
+_COLLECTION_IDS_CACHE: Dict[Tuple[str, bool], list[int]] = {}
 
 
-def begin_led_frame_cache(
-    frame: float,
-    positions: List[Tuple[float, float, float]],
-    runtime_indices: Optional[List[Optional[int]]] = None,
-) -> None:
+def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, float]]) -> None:
     _LED_FRAME_CACHE["frame"] = float(frame)
     _LED_FRAME_CACHE["object"] = {}
     _LED_FRAME_CACHE["object_transform"] = {}
@@ -51,57 +35,6 @@ def begin_led_frame_cache(
     _LED_FRAME_CACHE["collection"] = {}
     _LED_FRAME_CACHE["collection_ids"] = {}
     _LED_FRAME_CACHE["bbox"] = {}
-    _LED_FRAME_CACHE["mesh_bbox_mask"] = {}
-    _LED_FRAME_CACHE["mesh_bbox_dist"] = {}
-    _LED_FRAME_CACHE["formation_relpos"] = {}
-    _LED_FRAME_CACHE["formation_uv"] = {}
-    _LED_FRAME_CACHE["mesh_uv_batch"] = {}
-    _LED_FRAME_CACHE["mesh_color_batch"] = {}
-    _LED_FRAME_CACHE["mesh_uv_dist_batch"] = {}
-    _LED_FRAME_CACHE["index_map"] = None
-    _LED_FRAME_CACHE["positions_index_mode"] = False
-
-    positions_np = None
-    if positions:
-        try:
-            positions_np = np.asarray(positions, dtype=np.float32)
-            if positions_np.ndim == 1:
-                positions_np = positions_np.reshape((-1, 3))
-        except Exception:
-            positions_np = None
-    if positions_np is not None and positions_np.size >= 3:
-        count = int(positions_np.shape[0])
-    else:
-        positions_np = None
-        count = 0
-
-    index_map = None
-    positions_index_mode = False
-    if positions_np is not None and count > 0:
-        if runtime_indices is None:
-            positions_index_mode = True
-        else:
-            index_map = {}
-            valid = True
-            for pos_idx, ridx in enumerate(runtime_indices):
-                if ridx is None:
-                    continue
-                try:
-                    key = int(ridx)
-                except (TypeError, ValueError):
-                    continue
-                if key in index_map and index_map[key] != pos_idx:
-                    valid = False
-                    break
-                index_map[key] = pos_idx
-            positions_index_mode = valid
-            if not valid:
-                index_map = None
-
-    _LED_FRAME_CACHE["positions_np"] = positions_np
-    _LED_FRAME_CACHE["positions_count"] = count
-    _LED_FRAME_CACHE["index_map"] = index_map
-    _LED_FRAME_CACHE["positions_index_mode"] = positions_index_mode
 
 
 def end_led_frame_cache() -> None:
@@ -113,50 +46,11 @@ def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["collection"] = {}
     _LED_FRAME_CACHE["collection_ids"] = {}
     _LED_FRAME_CACHE["bbox"] = {}
-    _LED_FRAME_CACHE["positions_np"] = None
-    _LED_FRAME_CACHE["positions_count"] = 0
-    _LED_FRAME_CACHE["index_map"] = None
-    _LED_FRAME_CACHE["positions_index_mode"] = False
-    _LED_FRAME_CACHE["mesh_bbox_mask"] = {}
-    _LED_FRAME_CACHE["mesh_bbox_dist"] = {}
-    _LED_FRAME_CACHE["formation_relpos"] = {}
-    _LED_FRAME_CACHE["formation_uv"] = {}
-    _LED_FRAME_CACHE["mesh_uv_batch"] = {}
-    _LED_FRAME_CACHE["mesh_color_batch"] = {}
-    _LED_FRAME_CACHE["mesh_uv_dist_batch"] = {}
 
 
 def set_led_runtime_index(idx: Optional[int]) -> None:
     global _LED_CURRENT_INDEX
     _LED_CURRENT_INDEX = None if idx is None else int(idx)
-
-
-def _resolve_cache_index() -> Optional[int]:
-    if not _LED_FRAME_CACHE.get("positions_index_mode"):
-        return None
-    idx = _LED_CURRENT_INDEX
-    if idx is None:
-        return None
-    index_map = _LED_FRAME_CACHE.get("index_map")
-    if index_map is not None:
-        idx = index_map.get(idx)
-    else:
-        try:
-            idx = int(idx)
-        except (TypeError, ValueError):
-            return None
-    if idx is None:
-        return None
-    count = int(_LED_FRAME_CACHE.get("positions_count", 0) or 0)
-    if idx < 0 or idx >= count:
-        return None
-    return idx
-
-
-def _positions_np() -> Optional[np.ndarray]:
-    if not _LED_FRAME_CACHE.get("positions_index_mode"):
-        return None
-    return _LED_FRAME_CACHE.get("positions_np")
 
 
 @register_runtime_function
@@ -325,10 +219,6 @@ def _project_bbox_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[fl
     (min_x, _, min_z), (max_x, _, max_z) = bounds
     span_x = max(0.0001, max_x - min_x)
     span_z = max(0.0001, max_z - min_z)
-    if isinstance(pos[0], np.ndarray):
-        u = np.clip((pos[0] - min_x) / span_x, 0.0, 1.0)
-        v = np.clip((pos[2] - min_z) / span_z, 0.0, 1.0)
-        return u, v
     u = _clamp((pos[0] - min_x) / span_x, 0.0, 1.0)
     v = _clamp((pos[2] - min_z) / span_z, 0.0, 1.0)
     return u, v
@@ -340,37 +230,6 @@ def _distance_to_mesh_bbox(obj_name: str, pos: Tuple[float, float, float]) -> fl
     bounds = _object_world_bbox(obj)
     if not bounds:
         return 0.0
-    if isinstance(pos[0], np.ndarray):
-        (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
-        dx = np.maximum(min_x - pos[0], 0.0)
-        dx = np.maximum(dx, pos[0] - max_x)
-        dy = np.maximum(min_y - pos[1], 0.0)
-        dy = np.maximum(dy, pos[1] - max_y)
-        dz = np.maximum(min_z - pos[2], 0.0)
-        dz = np.maximum(dz, pos[2] - max_z)
-        return np.sqrt(dx * dx + dy * dy + dz * dz)
-    cache_idx = _resolve_cache_index()
-    positions_np = _positions_np()
-    if cache_idx is not None and positions_np is not None:
-        cache = _LED_FRAME_CACHE["mesh_bbox_dist"]
-        dist = cache.get(obj.name)
-        if dist is None or len(dist) != positions_np.shape[0]:
-            (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
-            xs = positions_np[:, 0]
-            ys = positions_np[:, 1]
-            zs = positions_np[:, 2]
-            dx = np.maximum(min_x - xs, 0.0)
-            dx = np.maximum(dx, xs - max_x)
-            dy = np.maximum(min_y - ys, 0.0)
-            dy = np.maximum(dy, ys - max_y)
-            dz = np.maximum(min_z - zs, 0.0)
-            dz = np.maximum(dz, zs - max_z)
-            dist = np.sqrt(dx * dx + dy * dy + dz * dz).astype(np.float32, copy=False)
-            cache[obj.name] = dist
-        try:
-            return float(dist[cache_idx])
-        except Exception:
-            pass
     return _distance_to_bbox(pos, bounds)
 
 
@@ -380,36 +239,6 @@ def _point_in_mesh_bbox(obj_name: str, pos: Tuple[float, float, float]) -> bool:
     bounds = _object_world_bbox(obj)
     if not bounds:
         return False
-    if isinstance(pos[0], np.ndarray):
-        (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
-        return (
-            (pos[0] >= min_x)
-            & (pos[0] <= max_x)
-            & (pos[1] >= min_y)
-            & (pos[1] <= max_y)
-            & (pos[2] >= min_z)
-            & (pos[2] <= max_z)
-        )
-    cache_idx = _resolve_cache_index()
-    positions_np = _positions_np()
-    if cache_idx is not None and positions_np is not None:
-        cache = _LED_FRAME_CACHE["mesh_bbox_mask"]
-        mask = cache.get(obj.name)
-        if mask is None or len(mask) != positions_np.shape[0]:
-            (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
-            mask = (
-                (positions_np[:, 0] >= min_x)
-                & (positions_np[:, 0] <= max_x)
-                & (positions_np[:, 1] >= min_y)
-                & (positions_np[:, 1] <= max_y)
-                & (positions_np[:, 2] >= min_z)
-                & (positions_np[:, 2] <= max_z)
-            )
-            cache[obj.name] = mask
-        try:
-            return bool(mask[cache_idx])
-        except Exception:
-            pass
     return _point_in_bbox(pos, bounds)
 
 
@@ -466,37 +295,6 @@ def _build_mesh_cache(obj: bpy.types.Object) -> Optional[Dict[str, Any]]:
 
     available_uv = list(range(len(mesh.vertices)))
 
-    positions_np = np.asarray(positions, dtype=np.float32)
-    uvs_np = None
-    if uv_by_vertex:
-        uvs_np = np.zeros((len(uv_by_vertex), 2), dtype=np.float32)
-        for idx, uv in enumerate(uv_by_vertex):
-            if uv is None:
-                continue
-            uvs_np[idx, 0] = float(uv[0])
-            uvs_np[idx, 1] = float(uv[1])
-    colors_np = None
-    if color_by_vertex:
-        colors_np = np.zeros((len(color_by_vertex), 4), dtype=np.float32)
-        for idx, col in enumerate(color_by_vertex):
-            if col is None:
-                continue
-            colors_np[idx, 0] = float(col[0])
-            colors_np[idx, 1] = float(col[1])
-            colors_np[idx, 2] = float(col[2])
-            colors_np[idx, 3] = float(col[3])
-
-    kdtree = None
-    if positions_np.size:
-        try:
-            tree = mathutils.kdtree.KDTree(len(positions_np))
-            for idx, pos in enumerate(positions_np):
-                tree.insert(mathutils.Vector(pos), idx)
-            tree.balance()
-            kdtree = tree
-        except Exception:
-            kdtree = None
-
     return {
         "positions": positions,
         "uvs": uv_by_vertex,
@@ -505,10 +303,6 @@ def _build_mesh_cache(obj: bpy.types.Object) -> Optional[Dict[str, Any]]:
         "assigned_uv": {},
         "assigned_uv_dist": {},
         "assigned_color": {},
-        "positions_np": positions_np,
-        "uvs_np": uvs_np,
-        "colors_np": colors_np,
-        "kdtree": kdtree,
     }
 
 
@@ -573,25 +367,6 @@ def _nearest_vertex_color(obj_name: str, pos: Tuple[float, float, float]) -> Tup
     if not mesh.vertices:
         return 0.0, 0.0, 0.0, 1.0
     cache = _get_mesh_cache(obj)
-    if isinstance(pos[0], np.ndarray):
-        if cache is None:
-            return np.zeros((len(pos[0]), 4), dtype=np.float32)
-        batch_cache = _LED_FRAME_CACHE["mesh_color_batch"]
-        cached = batch_cache.get(obj.name)
-        if cached is not None:
-            return cached
-        positions_np = cache.get("positions_np")
-        colors_np = cache.get("colors_np")
-        tree = cache.get("kdtree")
-        if positions_np is None or colors_np is None or tree is None:
-            return np.zeros((len(pos[0]), 4), dtype=np.float32)
-        result = np.zeros((len(pos[0]), 4), dtype=np.float32)
-        for idx, point in enumerate(zip(pos[0], pos[1], pos[2])):
-            _co, index, _dist = tree.find(mathutils.Vector(point))
-            if index is not None and index < len(colors_np):
-                result[idx] = colors_np[index]
-        batch_cache[obj.name] = result
-        return result
     if cache is not None:
         assigned = cache["assigned_color"].get(_LED_CURRENT_INDEX)
         if assigned is not None:
@@ -656,42 +431,29 @@ def _nearest_vertex_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[
     if not mesh.vertices or not mesh.uv_layers:
         return 0.0, 0.0
     cache = _get_mesh_cache(obj)
-    if isinstance(pos[0], np.ndarray):
-        if cache is None:
-            return np.zeros((len(pos[0]), 2), dtype=np.float32)
-        batch_cache = _LED_FRAME_CACHE["mesh_uv_batch"]
-        cached = batch_cache.get(obj.name)
-        if cached is not None:
-            return cached
-        positions_np = cache.get("positions_np")
-        uvs_np = cache.get("uvs_np")
-        tree = cache.get("kdtree")
-        if positions_np is None or uvs_np is None or tree is None:
-            return np.zeros((len(pos[0]), 2), dtype=np.float32)
-        result = np.zeros((len(pos[0]), 2), dtype=np.float32)
-        for idx, point in enumerate(zip(pos[0], pos[1], pos[2])):
-            _co, index, _dist = tree.find(mathutils.Vector(point))
-            if index is not None and index < len(uvs_np):
-                result[idx] = uvs_np[index]
-        batch_cache[obj.name] = result
-        return result
     if cache is not None:
         assigned = cache["assigned_uv"].get(_LED_CURRENT_INDEX)
         if assigned is not None:
             return assigned
         positions = cache["positions"]
         uvs = cache["uvs"]
+        available = cache["available_uv_indices"]
         best_list_idx = None
         best_idx = None
         best_dist = 1e30
-        for list_idx, world in enumerate(positions):
+        if _LED_CURRENT_INDEX is not None:
+            indices = available
+        else:
+            indices = range(len(positions))
+        for list_idx, v_idx in enumerate(indices):
+            world = positions[v_idx]
             dx = world[0] - pos[0]
             dy = world[1] - pos[1]
             dz = world[2] - pos[2]
             dist = dx * dx + dy * dy + dz * dz
             if dist < best_dist:
                 best_dist = dist
-                best_idx = list_idx
+                best_idx = v_idx
                 best_list_idx = list_idx
         if best_idx is None:
             return 0.0, 0.0
@@ -699,6 +461,8 @@ def _nearest_vertex_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[
         if uv is None:
             return 0.0, 0.0
         if _LED_CURRENT_INDEX is not None and best_list_idx is not None:
+            available[best_list_idx] = available[-1]
+            available.pop()
             cache["assigned_uv"][_LED_CURRENT_INDEX] = uv
         return uv
     uv_layer = mesh.uv_layers.active or mesh.uv_layers[0]
@@ -732,43 +496,29 @@ def _nearest_vertex_uv_with_dist(
     if not mesh.vertices or not mesh.uv_layers:
         return (0.0, 0.0), 1e30
     cache = _get_mesh_cache(obj)
-    if isinstance(pos[0], np.ndarray):
-        if cache is None:
-            return np.zeros((len(pos[0]), 2), dtype=np.float32), np.full(len(pos[0]), 1e30, dtype=np.float32)
-        batch_cache = _LED_FRAME_CACHE["mesh_uv_dist_batch"]
-        cached = batch_cache.get(obj.name)
-        if cached is not None:
-            return cached
-        uvs_np = cache.get("uvs_np")
-        tree = cache.get("kdtree")
-        if uvs_np is None or tree is None:
-            return np.zeros((len(pos[0]), 2), dtype=np.float32), np.full(len(pos[0]), 1e30, dtype=np.float32)
-        result_uv = np.zeros((len(pos[0]), 2), dtype=np.float32)
-        result_dist = np.full(len(pos[0]), 1e30, dtype=np.float32)
-        for idx, point in enumerate(zip(pos[0], pos[1], pos[2])):
-            _co, index, dist = tree.find(mathutils.Vector(point))
-            if index is not None and index < len(uvs_np):
-                result_uv[idx] = uvs_np[index]
-                result_dist[idx] = float(dist)
-        batch_cache[obj.name] = (result_uv, result_dist)
-        return result_uv, result_dist
     if cache is not None:
         assigned = cache["assigned_uv_dist"].get(_LED_CURRENT_INDEX)
         if assigned is not None:
             return assigned
         positions = cache["positions"]
         uvs = cache["uvs"]
+        available = cache["available_uv_indices"]
         best_list_idx = None
         best_idx = None
         best_dist = 1e30
-        for list_idx, world in enumerate(positions):
+        if _LED_CURRENT_INDEX is not None and consume:
+            indices = available
+        else:
+            indices = range(len(positions))
+        for list_idx, v_idx in enumerate(indices):
+            world = positions[v_idx]
             dx = world[0] - pos[0]
             dy = world[1] - pos[1]
             dz = world[2] - pos[2]
             dist = dx * dx + dy * dy + dz * dz
             if dist < best_dist:
                 best_dist = dist
-                best_idx = list_idx
+                best_idx = v_idx
                 best_list_idx = list_idx
         if best_idx is None:
             return (0.0, 0.0), 1e30
@@ -776,6 +526,8 @@ def _nearest_vertex_uv_with_dist(
         if uv is None:
             return (0.0, 0.0), 1e30
         if _LED_CURRENT_INDEX is not None and consume and best_list_idx is not None:
+            available[best_list_idx] = available[-1]
+            available.pop()
             cache["assigned_uv"][_LED_CURRENT_INDEX] = uv
             cache["assigned_uv_dist"][_LED_CURRENT_INDEX] = (uv, best_dist)
         return uv, best_dist
@@ -828,21 +580,6 @@ def _collection_nearest_uv(
     best_uv = (0.0, 0.0)
     best_dist = 1e30
     best_obj: Optional[bpy.types.Object] = None
-    if isinstance(pos[0], np.ndarray):
-        best_uv = None
-        best_dist = None
-        for obj in candidates:
-            uv, dist = _nearest_vertex_uv_with_dist(obj, pos, consume=False)
-            if best_dist is None:
-                best_uv = uv
-                best_dist = dist
-            else:
-                mask = dist < best_dist
-                best_uv = np.where(mask[:, None], uv, best_uv)
-                best_dist = np.where(mask, dist, best_dist)
-        if best_uv is None:
-            return np.zeros((len(pos[0]), 2), dtype=np.float32)
-        return best_uv
     for obj in candidates:
         uv, dist = _nearest_vertex_uv_with_dist(obj, pos, consume=False)
         if dist < best_dist:
@@ -874,30 +611,6 @@ def _formation_bbox_uv(
     bounds = _get_formation_bbox(cache_key, static)
     if not bounds:
         return 0.0, 0.0
-    if isinstance(pos[0], np.ndarray):
-        (min_x, _min_y, min_z), (max_x, _max_y, max_z) = bounds
-        span_x = max(0.0001, max_x - min_x)
-        span_z = max(0.0001, max_z - min_z)
-        u = np.clip((pos[0] - min_x) / span_x, 0.0, 1.0)
-        v = np.clip((pos[2] - min_z) / span_z, 0.0, 1.0)
-        return u, v
-    cache_idx = _resolve_cache_index()
-    positions_np = _positions_np()
-    if cache_idx is not None and positions_np is not None:
-        cache_id = (cache_key or "", bool(static))
-        cached = _LED_FRAME_CACHE["formation_uv"].get(cache_id)
-        if cached is None or len(cached) != positions_np.shape[0]:
-            (min_x, _min_y, min_z), (max_x, _max_y, max_z) = bounds
-            span_x = max(0.0001, max_x - min_x)
-            span_z = max(0.0001, max_z - min_z)
-            u = np.clip((positions_np[:, 0] - min_x) / span_x, 0.0, 1.0)
-            v = np.clip((positions_np[:, 2] - min_z) / span_z, 0.0, 1.0)
-            cached = np.stack([u, v], axis=1).astype(np.float32, copy=False)
-            _LED_FRAME_CACHE["formation_uv"][cache_id] = cached
-        try:
-            return float(cached[cache_idx][0]), float(cached[cache_idx][1])
-        except Exception:
-            pass
     (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
     span_x = max(0.0001, max_x - min_x)
     span_z = max(0.0001, max_z - min_z)
@@ -915,38 +628,6 @@ def _formation_bbox_relpos(
     bounds = _get_formation_bbox(cache_key, static)
     if not bounds:
         return 0.0, 0.0, 0.0
-    if isinstance(pos[0], np.ndarray):
-        (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
-        span_x = max(0.0001, max_x - min_x)
-        span_y = max(0.0001, max_y - min_y)
-        span_z = max(0.0001, max_z - min_z)
-        rel_x = np.clip((pos[0] - min_x) / span_x, 0.0, 1.0)
-        rel_y = np.clip((pos[1] - min_y) / span_y, 0.0, 1.0)
-        rel_z = np.clip((pos[2] - min_z) / span_z, 0.0, 1.0)
-        return rel_x, rel_y, rel_z
-    cache_idx = _resolve_cache_index()
-    positions_np = _positions_np()
-    if cache_idx is not None and positions_np is not None:
-        cache_id = (cache_key or "", bool(static))
-        cached = _LED_FRAME_CACHE["formation_relpos"].get(cache_id)
-        if cached is None or len(cached) != positions_np.shape[0]:
-            (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
-            span_x = max(0.0001, max_x - min_x)
-            span_y = max(0.0001, max_y - min_y)
-            span_z = max(0.0001, max_z - min_z)
-            rel_x = np.clip((positions_np[:, 0] - min_x) / span_x, 0.0, 1.0)
-            rel_y = np.clip((positions_np[:, 1] - min_y) / span_y, 0.0, 1.0)
-            rel_z = np.clip((positions_np[:, 2] - min_z) / span_z, 0.0, 1.0)
-            cached = np.stack([rel_x, rel_y, rel_z], axis=1).astype(np.float32, copy=False)
-            _LED_FRAME_CACHE["formation_relpos"][cache_id] = cached
-        try:
-            return (
-                float(cached[cache_idx][0]),
-                float(cached[cache_idx][1]),
-                float(cached[cache_idx][2]),
-            )
-        except Exception:
-            pass
     (min_x, min_y, min_z), (max_x, max_y, max_z) = bounds
     span_x = max(0.0001, max_x - min_x)
     span_y = max(0.0001, max_y - min_y)
@@ -985,10 +666,10 @@ def _mesh_formation_ids(mesh: Optional[bpy.types.Mesh]) -> List[int]:
 def _collection_formation_ids(
     collection_name: str,
     use_children: bool = True,
-) -> np.ndarray:
+) -> list[int]:
     collection_name = _collection_name(collection_name)
     if not collection_name:
-        return np.asarray([], dtype=np.int8)
+        return []
     key = (collection_name, bool(use_children))
     cached_static = _COLLECTION_IDS_CACHE.get(key)
     if cached_static is not None:
@@ -996,9 +677,8 @@ def _collection_formation_ids(
     if _LED_FRAME_CACHE.get("frame") is not None:
         cached = _LED_FRAME_CACHE["collection_ids"].get(key)
         if cached is not None:
-            cached_arr = np.asarray(cached, dtype=np.int8)
-            _COLLECTION_IDS_CACHE[key] = cached_arr
-            return cached_arr
+            _COLLECTION_IDS_CACHE[key] = cached
+            return cached
 
     mask: list[int] = []
 
@@ -1026,10 +706,9 @@ def _collection_formation_ids(
     else:
         col = _get_collection(collection_name)
         if col is None:
-            mask_arr = np.asarray(mask, dtype=np.int8)
             if _LED_FRAME_CACHE.get("frame") is not None:
-                _LED_FRAME_CACHE["collection_ids"][key] = mask_arr
-            return mask_arr
+                _LED_FRAME_CACHE["collection_ids"][key] = mask
+            return mask
         stack = [col]
         while stack:
             current = stack.pop()
@@ -1040,11 +719,10 @@ def _collection_formation_ids(
             if use_children:
                 stack.extend(list(current.children))
 
-    mask_arr = np.asarray(mask, dtype=np.int8)
     if _LED_FRAME_CACHE.get("frame") is not None:
-        _LED_FRAME_CACHE["collection_ids"][key] = mask_arr
-    _COLLECTION_IDS_CACHE[key] = mask_arr
-    return mask_arr
+        _LED_FRAME_CACHE["collection_ids"][key] = mask
+    _COLLECTION_IDS_CACHE[key] = mask
+    return mask
 
 
 class LDLEDMeshInfoNode(bpy.types.Node, LDLED_CodeNodeBase):

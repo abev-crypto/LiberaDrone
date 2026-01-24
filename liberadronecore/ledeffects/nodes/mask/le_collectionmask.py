@@ -69,7 +69,7 @@ class LDLEDCollectionMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
             col_name = repr(self.collection.name)
         value = inputs.get("Value", "1.0")
         ids_var = f"_col_ids_{self.codegen_id()}_{int(self.as_pointer())}"
-        base_expr = f"_index_or_zero({ids_var}, idx)"
+        base_expr = f"{ids_var}[idx] if idx < len({ids_var}) else 0.0"
         if self.invert:
             base_expr = f"(1.0 - ({base_expr}))"
         if self.combine_mode == "ADD":
