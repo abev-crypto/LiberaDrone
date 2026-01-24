@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import bpy
+import numpy as np
 from mathutils import Vector
 
 from liberadronecore.formation import fn_parse, fn_parse_pairing
@@ -151,8 +152,10 @@ def _collect_positions_for_collection(
     depsgraph: bpy.types.Depsgraph,
     *,
     collect_form_ids: bool = False,
+    as_numpy: bool = False,
 ) -> Tuple[List[Vector], Optional[List[int]], Optional[List[int]]]:
     positions: List[Vector] = []
+    positions_np: list[np.ndarray] = []
     pair_ids: List[int] | None = []
     form_ids: List[int] | None = [] if collect_form_ids else None
     pairs_ok = True
@@ -161,8 +164,18 @@ def _collect_positions_for_collection(
     for obj in meshes:
         eval_obj = obj.evaluated_get(depsgraph)
         eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-        for idx, vtx in enumerate(eval_mesh.vertices):
-            positions.append(eval_obj.matrix_world @ vtx.co)
+        if as_numpy:
+            count = len(eval_mesh.vertices)
+            if count:
+                coords = np.empty(count * 3, dtype=np.float32)
+                eval_mesh.vertices.foreach_get("co", coords)
+                coords = coords.reshape((count, 3))
+                mw = np.asarray(eval_obj.matrix_world, dtype=np.float32)
+                world = coords @ mw[:3, :3].T + mw[:3, 3]
+                positions_np.append(world)
+        else:
+            for vtx in eval_mesh.vertices:
+                positions.append(eval_obj.matrix_world @ vtx.co)
         if pairs_ok and pair_ids is not None:
             attr = eval_mesh.attributes.get(fn_parse_pairing.PAIR_ATTR_NAME)
             if (
@@ -204,6 +217,8 @@ def _collect_positions_for_collection(
                 attr.data.foreach_get("value", values)
                 form_ids.extend(values)
         eval_obj.to_mesh_clear()
+    if as_numpy:
+        positions = np.concatenate(positions_np, axis=0) if positions_np else np.empty((0, 3), dtype=np.float32)
     if not pairs_ok:
         pair_ids = None
     if collect_form_ids and not forms_ok:

@@ -9,7 +9,7 @@ import bpy
 from bpy.app.handlers import persistent
 
 from liberadronecore.ledeffects import led_codegen_runtime as le_codegen
-from liberadronecore.system.transition import transition_apply
+from liberadronecore.util import formation_positions
 import numpy as np
 
 
@@ -170,21 +170,21 @@ def _write_led_color_attribute(colors, pair_ids=None) -> None:
     #mesh.update()
 
 
-def _collect_formation_positions(scene) -> tuple[list[tuple[float, float, float]], list[int] | None]:
-    col = bpy.data.collections.get("Formation")
-    if col is None:
-        return [], None
+def _collect_formation_positions(scene):
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    positions, pair_ids, _ = transition_apply._collect_positions_for_collection(
-        col,
-        int(getattr(scene, "frame_current", 0)),
+    positions, pair_ids, _signature = formation_positions.collect_formation_positions(
+        scene,
         depsgraph,
+        collection_name="Formation",
+        sort_by_pair_id=False,
+        include_signature=False,
+        as_numpy=True,
     )
-    if not positions:
-        return [], None
+    if positions is None or len(positions) == 0:
+        return np.empty((0, 3), dtype=np.float32), None
     if not pair_ids or len(pair_ids) != len(positions):
         pair_ids = None
-    return [(float(p.x), float(p.y), float(p.z)) for p in positions], pair_ids
+    return positions, pair_ids
 
 
 def _order_positions_by_pair_id(
@@ -241,7 +241,7 @@ def update_led_effects(scene):
     frame_start = scene.frame_start
 
     positions, pair_ids = _collect_formation_positions(scene)
-    if not positions:
+    if positions is None or len(positions) == 0:
         return
 
     le_codegen.begin_led_frame_cache(frame, positions)

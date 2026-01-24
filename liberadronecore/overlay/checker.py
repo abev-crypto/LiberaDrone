@@ -11,7 +11,7 @@ from gpu_extras.batch import batch_for_shader
 from mathutils import Vector
 from mathutils.kdtree import KDTree
 
-from liberadronecore.formation import fn_parse_pairing
+from liberadronecore.util import formation_positions
 
 FORMATION_ROOT = "Formation"
 ATTR_COLORS = {
@@ -50,85 +50,19 @@ def _get_fps(scene: bpy.types.Scene) -> float:
     return fps / base
 
 
-def _valid_pair_attr(attr, count: int) -> bool:
-    return bool(attr and attr.domain == 'POINT' and attr.data_type == 'INT' and len(attr.data) == count)
-
-
-def _collect_pair_ids(eval_mesh: bpy.types.Mesh, base_mesh: bpy.types.Mesh | None) -> list[int] | None:
-    if eval_mesh is None:
-        return None
-    count = len(eval_mesh.vertices)
-    attr = eval_mesh.attributes.get(fn_parse_pairing.PAIR_ATTR_NAME)
-    if not _valid_pair_attr(attr, count) and base_mesh is not None:
-        attr = base_mesh.attributes.get(fn_parse_pairing.PAIR_ATTR_NAME)
-    if not _valid_pair_attr(attr, count):
-        return None
-    values = [0] * count
-    attr.data.foreach_get("value", values)
-    return values
-
-
 def _collect_formation_positions(
     scene: bpy.types.Scene,
     depsgraph,
 ) -> tuple[list[Vector], tuple[tuple[str, int | str], ...]]:
-    col = bpy.data.collections.get(FORMATION_ROOT)
-    if col is None:
-        return [], ()
-    meshes = [obj for obj in col.all_objects if obj.type == 'MESH']
-
-    positions: list[Vector] = []
-    pair_ids: list[int] = []
-    pairs_ok = True
-    total_count = 0
-    for obj in meshes:
-        eval_obj = obj.evaluated_get(depsgraph)
-        eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
-        if eval_mesh is None:
-            continue
-        mw = eval_obj.matrix_world
-        obj_positions = [mw @ v.co for v in eval_mesh.vertices]
-        positions.extend(obj_positions)
-        total_count += len(obj_positions)
-        if pairs_ok:
-            obj_pairs = _collect_pair_ids(eval_mesh, obj.data)
-            if obj_pairs is None or len(obj_pairs) != len(obj_positions):
-                pairs_ok = False
-            else:
-                pair_ids.extend(obj_pairs)
-        eval_obj.to_mesh_clear()
-
-    signature: list[tuple[str, int | str]] = [
-        ("__scene__", scene.name if scene else ""),
-        ("__vert_count__", total_count),
-    ]
-    if not positions:
-        signature.append(("__pair_sort__", 0))
-        return [], tuple(signature)
-
-    if pairs_ok and len(pair_ids) == len(positions):
-        paired: list[tuple[int, int]] = []
-        fallback: list[tuple[int, Vector]] = []
-        for idx, pid in enumerate(pair_ids):
-            try:
-                key = int(pid)
-            except (TypeError, ValueError):
-                key = None
-            if key is None:
-                fallback.append((idx, positions[idx]))
-            else:
-                paired.append((key, idx))
-        if paired:
-            paired.sort(key=lambda item: (item[0], item[1]))
-            ordered = [positions[idx] for _key, idx in paired]
-            if fallback:
-                ordered.extend([pos for _idx, pos in fallback])
-            positions = ordered
-            signature.append(("__pair_sort__", 1))
-            return positions, tuple(signature)
-
-    signature.append(("__pair_sort__", 0))
-    return positions, tuple(signature)
+    positions, _pair_ids, signature = formation_positions.collect_formation_positions(
+        scene,
+        depsgraph,
+        collection_name=FORMATION_ROOT,
+        sort_by_pair_id=True,
+        include_signature=True,
+        as_numpy=False,
+    )
+    return positions, signature or ()
 
 
 def _positions_to_numpy(positions: list[Vector]) -> np.ndarray:
