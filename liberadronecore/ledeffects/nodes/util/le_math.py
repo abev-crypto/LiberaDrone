@@ -223,9 +223,11 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
         elif op == "STEP":
             expr = f"1.0 if ({a}) >= ({b}) else 0.0"
         elif op == "SATURATE":
-            expr = f"_clamp01({a})"
+            # Inline _clamp01 for performance
+            expr = f"max(0.0, min(1.0, {a}))"
         elif op == "FRACTION":
-            expr = f"({a}) - float(int({a}))"
+            # Inline _fract for performance
+            expr = f"({a}) - math.floor({a})"
         elif op == "FLOOR":
             expr = f"math.floor({a})"
         elif op == "CEIL":
@@ -239,5 +241,5 @@ class LDLEDMathNode(bpy.types.Node, LDLED_CodeNodeBase):
         else:
             expr = f"({a})"
         if self.clamp_result:
-            expr = f"_clamp01({expr})"
+            expr = f"max(0.0, min(1.0, {expr}))"
         return f"{out_var} = {expr}"

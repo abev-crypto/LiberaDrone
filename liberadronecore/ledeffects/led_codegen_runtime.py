@@ -328,7 +328,9 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         first = False
     lines.append("    else:")
     lines.append("        _color = (0.0, 0.0, 0.0, 1.0)")
-    lines.append("    _src_alpha = _clamp01(_alpha * (_color[3] if len(_color) > 3 else 1.0))")
+    lines.append(
+        "    _src_alpha = max(0.0, min(1.0, _alpha * (_color[3] if len(_color) > 3 else 1.0)))"
+    )
     lines.append("    if _src_alpha <= 0.0:")
     lines.append("        continue")
     lines.append("    _src_color = [_color[0] * _intensity, _color[1] * _intensity, _color[2] * _intensity, 1.0]")

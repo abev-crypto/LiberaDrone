@@ -29,10 +29,10 @@ class LDLEDClampNode(bpy.types.Node, LDLED_CodeNodeBase):
         return "\n".join(
             [
                 f"{out_var} = [",
-                f"    _clamp({color}[0], {min_val}, {max_val}),",
-                f"    _clamp({color}[1], {min_val}, {max_val}),",
-                f"    _clamp({color}[2], {min_val}, {max_val}),",
-                f"    _clamp({color}[3], {min_val}, {max_val}),",
+                f"    max({min_val}, min({max_val}, {color}[0])),",
+                f"    max({min_val}, min({max_val}, {color}[1])),",
+                f"    max({min_val}, min({max_val}, {color}[2])),",
+                f"    max({min_val}, min({max_val}, {color}[3])),",
                 "]",
             ]
         )

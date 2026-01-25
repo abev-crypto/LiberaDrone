@@ -75,7 +75,7 @@ class LDLEDRandomNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def build_code(self, inputs):
         chance = inputs.get("Chance", "0.0")
-        chance_expr = f"_clamp01({chance})"
+        chance_expr = f"max(0.0, min(1.0, {chance}))"
         seed = inputs.get("Seed", repr(float(self.seed)))
         value = inputs.get("Value", "1.0")
         out_var = self.output_var("Value")
@@ -85,11 +85,11 @@ class LDLEDRandomNode(bpy.types.Node, LDLED_CodeNodeBase):
         if self.invert:
             base_expr = f"(1.0 - ({base_var}))"
         if self.combine_mode == "ADD":
-            expr = f"_clamp01(({base_expr}) + ({value}))"
+            expr = f"max(0.0, min(1.0, ({base_expr}) + ({value})))"
         elif self.combine_mode == "SUB":
-            expr = f"_clamp01(({base_expr}) - ({value}))"
+            expr = f"max(0.0, min(1.0, ({base_expr}) - ({value})))"
         else:
-            expr = f"_clamp01(({base_expr}) * ({value}))"
+            expr = f"max(0.0, min(1.0, ({base_expr}) * ({value})))"
         lines = [
             f"_rand_{rand_id} = _rand01_static(idx, {seed})",
             f"if _rand_{rand_id} < ({chance_expr}):",
