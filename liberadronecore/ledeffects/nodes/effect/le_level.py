@@ -32,14 +32,14 @@ class LDLEDLevelNode(bpy.types.Node, LDLED_CodeNodeBase):
         lvl_id = f"{self.codegen_id()}_{int(self.as_pointer())}"
         return "\n".join(
             [
-                f"_lvl_r_{lvl_id} = max(0.0, min(1.0, ({color}[0] + ({offset})) * ({gain})))",
-                f"_lvl_g_{lvl_id} = max(0.0, min(1.0, ({color}[1] + ({offset})) * ({gain})))",
-                f"_lvl_b_{lvl_id} = max(0.0, min(1.0, ({color}[2] + ({offset})) * ({gain})))",
+                f"_lvl_r_{lvl_id} = _clamp(({color}[0] + ({offset})) * ({gain}), 0.0, 1.0)",
+                f"_lvl_g_{lvl_id} = _clamp(({color}[1] + ({offset})) * ({gain}), 0.0, 1.0)",
+                f"_lvl_b_{lvl_id} = _clamp(({color}[2] + ({offset})) * ({gain}), 0.0, 1.0)",
                 f"_lvl_gamma_{lvl_id} = max(0.0001, ({gamma}))",
                 f"{out_var} = (",
-                f"    max(0.0, min(1.0, _lvl_r_{lvl_id} ** (1.0 / _lvl_gamma_{lvl_id}))),",
-                f"    max(0.0, min(1.0, _lvl_g_{lvl_id} ** (1.0 / _lvl_gamma_{lvl_id}))),",
-                f"    max(0.0, min(1.0, _lvl_b_{lvl_id} ** (1.0 / _lvl_gamma_{lvl_id}))),",
+                f"    _clamp(_lvl_r_{lvl_id} ** (1.0 / _lvl_gamma_{lvl_id}), 0.0, 1.0),",
+                f"    _clamp(_lvl_g_{lvl_id} ** (1.0 / _lvl_gamma_{lvl_id}), 0.0, 1.0),",
+                f"    _clamp(_lvl_b_{lvl_id} ** (1.0 / _lvl_gamma_{lvl_id}), 0.0, 1.0),",
                 f"    {color}[3],",
                 ")",
             ]

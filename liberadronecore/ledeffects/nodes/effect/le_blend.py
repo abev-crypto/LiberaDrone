@@ -60,9 +60,9 @@ class LDLEDBlendNode(bpy.types.Node, LDLED_CodeNodeBase):
         elif mode == "HARD_LIGHT":
             expr = "((2.0 * {a} * {b}) if ({b} < 0.5) else (1.0 - 2.0 * (1.0 - {a}) * (1.0 - {b})))"
         elif mode == "SOFT_LIGHT":
-            expr = "(({a} - (1.0 - 2.0 * {b}) * {a} * (1.0 - {a})) if ({b} < 0.5) else ({a} + (2.0 * {b} - 1.0) * (max(0.0, min(1.0, {a})) ** 0.5 - {a})))"
+            expr = "(({a} - (1.0 - 2.0 * {b}) * {a} * (1.0 - {a})) if ({b} < 0.5) else ({a} + (2.0 * {b} - 1.0) * (_clamp01({a}) ** 0.5 - {a})))"
         elif mode == "BURN":
-            expr = "(max(0.0, min(1.0, 1.0 - (1.0 - {a}) / ({b} if {b} > 0.0 else 1e-5))))"
+            expr = "(_clamp01(1.0 - (1.0 - {a}) / ({b} if {b} > 0.0 else 1e-5)))"
         elif mode == "SUBTRACT":
             expr = "({a} - {b})"
         elif mode == "MAX":

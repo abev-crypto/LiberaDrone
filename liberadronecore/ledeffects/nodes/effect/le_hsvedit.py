@@ -33,9 +33,9 @@ class LDLEDHSVEditNode(bpy.types.Node, LDLED_CodeNodeBase):
         return "\n".join(
             [
                 f"_hsv_{hsv_id} = _rgb_to_hsv({color})",
-                f"_h_{hsv_id} = (_hsv_{hsv_id}[0] + ({hue})) - math.floor(_hsv_{hsv_id}[0] + ({hue}))",
-                f"_s_{hsv_id} = max(0.0, min(1.0, _hsv_{hsv_id}[1] + ({saturation})))",
-                f"_v_{hsv_id} = max(0.0, min(1.0, _hsv_{hsv_id}[2] + ({value})))",
+                f"_h_{hsv_id} = _fract(_hsv_{hsv_id}[0] + ({hue}))",
+                f"_s_{hsv_id} = _clamp01(_hsv_{hsv_id}[1] + ({saturation}))",
+                f"_v_{hsv_id} = _clamp01(_hsv_{hsv_id}[2] + ({value}))",
                 f"{out_var} = _hsv_to_rgb((_h_{hsv_id}, _s_{hsv_id}, _v_{hsv_id}, _hsv_{hsv_id}[3]))",
             ]
         )

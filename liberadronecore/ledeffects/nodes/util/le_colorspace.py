@@ -95,46 +95,8 @@ class LDLEDColorSpaceNode(bpy.types.Node, LDLED_CodeNodeBase):
     def build_code(self, inputs):
         color = inputs.get("Color", "(0.0, 0.0, 0.0, 1.0)")
         out_var = self.output_var("Color")
-        cs_id = f"{self.codegen_id()}_{int(self.as_pointer())}"
-        src_var = f"_cs_src_{cs_id}"
-
-        def srgb_to_linear_expr(channel: str) -> str:
-            return (
-                f"({channel}) / 12.92 if ({channel}) <= 0.04045 "
-                f"else ((({channel}) + 0.055) / 1.055) ** 2.4"
-            )
-
-        def linear_to_srgb_expr(channel: str) -> str:
-            return (
-                f"({channel}) * 12.92 if ({channel}) <= 0.0031308 "
-                f"else 1.055 * (({channel}) ** (1.0 / 2.4)) - 0.055"
-            )
-
         if self.mode == "LINEAR_TO_SRGB":
-            r = linear_to_srgb_expr(f"{src_var}[0]")
-            g = linear_to_srgb_expr(f"{src_var}[1]")
-            b = linear_to_srgb_expr(f"{src_var}[2]")
-            return "\n".join(
-                [
-                    f"{src_var} = {color}",
-                    f"{out_var} = ({r}, {g}, {b}, {src_var}[3])",
-                ]
-            )
+            return f"{out_var} = _linear_to_srgb({color})"
         if self.mode == "GRAYSCALE":
-            gray_var = f"_cs_gray_{cs_id}"
-            return "\n".join(
-                [
-                    f"{src_var} = {color}",
-                    f"{gray_var} = 0.2126 * {src_var}[0] + 0.7152 * {src_var}[1] + 0.0722 * {src_var}[2]",
-                    f"{out_var} = ({gray_var}, {gray_var}, {gray_var}, {src_var}[3])",
-                ]
-            )
-        r = srgb_to_linear_expr(f"{src_var}[0]")
-        g = srgb_to_linear_expr(f"{src_var}[1]")
-        b = srgb_to_linear_expr(f"{src_var}[2]")
-        return "\n".join(
-            [
-                f"{src_var} = {color}",
-                f"{out_var} = ({r}, {g}, {b}, {src_var}[3])",
-            ]
-        )
+            return f"{out_var} = _to_grayscale({color})"
+        return f"{out_var} = _srgb_to_linear({color})"

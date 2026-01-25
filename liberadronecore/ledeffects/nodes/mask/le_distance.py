@@ -68,15 +68,15 @@ class LDLEDDistanceMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
             obj_expr = repr(self.target_object.name)
         max_dist = max(0.0001, float(self.max_distance))
         value = inputs.get("Value", "1.0")
-        base_expr = f"max(0.0, min(1.0, 1.0 - (_dist / {max_dist!r})))"
+        base_expr = f"_clamp01(1.0 - (_dist / {max_dist!r}))"
         if self.invert:
             base_expr = f"(1.0 - ({base_expr}))"
         if self.combine_mode == "ADD":
-            expr = f"max(0.0, min(1.0, ({base_expr}) + ({value})))"
+            expr = f"_clamp01(({base_expr}) + ({value}))"
         elif self.combine_mode == "SUB":
-            expr = f"max(0.0, min(1.0, ({base_expr}) - ({value})))"
+            expr = f"_clamp01(({base_expr}) - ({value}))"
         else:
-            expr = f"max(0.0, min(1.0, ({base_expr}) * ({value})))"
+            expr = f"_clamp01(({base_expr}) * ({value}))"
         return "\n".join(
             [
                 f"_dist = _distance_to_mesh_bbox({obj_expr}, (pos[0], pos[1], pos[2]))",

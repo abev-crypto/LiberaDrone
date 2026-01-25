@@ -73,11 +73,11 @@ class LDLEDCollectionMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         if self.invert:
             base_expr = f"(1.0 - ({base_expr}))"
         if self.combine_mode == "ADD":
-            expr = f"max(0.0, min(1.0, ({base_expr}) + ({value})))"
+            expr = f"_clamp01(({base_expr}) + ({value}))"
         elif self.combine_mode == "SUB":
-            expr = f"max(0.0, min(1.0, ({base_expr}) - ({value})))"
+            expr = f"_clamp01(({base_expr}) - ({value}))"
         else:
-            expr = f"max(0.0, min(1.0, ({base_expr}) * ({value})))"
+            expr = f"_clamp01(({base_expr}) * ({value}))"
         return "\n".join(
             [
                 f"{ids_var} = _collection_formation_ids({col_name}, {bool(self.use_children)!r})",

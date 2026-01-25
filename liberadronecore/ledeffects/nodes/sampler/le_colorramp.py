@@ -3,6 +3,7 @@ import colorsys
 from typing import Dict, Sequence, Tuple
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects.runtime_registry import register_runtime_function
+from liberadronecore.ledeffects.nodes.util.le_math import _clamp01, _ease, _lerp
 
 
 _COLOR_RAMP_LUTS: Dict[str, Tuple[Tuple[float, float, float, float], ...]] = {}
@@ -21,9 +22,7 @@ def _color_ramp_lut(key: str):
 def _color_ramp_eval_lut(lut, factor: float):
     if not lut:
         return 0.0, 0.0, 0.0, 1.0
-    # Inlined _clamp01
-    t = float(factor)
-    t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+    t = _clamp01(float(factor))
     steps = len(lut)
     if steps <= 1:
         return tuple(lut[0])
@@ -35,13 +34,20 @@ def _color_ramp_eval_lut(lut, factor: float):
     local_t = pos - idx0
     c0 = lut[idx0]
     c1 = lut[idx1]
-    # Inlined _lerp
     return (
-        c0[0] + (c1[0] - c0[0]) * local_t,
-        c0[1] + (c1[1] - c0[1]) * local_t,
-        c0[2] + (c1[2] - c0[2]) * local_t,
-        c0[3] + (c1[3] - c0[3]) * local_t,
+        _lerp(c0[0], c1[0], local_t),
+        _lerp(c0[1], c1[1], local_t),
+        _lerp(c0[2], c1[2], local_t),
+        _lerp(c0[3], c1[3], local_t),
     )
+
+
+@register_runtime_function
+def _hue_lerp(h0: float, h1: float, t: float) -> float:
+    delta = (h1 - h0) % 1.0
+    if delta > 0.5:
+        delta -= 1.0
+    return (h0 + delta * t) % 1.0
 
 
 @register_runtime_function
@@ -50,37 +56,24 @@ def _lerp_color(c0, c1, t: float, mode: str):
     if mode == "HSV":
         h0, s0, v0 = colorsys.rgb_to_hsv(c0[0], c0[1], c0[2])
         h1, s1, v1 = colorsys.rgb_to_hsv(c1[0], c1[1], c1[2])
-        # Inlined _hue_lerp
-        delta = (h1 - h0) % 1.0
-        if delta > 0.5:
-            delta -= 1.0
-        h = (h0 + delta * t) % 1.0
-        # Inlined _lerp
-        s = s0 + (s1 - s0) * t
-        v = v0 + (v1 - v0) * t
+        h = _hue_lerp(h0, h1, t)
+        s = _lerp(s0, s1, t)
+        v = _lerp(v0, v1, t)
         r, g, b = colorsys.hsv_to_rgb(h, s, v)
-        # Inlined _lerp
-        return r, g, b, (c0[3] + (c1[3] - c0[3]) * t)
+        return r, g, b, _lerp(c0[3], c1[3], t)
     if mode == "HSL":
         h0, l0, s0 = colorsys.rgb_to_hls(c0[0], c0[1], c0[2])
         h1, l1, s1 = colorsys.rgb_to_hls(c1[0], c1[1], c1[2])
-        # Inlined _hue_lerp
-        delta = (h1 - h0) % 1.0
-        if delta > 0.5:
-            delta -= 1.0
-        h = (h0 + delta * t) % 1.0
-        # Inlined _lerp
-        l = l0 + (l1 - l0) * t
-        s = s0 + (s1 - s0) * t
+        h = _hue_lerp(h0, h1, t)
+        l = _lerp(l0, l1, t)
+        s = _lerp(s0, s1, t)
         r, g, b = colorsys.hls_to_rgb(h, l, s)
-        # Inlined _lerp
-        return r, g, b, (c0[3] + (c1[3] - c0[3]) * t)
-    # Inlined _lerp
+        return r, g, b, _lerp(c0[3], c1[3], t)
     return (
-        c0[0] + (c1[0] - c0[0]) * t,
-        c0[1] + (c1[1] - c0[1]) * t,
-        c0[2] + (c1[2] - c0[2]) * t,
-        c0[3] + (c1[3] - c0[3]) * t,
+        _lerp(c0[0], c1[0], t),
+        _lerp(c0[1], c1[1], t),
+        _lerp(c0[2], c1[2], t),
+        _lerp(c0[3], c1[3], t),
     )
 
 
@@ -88,9 +81,7 @@ def _lerp_color(c0, c1, t: float, mode: str):
 def _color_ramp_eval(elements, interpolation: str, color_mode: str, factor: float):
     if not elements:
         return 0.0, 0.0, 0.0, 1.0
-    # Inlined _clamp01
-    t = float(factor)
-    t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+    t = _clamp01(float(factor))
     elements = sorted(elements, key=lambda e: e[0])
     if t <= elements[0][0]:
         return tuple(elements[0][1])
@@ -107,8 +98,7 @@ def _color_ramp_eval(elements, interpolation: str, color_mode: str, factor: floa
             if interp == "CONSTANT":
                 return tuple(c0)
             if interp in {"EASE", "CARDINAL", "B_SPLINE"}:
-                # Inlined _ease
-                local_t = local_t * local_t * (3.0 - 2.0 * local_t)
+                local_t = _ease(local_t)
             return _lerp_color(tuple(c0), tuple(c1), local_t, color_mode)
     return tuple(elements[-1][1])
 
@@ -117,9 +107,7 @@ def _color_ramp_eval(elements, interpolation: str, color_mode: str, factor: floa
 def _color_ramp_eval_sorted(elements, interpolation: str, color_mode: str, factor: float):
     if not elements:
         return 0.0, 0.0, 0.0, 1.0
-    # Inlined _clamp01
-    t = float(factor)
-    t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+    t = _clamp01(float(factor))
     if t <= elements[0][0]:
         return tuple(elements[0][1])
     if t >= elements[-1][0]:
@@ -135,8 +123,7 @@ def _color_ramp_eval_sorted(elements, interpolation: str, color_mode: str, facto
             if interp == "CONSTANT":
                 return tuple(c0)
             if interp in {"EASE", "CARDINAL", "B_SPLINE"}:
-                # Inlined _ease
-                local_t = local_t * local_t * (3.0 - 2.0 * local_t)
+                local_t = _ease(local_t)
             return _lerp_color(tuple(c0), tuple(c1), local_t, color_mode)
     return tuple(elements[-1][1])
 
@@ -210,17 +197,5 @@ class LDLEDColorRampNode(bpy.types.Node, LDLED_CodeNodeBase):
             ]
         lut_key = f"{self.codegen_id()}_{int(self.as_pointer())}"
         _register_color_ramp_lut(lut_key, lut)
-
-        loop_id = f"{self.codegen_id()}_{int(self.as_pointer())}"
-        loop_var = f"_loop_val_{loop_id}"
-        frac_var = f"_loop_frac_{loop_id}"
-        lines = [
-            f"{loop_var} = ({factor}) * ({loop})",
-            f"{frac_var} = {loop_var} - math.floor({loop_var})",
-        ]
-        if self.loop_mode == "PINGPONG":
-            factor_expr = f"(1.0 - abs(2.0 * {frac_var} - 1.0))"
-        else:  # REPEAT
-            factor_expr = frac_var
-        lines.append(f"{out_var} = _color_ramp_eval_lut(_color_ramp_lut({lut_key!r}), {factor_expr})")
-        return "\n".join(lines)
+        factor_expr = f"_loop_factor(({factor}) * ({loop}), {self.loop_mode!r})"
+        return f"{out_var} = _color_ramp_eval_lut(_color_ramp_lut({lut_key!r}), {factor_expr})"
