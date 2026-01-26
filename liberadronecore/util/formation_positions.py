@@ -29,6 +29,20 @@ def _order_indices_by_pair_ids(pair_ids: Optional[Sequence[int]]):
     return [idx for _key, idx in paired] + fallback, True
 
 
+def _pair_ids_hash(pair_ids: Optional[Sequence[int]]) -> int:
+    if not pair_ids:
+        return 0
+    h = 1469598103934665603
+    for pid in pair_ids:
+        try:
+            val = int(pid)
+        except (TypeError, ValueError):
+            val = 0
+        h ^= val & 0xFFFFFFFFFFFFFFFF
+        h = (h * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
 def _order_by_pair_ids(
     positions: Sequence,
     pair_ids: Optional[Sequence[int]],
@@ -88,6 +102,7 @@ def collect_formation_positions(
             )
         return positions, None, signature
 
+    pair_hash = _pair_ids_hash(pair_ids) if include_signature else 0
     pair_sort = False
     if sort_by_pair_id:
         positions, pair_ids, pair_sort = _order_by_pair_ids(positions, pair_ids)
@@ -98,6 +113,7 @@ def collect_formation_positions(
             ("__scene__", scene.name if scene else ""),
             ("__vert_count__", len(positions)),
             ("__pair_sort__", 1 if pair_sort else 0),
+            ("__pair_hash__", pair_hash),
         )
 
     return positions, pair_ids, signature
@@ -144,6 +160,7 @@ def collect_formation_positions_with_form_ids(
             )
         return positions, None, None, signature
 
+    pair_hash = _pair_ids_hash(pair_ids) if include_signature else 0
     pair_sort = False
     if sort_by_pair_id:
         indices, ok = _order_indices_by_pair_ids(pair_ids)
@@ -163,6 +180,7 @@ def collect_formation_positions_with_form_ids(
             ("__scene__", scene.name if scene else ""),
             ("__vert_count__", len(positions)),
             ("__pair_sort__", 1 if pair_sort else 0),
+            ("__pair_hash__", pair_hash),
         )
 
     return positions, pair_ids, form_ids, signature
