@@ -9,13 +9,9 @@ from mathutils import Vector
 from liberadronecore.system.transition import transition_apply
 
 
-def _order_by_pair_ids(
-    positions: Sequence,
-    pair_ids: Optional[Sequence[int]],
-):
-    if not pair_ids or len(pair_ids) != len(positions):
-        return positions, pair_ids, False
-
+def _order_indices_by_pair_ids(pair_ids: Optional[Sequence[int]]):
+    if not pair_ids:
+        return [], False
     paired = []
     fallback = []
     for idx, pid in enumerate(pair_ids):
@@ -27,12 +23,22 @@ def _order_by_pair_ids(
             fallback.append(idx)
         else:
             paired.append((key, idx))
-
     if not paired:
+        return [], False
+    paired.sort(key=lambda item: (item[0], item[1]))
+    return [idx for _key, idx in paired] + fallback, True
+
+
+def _order_by_pair_ids(
+    positions: Sequence,
+    pair_ids: Optional[Sequence[int]],
+):
+    if not pair_ids or len(pair_ids) != len(positions):
         return positions, pair_ids, False
 
-    paired.sort(key=lambda item: (item[0], item[1]))
-    indices = [idx for _key, idx in paired] + fallback
+    indices, ok = _order_indices_by_pair_ids(pair_ids)
+    if not ok:
+        return positions, pair_ids, False
 
     if isinstance(positions, np.ndarray):
         ordered_positions = positions[np.asarray(indices, dtype=np.int64)]
@@ -95,3 +101,68 @@ def collect_formation_positions(
         )
 
     return positions, pair_ids, signature
+
+
+def collect_formation_positions_with_form_ids(
+    scene: bpy.types.Scene,
+    depsgraph: bpy.types.Depsgraph,
+    *,
+    collection_name: str = "Formation",
+    sort_by_pair_id: bool = False,
+    include_signature: bool = False,
+    as_numpy: bool = False,
+):
+    col = bpy.data.collections.get(collection_name)
+    if col is None:
+        positions = np.empty((0, 3), dtype=np.float32) if as_numpy else []
+        signature = None
+        if include_signature:
+            signature = (
+                ("__scene__", scene.name if scene else ""),
+                ("__vert_count__", 0),
+                ("__pair_sort__", 0),
+            )
+        return positions, None, None, signature
+
+    frame = int(getattr(scene, "frame_current", 0)) if scene else 0
+    positions, pair_ids, form_ids = transition_apply._collect_positions_for_collection(
+        col,
+        frame,
+        depsgraph,
+        collect_form_ids=True,
+        as_numpy=as_numpy,
+    )
+
+    if positions is None or len(positions) == 0:
+        positions = np.empty((0, 3), dtype=np.float32) if as_numpy else []
+        signature = None
+        if include_signature:
+            signature = (
+                ("__scene__", scene.name if scene else ""),
+                ("__vert_count__", 0),
+                ("__pair_sort__", 0),
+            )
+        return positions, None, None, signature
+
+    pair_sort = False
+    if sort_by_pair_id:
+        indices, ok = _order_indices_by_pair_ids(pair_ids)
+        if ok:
+            if isinstance(positions, np.ndarray):
+                positions = positions[np.asarray(indices, dtype=np.int64)]
+            else:
+                positions = [positions[idx] for idx in indices]
+            pair_ids = [pair_ids[idx] for idx in indices] if pair_ids else pair_ids
+            if form_ids:
+                form_ids = [form_ids[idx] for idx in indices]
+            pair_sort = True
+
+    signature = None
+    if include_signature:
+        signature = (
+            ("__scene__", scene.name if scene else ""),
+            ("__vert_count__", len(positions)),
+            ("__pair_sort__", 1 if pair_sort else 0),
+        )
+
+    return positions, pair_ids, form_ids, signature

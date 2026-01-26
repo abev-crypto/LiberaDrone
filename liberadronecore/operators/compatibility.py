@@ -753,7 +753,7 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
 
         bounds_suffix = _format_bounds_suffix(pos_min, pos_max)
         vat_base = f"{name}_VAT_{bounds_suffix}"
-        cat_base = f"{name}_CAT"
+        cat_base = f"{name}_Color"
         pos_path = os.path.join(target_dir, f"{vat_base}.exr")
         cat_path = os.path.join(target_dir, f"{cat_base}.png")
 
@@ -917,7 +917,7 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
 
             bounds_suffix = _format_bounds_suffix(pos_min, pos_max)
             vat_base = f"{safe_name}_VAT_{bounds_suffix}"
-            cat_base = f"{safe_name}_CAT"
+            cat_base = f"{safe_name}_Color"
             pos_path = os.path.join(target_dir, f"{vat_base}.exr")
             cat_path = os.path.join(target_dir, f"{cat_base}.png")
 

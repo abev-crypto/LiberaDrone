@@ -20,13 +20,19 @@ _LED_FRAME_CACHE: Dict[str, Any] = {
     "collection": {},
     "collection_ids": {},
     "bbox": {},
+    "formation_ids": None,
 }
 _LED_CURRENT_INDEX: Optional[int] = None
+_LED_SOURCE_INDEX: Optional[int] = None
 _FORMATION_BBOX_CACHE: Dict[str, Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = {}
 _COLLECTION_IDS_CACHE: Dict[Tuple[str, bool], list[int]] = {}
 
 
-def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, float]]) -> None:
+def begin_led_frame_cache(
+    frame: float,
+    positions: List[Tuple[float, float, float]],
+    formation_ids: Optional[List[int]] = None,
+) -> None:
     _LED_FRAME_CACHE["frame"] = float(frame)
     _LED_FRAME_CACHE["object"] = {}
     _LED_FRAME_CACHE["object_transform"] = {}
@@ -35,6 +41,7 @@ def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, floa
     _LED_FRAME_CACHE["collection"] = {}
     _LED_FRAME_CACHE["collection_ids"] = {}
     _LED_FRAME_CACHE["bbox"] = {}
+    _LED_FRAME_CACHE["formation_ids"] = formation_ids
 
 
 def end_led_frame_cache() -> None:
@@ -46,11 +53,30 @@ def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["collection"] = {}
     _LED_FRAME_CACHE["collection_ids"] = {}
     _LED_FRAME_CACHE["bbox"] = {}
+    _LED_FRAME_CACHE["formation_ids"] = None
 
 
 def set_led_runtime_index(idx: Optional[int]) -> None:
     global _LED_CURRENT_INDEX
     _LED_CURRENT_INDEX = None if idx is None else int(idx)
+
+
+def set_led_source_index(idx: Optional[int]) -> None:
+    global _LED_SOURCE_INDEX
+    _LED_SOURCE_INDEX = None if idx is None else int(idx)
+
+
+@register_runtime_function
+def _formation_id() -> int:
+    ids = _LED_FRAME_CACHE.get("formation_ids")
+    if ids and _LED_SOURCE_INDEX is not None and 0 <= _LED_SOURCE_INDEX < len(ids):
+        try:
+            return int(ids[_LED_SOURCE_INDEX])
+        except Exception:
+            pass
+    if _LED_CURRENT_INDEX is not None:
+        return int(_LED_CURRENT_INDEX)
+    return 0
 
 
 @register_runtime_function

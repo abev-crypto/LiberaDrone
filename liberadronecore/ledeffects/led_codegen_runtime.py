@@ -61,8 +61,13 @@ def _default_for_input(socket: bpy.types.NodeSocket) -> str:
     return _default_for_socket(socket)
 
 
-def begin_led_frame_cache(frame: float, positions: List[Tuple[float, float, float]]) -> None:
-    le_meshinfo.begin_led_frame_cache(frame, positions)
+def begin_led_frame_cache(
+    frame: float,
+    positions: List[Tuple[float, float, float]],
+    *,
+    formation_ids: Optional[List[int]] = None,
+) -> None:
+    le_meshinfo.begin_led_frame_cache(frame, positions, formation_ids)
 
 
 def end_led_frame_cache() -> None:
@@ -71,6 +76,10 @@ def end_led_frame_cache() -> None:
 
 def set_led_runtime_index(idx: Optional[int]) -> None:
     le_meshinfo.set_led_runtime_index(idx)
+
+
+def set_led_source_index(idx: Optional[int]) -> None:
+    le_meshinfo.set_led_source_index(idx)
 
 
 def _prewarm_tree_images(tree: Optional[bpy.types.NodeTree]) -> None:

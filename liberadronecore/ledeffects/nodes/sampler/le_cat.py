@@ -14,6 +14,11 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         type=bpy.types.Image,
         options={'LIBRARY_EDITABLE'},
     )
+    use_formation_id: bpy.props.BoolProperty(
+        name="Use Formation ID",
+        default=False,
+        options={'LIBRARY_EDITABLE'},
+    )
 
     @classmethod
     def poll(cls, ntree):
@@ -25,12 +30,14 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def draw_buttons(self, context, layout):
         layout.prop(self, "image")
+        layout.prop(self, "use_formation_id")
 
     def build_code(self, inputs):
         entry = inputs.get("Entry", "_entry_empty()")
         out_var = self.output_var("Color")
         image_name = self.image.name if self.image else ""
         cat_id = f"{self.codegen_id()}_{int(self.as_pointer())}"
+        idx_expr = "_formation_id()" if self.use_formation_id else "idx"
         return "\n".join(
             [
                 f"_active_{cat_id} = _entry_active_count({entry}, frame)",
@@ -42,7 +49,7 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
                 f"if _img_{cat_id}:",
                 f"    _im_{cat_id} = bpy.data.images.get(_img_{cat_id})",
                 f"    if _im_{cat_id} and _im_{cat_id}.size[1] > 1:",
-                f"        _v_{cat_id} = _clamp(idx / float(_im_{cat_id}.size[1] - 1), 0.0, 1.0)",
+                f"        _v_{cat_id} = _clamp({idx_expr} / float(_im_{cat_id}.size[1] - 1), 0.0, 1.0)",
                 f"{out_var} = _sample_image(_img_{cat_id}, (_progress_{cat_id}, _v_{cat_id})) if _active_{cat_id} > 0 else (0.0, 0.0, 0.0, 1.0)",
             ]
         )

@@ -172,19 +172,23 @@ def _write_led_color_attribute(colors, pair_ids=None) -> None:
 
 def _collect_formation_positions(scene):
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    positions, pair_ids, _signature = formation_positions.collect_formation_positions(
-        scene,
-        depsgraph,
-        collection_name="Formation",
-        sort_by_pair_id=False,
-        include_signature=False,
-        as_numpy=True,
+    positions, pair_ids, formation_ids, _signature = (
+        formation_positions.collect_formation_positions_with_form_ids(
+            scene,
+            depsgraph,
+            collection_name="Formation",
+            sort_by_pair_id=False,
+            include_signature=False,
+            as_numpy=True,
+        )
     )
     if positions is None or len(positions) == 0:
-        return np.empty((0, 3), dtype=np.float32), None
+        return np.empty((0, 3), dtype=np.float32), None, None
     if not pair_ids or len(pair_ids) != len(positions):
         pair_ids = None
-    return positions, pair_ids
+    if not formation_ids or len(formation_ids) != len(positions):
+        formation_ids = None
+    return positions, pair_ids, formation_ids
 
 
 def _order_positions_by_pair_id(
@@ -240,11 +244,11 @@ def update_led_effects(scene):
     frame = scene.frame_current
     frame_start = scene.frame_start
 
-    positions, pair_ids = _collect_formation_positions(scene)
+    positions, pair_ids, formation_ids = _collect_formation_positions(scene)
     if positions is None or len(positions) == 0:
         return
 
-    le_codegen.begin_led_frame_cache(frame, positions)
+    le_codegen.begin_led_frame_cache(frame, positions, formation_ids=formation_ids)
     colors = np.zeros((len(positions), 4), dtype=np.float32)
     try:
         for idx, pos in enumerate(positions):
@@ -256,6 +260,7 @@ def update_led_effects(scene):
                         runtime_idx = int(pid)
                     except (TypeError, ValueError):
                         runtime_idx = idx
+            le_codegen.set_led_source_index(idx)
             le_codegen.set_led_runtime_index(runtime_idx)
             color = effect_fn(runtime_idx, pos, frame)
             if not color:
@@ -264,6 +269,7 @@ def update_led_effects(scene):
                 colors[idx, chan] = float(color[chan])
     finally:
         le_codegen.set_led_runtime_index(None)
+        le_codegen.set_led_source_index(None)
         le_codegen.end_led_frame_cache()
 
     #_write_column_to_cache(frame - frame_start, colors)
