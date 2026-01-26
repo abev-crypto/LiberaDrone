@@ -267,7 +267,18 @@ class LD_PT_libera_panel_compatibility(LD_PT_libera_panel_base):
         layout = self.layout
         scene = context.scene
         layout.prop(scene, "ld_import_vat_dir", text="VAT/CAT Folder")
-        layout.operator("liberadrone.compat_import_vatcat", text="Import VAT/CAT")
+        row = layout.row(align=True)
+        row.operator("liberadrone.compat_import_vatcat", text="Import VAT/CAT")
+        row.operator("liberadrone.compat_preview_vatcat", text="Preview")
+        layout.template_list(
+            "LD_UL_CompatPreview",
+            "",
+            scene,
+            "ld_compat_preview_items",
+            scene,
+            "ld_compat_preview_index",
+            rows=4,
+        )
         layout.operator("liberadrone.export_vatcat_renderrange", text="Export VAT/CAT (Render Range)")
         layout.operator("liberadrone.export_vatcat_transitions", text="Export VAT/CAT (Transitions)")
 
@@ -285,6 +296,8 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+
+    from liberadronecore.operators import compatibility as compat_ops
 
     bpy.types.Scene.ld_preview_show_ring = bpy.props.BoolProperty(
         name="ShowRing",
@@ -386,6 +399,13 @@ def register():
         default="",
         subtype='DIR_PATH',
     )
+    bpy.types.Scene.ld_compat_preview_items = bpy.props.CollectionProperty(
+        type=compat_ops.LD_CompatPreviewItem,
+    )
+    bpy.types.Scene.ld_compat_preview_index = bpy.props.IntProperty(
+        name="Preview Index",
+        default=0,
+    )
     scene = getattr(bpy.context, "scene", None)
     if scene and getattr(scene, "ld_limit_profile", "") == "MODEL_X":
         defaults = (
@@ -420,6 +440,10 @@ def unregister():
         del bpy.types.Scene.ld_import_sheet_url
     if hasattr(bpy.types.Scene, "ld_import_vat_dir"):
         del bpy.types.Scene.ld_import_vat_dir
+    if hasattr(bpy.types.Scene, "ld_compat_preview_index"):
+        del bpy.types.Scene.ld_compat_preview_index
+    if hasattr(bpy.types.Scene, "ld_compat_preview_items"):
+        del bpy.types.Scene.ld_compat_preview_items
     if hasattr(bpy.types.Scene, "ld_checker_range_object"):
         del bpy.types.Scene.ld_checker_range_object
     if hasattr(bpy.types.Scene, "ld_checker_size"):

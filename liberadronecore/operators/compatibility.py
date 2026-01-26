@@ -122,6 +122,200 @@ def _ordered_subdirs(base_dir: str, metadata_map: dict[str, dict]) -> list[str]:
     return ordered
 
 
+def _ordered_candidate_names(base_dir: str, metadata_map: dict[str, dict]) -> list[str]:
+    subdirs = [d for d in sorted(os.listdir(base_dir)) if os.path.isdir(os.path.join(base_dir, d))]
+    if not metadata_map:
+        if subdirs:
+            return subdirs
+        return [os.path.basename(base_dir)]
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for key, meta in sorted(metadata_map.items(), key=lambda item: item[1]["id"]):
+        name = str(key)
+        ordered.append(name)
+        seen.add(name)
+    for name in subdirs:
+        if name not in seen:
+            ordered.append(name)
+    return ordered
+
+
+def _transition_duration_from_meta(meta: dict | None, default: int | None) -> int:
+    meta = meta or {}
+    try:
+        duration = meta.get("transition_duration", meta.get("duration", default))
+    except Exception:
+        duration = default
+    if duration is None:
+        return int(default or 0)
+    try:
+        return int(duration)
+    except Exception:
+        return int(default or 0)
+
+
+def _is_transition_marker(name: str) -> bool:
+    return "_TR" in (name or "")
+
+
+def _build_compat_candidates(base_dir: str, report, fps: float) -> tuple[list[dict[str, object]], dict[str, int | None]]:
+    metadata_map, metadata_defaults = _load_prefix_map(base_dir, report)
+    ordered_names = _ordered_candidate_names(base_dir, metadata_map)
+    candidates: list[dict[str, object]] = []
+
+    for folder_name in ordered_names:
+        folder_path = os.path.join(base_dir, folder_name)
+        if not os.path.isdir(folder_path):
+            folder_path = ""
+        base_name, gap_frames = _split_name_and_gap(folder_name, fps)
+        meta = metadata_map.get(folder_name, {}) if metadata_map else {}
+        display_name = _storyboard_name(base_name, meta)
+
+        pos_img = None
+        cat_img = None
+        pos_path = None
+        if folder_path:
+            pos_path, cat_path = sheetutils._find_vat_cat_files(folder_path)
+            pos_img = sheetutils._load_image(pos_path) if pos_path else None
+            cat_img = sheetutils._load_image(cat_path) if cat_path else None
+
+        frame_count = 0
+        if pos_img is not None and getattr(pos_img, "size", None):
+            frame_count = int(pos_img.size[0])
+        elif cat_img is not None and getattr(cat_img, "size", None):
+            frame_count = int(cat_img.size[0])
+
+        duration = max(0, int(frame_count) - 1) if frame_count > 0 else 0
+        has_assets = frame_count > 0
+        bounds = (
+            sheetutils._parse_bounds_from_name(os.path.basename(pos_path))
+            if pos_path
+            else None
+        )
+        pos_min, pos_max = bounds if bounds else ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
+
+        candidates.append(
+            {
+                "name": folder_name,
+                "folder_path": folder_path,
+                "display_name": display_name,
+                "base_name": base_name,
+                "gap_frames": int(gap_frames),
+                "meta": meta,
+                "pos_img": pos_img,
+                "cat_img": cat_img,
+                "pos_min": pos_min,
+                "pos_max": pos_max,
+                "frame_count": int(frame_count),
+                "duration": int(duration),
+                "has_assets": bool(has_assets),
+                "is_transition_marker": _is_transition_marker(folder_name),
+            }
+        )
+
+    return candidates, metadata_defaults
+
+
+def _build_compat_sequence(
+    candidates: list[dict[str, object]],
+    metadata_defaults: dict[str, int | None],
+    *,
+    selected_names: set[str] | None = None,
+    include_auto_transitions: bool = True,
+) -> list[dict[str, object]]:
+    if not candidates:
+        return []
+    show_mask: list[bool] = []
+    for entry in candidates:
+        name = str(entry.get("name", ""))
+        allowed = selected_names is None or name in selected_names
+        show_mask.append(bool(entry.get("has_assets")) and allowed)
+
+    prev_show_idx: list[int | None] = [None] * len(candidates)
+    last_idx: int | None = None
+    for idx, is_show in enumerate(show_mask):
+        prev_show_idx[idx] = last_idx
+        if is_show:
+            last_idx = idx
+
+    next_show_idx: list[int | None] = [None] * len(candidates)
+    next_idx: int | None = None
+    for idx in range(len(candidates) - 1, -1, -1):
+        next_show_idx[idx] = next_idx
+        if show_mask[idx]:
+            next_idx = idx
+
+    base_sequence: list[dict[str, object]] = []
+    for idx, entry in enumerate(candidates):
+        name = str(entry.get("name", ""))
+        allowed = selected_names is None or name in selected_names
+        if show_mask[idx]:
+            base_sequence.append(
+                {
+                    "kind": "SHOW",
+                    "source_name": name,
+                    "display_name": entry.get("display_name", name),
+                    "meta": entry.get("meta", {}),
+                    "gap_frames": entry.get("gap_frames", 0),
+                    "duration": entry.get("duration", 0),
+                    "frame_count": entry.get("frame_count", 0),
+                    "pos_img": entry.get("pos_img"),
+                    "pos_min": entry.get("pos_min"),
+                    "pos_max": entry.get("pos_max"),
+                    "cat_img": entry.get("cat_img"),
+                }
+            )
+        elif (
+            allowed
+            and entry.get("is_transition_marker")
+            and prev_show_idx[idx] is not None
+            and next_show_idx[idx] is not None
+        ):
+            base_sequence.append(
+                {
+                    "kind": "TRANSITION",
+                    "source_name": name,
+                    "display_name": entry.get("display_name", name),
+                    "meta": entry.get("meta", {}),
+                    "transition_duration": _transition_duration_from_meta(
+                        entry.get("meta", {}),
+                        metadata_defaults.get("transition_duration", 0),
+                    ),
+                    "is_auto": False,
+                }
+            )
+
+    if not include_auto_transitions:
+        return base_sequence
+
+    sequence: list[dict[str, object]] = []
+    for idx, entry in enumerate(base_sequence):
+        sequence.append(entry)
+        if entry.get("kind") != "SHOW":
+            continue
+        if idx >= len(base_sequence) - 1:
+            continue
+        next_entry = base_sequence[idx + 1]
+        if next_entry.get("kind") != "SHOW":
+            continue
+        transition_duration = _transition_duration_from_meta(
+            next_entry.get("meta", {}),
+            metadata_defaults.get("transition_duration", 0),
+        )
+        sequence.append(
+            {
+                "kind": "TRANSITION",
+                "source_name": f"{entry.get('source_name', '')}__auto",
+                "display_name": f"{entry.get('display_name', '')}Transition",
+                "meta": next_entry.get("meta", {}),
+                "transition_duration": transition_duration,
+                "is_auto": True,
+            }
+        )
+
+    return sequence
+
+
 def _sanitize_name(name: str) -> str:
     safe = []
     for ch in name or "":
@@ -197,6 +391,76 @@ def _format_bounds_suffix(pos_min, pos_max) -> str:
     )
 
 
+class LD_CompatPreviewItem(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="Name", default="")
+    source_name: bpy.props.StringProperty(name="Source", default="")
+    kind: bpy.props.StringProperty(name="Kind", default="SHOW")
+    checked: bpy.props.BoolProperty(name="Use", default=True)
+
+
+class LD_UL_CompatPreview(bpy.types.UIList):
+    bl_idname = "LD_UL_CompatPreview"
+
+    def draw_item(
+        self,
+        context,
+        layout,
+        _data,
+        item,
+        _icon,
+        _active_data,
+        _active_propname,
+        _index,
+    ):
+        row = layout.row(align=True)
+        row.prop(item, "checked", text="")
+        label = item.name or item.source_name
+        if item.kind == "TRANSITION":
+            label = f"{label} (TR)"
+        row.label(text=label)
+
+
+class LD_OT_compat_preview_vatcat(bpy.types.Operator):
+    bl_idname = "liberadrone.compat_preview_vatcat"
+    bl_label = "Compatibility Preview (VAT/CAT)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        scene = context.scene
+        base_dir = bpy.path.abspath(getattr(scene, "ld_import_vat_dir", "") or "")
+        if not base_dir or not os.path.isdir(base_dir):
+            self.report({"ERROR"}, "Invalid VAT/CAT folder")
+            return {"CANCELLED"}
+
+        items = getattr(scene, "ld_compat_preview_items", None)
+        if items is None:
+            self.report({"ERROR"}, "Preview list not available")
+            return {"CANCELLED"}
+        items.clear()
+
+        fps = scene.render.fps
+        candidates, metadata_defaults = _build_compat_candidates(base_dir, self.report, fps)
+        sequence = _build_compat_sequence(
+            candidates,
+            metadata_defaults,
+            include_auto_transitions=False,
+        )
+        if not sequence:
+            self.report({"WARNING"}, "No preview entries found")
+            return {"CANCELLED"}
+
+        for entry in sequence:
+            item = items.add()
+            item.name = str(entry.get("display_name", ""))
+            item.source_name = str(entry.get("source_name", ""))
+            item.kind = str(entry.get("kind", "SHOW"))
+            item.checked = True
+
+        scene.ld_compat_preview_index = 0
+        self.report({"INFO"}, "Preview generated")
+        return {"FINISHED"}
+
+
 class LD_OT_compat_import_vatcat(bpy.types.Operator):
     bl_idname = "liberadrone.compat_import_vatcat"
     bl_label = "Compatibility Import (VAT/CAT)"
@@ -219,13 +483,6 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
             self.report({"ERROR"}, "Formation tree not available")
             return {"CANCELLED"}
 
-        metadata_map, metadata_defaults = _load_prefix_map(base_dir, self.report)
-        ordered_subdirs = _ordered_subdirs(base_dir, metadata_map)
-        if ordered_subdirs:
-            target_folders = [(name, os.path.join(base_dir, name)) for name in ordered_subdirs]
-        else:
-            target_folders = [(os.path.basename(base_dir), base_dir)]
-
         start_node = next((n for n in tree.nodes if n.bl_idname == "FN_StartNode"), None)
         if start_node is None:
             start_node = tree.nodes.new("FN_StartNode")
@@ -237,151 +494,119 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
             node_map[key] = node
 
         fps = scene.render.fps
+        candidates, metadata_defaults = _build_compat_candidates(base_dir, self.report, fps)
+        selected_names = None
+        preview_items = getattr(scene, "ld_compat_preview_items", None)
+        if preview_items and len(preview_items) > 0:
+            selected_names = {item.source_name for item in preview_items if item.checked}
+            if not selected_names:
+                self.report({"ERROR"}, "No preview entries selected")
+                return {"CANCELLED"}
+
+        sequence = _build_compat_sequence(
+            candidates,
+            metadata_defaults,
+            selected_names=selected_names,
+            include_auto_transitions=True,
+        )
+
         next_start = metadata_defaults.get("start_frame")
         if next_start is None:
             next_start = int(scene.frame_start)
 
-        created = 0
+        created_shows = 0
         vat_heights: set[int] = set()
-        entries: list[dict[str, object]] = []
-
-        for idx, (folder_name, folder_path) in enumerate(target_folders):
-            if not os.path.isdir(folder_path):
-                continue
-            base_name, gap_frames = _split_name_and_gap(folder_name, fps)
-            meta = metadata_map.get(folder_name, {}) if metadata_map else {}
-            display_name = _storyboard_name(base_name, meta)
-            start_frame = meta.get("start_frame", None)
-            if start_frame is None:
-                start_frame = next_start
-            next_meta = (
-                metadata_map.get(target_folders[idx + 1][0], {})
-                if metadata_map and idx < len(target_folders) - 1
-                else {}
-            )
-
-            pos_path, cat_path = sheetutils._find_vat_cat_files(folder_path)
-            pos_img = sheetutils._load_image(pos_path) if pos_path else None
-            cat_img = sheetutils._load_image(cat_path) if cat_path else None
-
-            if pos_img is None and cat_img is None:
-                continue
-
-            frame_count = 0
-            if pos_img is not None and getattr(pos_img, "size", None):
-                frame_count = int(pos_img.size[0])
-                vat_heights.add(int(pos_img.size[1]))
-            elif cat_img is not None and getattr(cat_img, "size", None):
-                frame_count = int(cat_img.size[0])
-
-            if frame_count <= 0:
-                continue
-
-            duration = max(1, int(frame_count) - 1)
-            bounds = (
-                sheetutils._parse_bounds_from_name(os.path.basename(pos_path))
-                if pos_path
-                else None
-            )
-            pos_min, pos_max = bounds if bounds else ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
-            transition_duration = next_meta.get(
-                "transition_duration",
-                metadata_defaults.get("transition_duration", 0),
-            )
-            try:
-                transition_duration = int(transition_duration)
-            except Exception:
-                transition_duration = 0
-            transition_total = max(0, int(gap_frames) + int(transition_duration))
-
-            entries.append(
-                {
-                    "display_name": display_name,
-                    "start_frame": int(start_frame),
-                    "duration": int(duration),
-                    "frame_count": int(frame_count),
-                    "gap_frames": int(gap_frames),
-                    "transition_duration": int(transition_total),
-                    "pos_img": pos_img,
-                    "pos_min": pos_min,
-                    "pos_max": pos_max,
-                    "cat_img": cat_img,
-                }
-            )
-            next_start = int(start_frame) + int(duration) + int(transition_total)
-
         prev_node = start_node
         flow_index = 0
-        for entry_idx, entry in enumerate(entries):
-            display_name = str(entry["display_name"])
-            duration = int(entry["duration"])
-            frame_count = int(entry["frame_count"])
-            start_frame = int(entry["start_frame"])
-            transition_total = int(entry.get("transition_duration", 0))
-            pos_img = entry["pos_img"]
-            pos_min = entry["pos_min"]
-            pos_max = entry["pos_max"]
-            cat_img = entry["cat_img"]
+        last_gap_frames = 0
 
-            node = node_map.get(display_name)
-            if node is None or node.bl_idname != "FN_ShowNode":
-                node = tree.nodes.new("FN_ShowNode")
-                node.label = display_name
-                node.location = (200 * (flow_index + 1), 0)
-                node_map[display_name] = node
-                created += 1
-            flow_index += 1
+        for entry in sequence:
+            kind = entry.get("kind", "SHOW")
+            if kind == "SHOW":
+                display_name = str(entry.get("display_name", ""))
+                meta = entry.get("meta", {}) or {}
+                duration = int(entry.get("duration", 0))
+                frame_count = int(entry.get("frame_count", 0))
+                start_frame = meta.get("start_frame", None)
+                if start_frame is None:
+                    start_frame = next_start
+                start_frame = int(start_frame)
+                pos_img = entry.get("pos_img")
+                pos_min = entry.get("pos_min")
+                pos_max = entry.get("pos_max")
+                cat_img = entry.get("cat_img")
 
-            col = sheetutils._ensure_collection(scene, display_name)
-            sheetutils._set_socket_collection(node, "Collection", col)
-            sheetutils._set_socket_value(node, "Duration", float(duration))
+                node = node_map.get(display_name)
+                if node is None or node.bl_idname != "FN_ShowNode":
+                    node = tree.nodes.new("FN_ShowNode")
+                    node.label = display_name
+                    node.location = (200 * (flow_index + 1), 0)
+                    node_map[display_name] = node
+                    created_shows += 1
+                flow_index += 1
 
-            if pos_img is not None:
-                vat_count = int(pos_img.size[1]) if getattr(pos_img, "size", None) else 1
-                obj = sheetutils._create_point_object(f"{display_name}_VAT", vat_count, col)
-                try:
-                    pos_img.colorspace_settings.name = "Non-Color"
-                except Exception:
-                    pass
-                start_frame_vat = int(start_frame) - 1
-                frame_count_vat = max(1, int(frame_count))
-                sheetutils._apply_vat_to_object(
-                    obj,
-                    pos_img,
-                    pos_min=pos_min,
-                    pos_max=pos_max,
-                    start_frame=start_frame_vat,
-                    frame_count=frame_count_vat,
-                    drone_count=vat_count,
+                col = sheetutils._ensure_collection(scene, display_name)
+                sheetutils._set_socket_collection(node, "Collection", col)
+                sheetutils._set_socket_value(node, "Duration", float(duration))
+
+                if pos_img is not None:
+                    vat_count = int(pos_img.size[1]) if getattr(pos_img, "size", None) else 1
+                    vat_heights.add(vat_count)
+                    obj = sheetutils._create_point_object(f"{display_name}_VAT", vat_count, col)
+                    try:
+                        pos_img.colorspace_settings.name = "Non-Color"
+                    except Exception:
+                        pass
+                    start_frame_vat = int(start_frame) - 1
+                    frame_count_vat = max(1, int(frame_count))
+                    sheetutils._apply_vat_to_object(
+                        obj,
+                        pos_img,
+                        pos_min=pos_min,
+                        pos_max=pos_max,
+                        start_frame=start_frame_vat,
+                        frame_count=frame_count_vat,
+                        drone_count=vat_count,
+                    )
+
+                if cat_img is not None:
+                    start_frame_led = int(start_frame) - 1
+                    sheetutils._build_cat_led_graph(
+                        context,
+                        cut_name=display_name,
+                        cat_image=cat_img,
+                        start_frame=start_frame_led,
+                        duration=int(duration),
+                    )
+
+                if prev_node:
+                    sheetutils._link_flow(tree, prev_node, node)
+                prev_node = node
+                next_start = int(start_frame) + int(duration)
+                last_gap_frames = int(entry.get("gap_frames", 0))
+            else:
+                display_name = str(entry.get("display_name", ""))
+                transition_meta = entry.get("meta", {}) or {}
+                transition_duration = _transition_duration_from_meta(
+                    transition_meta,
+                    metadata_defaults.get("transition_duration", 0),
                 )
+                transition_total = max(0, int(transition_duration)) + max(0, int(last_gap_frames))
+                last_gap_frames = 0
 
-            if cat_img is not None:
-                start_frame_led = int(start_frame) - 1
-                sheetutils._build_cat_led_graph(
-                    context,
-                    cut_name=display_name,
-                    cat_image=cat_img,
-                    start_frame=start_frame_led,
-                    duration=int(duration),
-                )
-
-            if prev_node:
-                sheetutils._link_flow(tree, prev_node, node)
-            prev_node = node
-
-            if entry_idx < len(entries) - 1:
-                trans_name = f"{display_name}Transition"
-                trans_node = node_map.get(trans_name)
+                trans_node = node_map.get(display_name)
                 if trans_node is None or trans_node.bl_idname != "FN_TransitionNode":
                     trans_node = tree.nodes.new("FN_TransitionNode")
-                    trans_node.label = trans_name
+                    trans_node.label = display_name
                     trans_node.location = (200 * (flow_index + 1), -140)
-                    node_map[trans_name] = trans_node
+                    node_map[display_name] = trans_node
                 flow_index += 1
+
                 sheetutils._set_socket_value(trans_node, "Duration", float(transition_total))
                 if prev_node:
                     sheetutils._link_flow(tree, prev_node, trans_node)
                 prev_node = trans_node
+                next_start = int(next_start) + int(transition_total)
 
         if vat_heights:
             try:
@@ -409,8 +634,8 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
         except Exception:
             pass
 
-        if created:
-            self.report({"INFO"}, f"Imported {created} folder(s)")
+        if created_shows:
+            self.report({"INFO"}, f"Imported {created_shows} folder(s)")
         else:
             self.report({"WARNING"}, "No VAT/CAT folders found")
         return {"FINISHED"}
@@ -738,6 +963,9 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
 class CompatibilityOps(RegisterBase):
     @classmethod
     def register(cls) -> None:
+        bpy.utils.register_class(LD_CompatPreviewItem)
+        bpy.utils.register_class(LD_UL_CompatPreview)
+        bpy.utils.register_class(LD_OT_compat_preview_vatcat)
         bpy.utils.register_class(LD_OT_compat_import_vatcat)
         bpy.utils.register_class(LD_OT_export_vatcat_renderrange)
         bpy.utils.register_class(LD_OT_export_vatcat_transitions)
@@ -747,3 +975,6 @@ class CompatibilityOps(RegisterBase):
         bpy.utils.unregister_class(LD_OT_export_vatcat_transitions)
         bpy.utils.unregister_class(LD_OT_export_vatcat_renderrange)
         bpy.utils.unregister_class(LD_OT_compat_import_vatcat)
+        bpy.utils.unregister_class(LD_OT_compat_preview_vatcat)
+        bpy.utils.unregister_class(LD_UL_CompatPreview)
+        bpy.utils.unregister_class(LD_CompatPreviewItem)
