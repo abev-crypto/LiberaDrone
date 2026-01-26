@@ -226,7 +226,10 @@ class LD_PT_libera_panel_overlay(LD_PT_libera_panel_base):
         col.prop(scene, "ld_checker_range_enabled", text="Range")
         col.prop(scene, "ld_checker_size", text="Checker Size")
         layout.separator()
-        layout.operator("liberadrone.show_check_graph", text="Show Check Graph")
+        row = layout.row(align=True)
+        row.operator("liberadrone.show_check_graph", text="Show Check Graph")
+        op = row.operator("liberadrone.show_check_graph", text="CurrentFormation")
+        op.use_current_range = True
 
 
 class LD_PT_libera_panel_view_setup(LD_PT_libera_panel_base):

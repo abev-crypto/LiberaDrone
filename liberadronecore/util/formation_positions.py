@@ -102,13 +102,13 @@ def collect_formation_positions(
             )
         return positions, None, signature
 
-    pair_hash = _pair_ids_hash(pair_ids) if include_signature else 0
     pair_sort = False
     if sort_by_pair_id:
         positions, pair_ids, pair_sort = _order_by_pair_ids(positions, pair_ids)
 
     signature = None
     if include_signature:
+        pair_hash = _pair_ids_hash(pair_ids)
         signature = (
             ("__scene__", scene.name if scene else ""),
             ("__vert_count__", len(positions)),
@@ -160,7 +160,6 @@ def collect_formation_positions_with_form_ids(
             )
         return positions, None, None, signature
 
-    pair_hash = _pair_ids_hash(pair_ids) if include_signature else 0
     pair_sort = False
     if sort_by_pair_id:
         indices, ok = _order_indices_by_pair_ids(pair_ids)
@@ -176,6 +175,7 @@ def collect_formation_positions_with_form_ids(
 
     signature = None
     if include_signature:
+        pair_hash = _pair_ids_hash(pair_ids)
         signature = (
             ("__scene__", scene.name if scene else ""),
             ("__vert_count__", len(positions)),

@@ -12,6 +12,7 @@ from mathutils import Vector
 from mathutils.kdtree import KDTree
 
 from liberadronecore.util import formation_positions
+from liberadronecore.formation import fn_parse_pairing
 
 FORMATION_ROOT = "Formation"
 ATTR_COLORS = {
@@ -28,6 +29,7 @@ _CHECK_CACHE = {
     "frame": None,
     "prev_frame": None,
     "signature": None,
+    "collection_signature": None,
     "positions": [],
     "positions_np": None,
     "prev_positions": [],
@@ -38,6 +40,7 @@ _CHECK_CACHE = {
     "speed_horiz": [],
     "acc": [],
     "min_distance": [],
+    "form_order": False,
 }
 
 def _get_fps(scene: bpy.types.Scene) -> float:
@@ -50,19 +53,67 @@ def _get_fps(scene: bpy.types.Scene) -> float:
     return fps / base
 
 
+def _collection_signature(collection_name: str) -> tuple[int, ...]:
+    col = bpy.data.collections.get(collection_name)
+    if col is None:
+        return ()
+    meshes = fn_parse_pairing._collect_mesh_objects(col)
+    keys: list[int] = []
+    for obj in meshes:
+        try:
+            key = int(obj.as_pointer())
+        except Exception:
+            key = id(obj)
+        keys.append(key)
+    return tuple(keys)
+
+
 def _collect_formation_positions(
     scene: bpy.types.Scene,
     depsgraph,
-) -> tuple[list[Vector], tuple[tuple[str, int | str], ...]]:
-    positions, _pair_ids, signature = formation_positions.collect_formation_positions(
+) -> tuple[list[Vector], list[int] | None, list[int] | None, tuple[tuple[str, int | str], ...], tuple[int, ...]]:
+    positions, pair_ids, form_ids, signature = formation_positions.collect_formation_positions_with_form_ids(
         scene,
         depsgraph,
         collection_name=FORMATION_ROOT,
-        sort_by_pair_id=True,
+        sort_by_pair_id=False,
         include_signature=True,
         as_numpy=False,
     )
-    return positions, signature or ()
+    return positions, pair_ids, form_ids, signature or (), _collection_signature(FORMATION_ROOT)
+
+
+def _order_indices_by_ids(ids: list[int] | None):
+    if not ids:
+        return [], False
+    paired = []
+    fallback = []
+    for idx, val in enumerate(ids):
+        try:
+            key = int(val)
+        except (TypeError, ValueError):
+            key = None
+        if key is None:
+            fallback.append(idx)
+        else:
+            paired.append((key, idx))
+    if not paired:
+        return [], False
+    paired.sort(key=lambda item: (item[0], item[1]))
+    return [idx for _key, idx in paired] + fallback, True
+
+
+def _valid_id_map(ids: list[int] | None, count: int) -> bool:
+    if not ids or count <= 0 or len(ids) != len(set(ids)):
+        return False
+    for val in ids:
+        try:
+            key = int(val)
+        except (TypeError, ValueError):
+            return False
+        if key < 0 or key >= count:
+            return False
+    return True
 
 
 def _positions_to_numpy(positions: list[Vector]) -> np.ndarray:
@@ -104,7 +155,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
         return cache
 
     depsgraph = bpy.context.evaluated_depsgraph_get()
-    positions, signature = _collect_formation_positions(scene, depsgraph)
+    positions, pair_ids, form_ids, signature, col_sig = _collect_formation_positions(scene, depsgraph)
     if not positions:
         cache.update(
             {
@@ -112,6 +163,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
                 "frame": frame,
                 "prev_frame": None,
                 "signature": signature,
+                "collection_signature": col_sig,
                 "positions": [],
                 "positions_np": None,
                 "prev_positions": [],
@@ -122,31 +174,62 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
                 "speed_horiz": [],
                 "acc": [],
                 "min_distance": [],
+                "form_order": False,
             }
         )
         return None
 
-    reset = cache["signature"] != signature
+    collection_changed = cache.get("collection_signature") != col_sig
+    positions_np = _positions_to_numpy(positions)
+    form_indices, form_ok = _order_indices_by_ids(form_ids)
+    if form_ok and len(form_indices) == len(positions):
+        cache_indices = form_indices
+    else:
+        cache_indices = list(range(len(positions)))
+        form_ok = False
+    if cache_indices != list(range(len(positions))):
+        positions_cache = [positions[idx] for idx in cache_indices]
+        positions_cache_np = positions_np[np.asarray(cache_indices, dtype=np.int64)]
+    else:
+        positions_cache = list(positions)
+        positions_cache_np = positions_np
 
-    if reset:
-        positions_np = _positions_to_numpy(positions)
-        zeros = [0.0] * len(positions)
+    prev_positions_np = cache.get("prev_positions_np")
+    prev_vel_np = cache.get("prev_vel_np")
+    prev_frame = cache.get("frame")
+    prev_form_order = bool(cache.get("form_order", False))
+    can_pair_map = (
+        collection_changed
+        and prev_form_order
+        and prev_positions_np is not None
+        and _valid_id_map(pair_ids, int(prev_positions_np.shape[0]))
+    )
+
+    if (
+        prev_positions_np is None
+        or prev_positions_np.shape[0] != positions_cache_np.shape[0]
+        or prev_frame is None
+        or (collection_changed and not can_pair_map)
+    ):
+        zeros = [0.0] * len(positions_cache)
         cache.update(
             {
                 "scene_name": scene_name,
                 "frame": frame,
                 "prev_frame": None,
                 "signature": signature,
-                "positions": list(positions),
-                "positions_np": positions_np,
-                "prev_positions": list(positions),
-                "prev_positions_np": positions_np.copy(),
+                "collection_signature": col_sig,
+                "positions": positions_cache,
+                "positions_np": positions_cache_np,
+                "prev_positions": positions_cache,
+                "prev_positions_np": positions_cache_np.copy(),
                 "prev_vel": [],
-                "prev_vel_np": np.zeros_like(positions_np),
+                "prev_vel_np": np.zeros_like(positions_cache_np),
                 "speed_vert": list(zeros),
                 "speed_horiz": list(zeros),
                 "acc": list(zeros),
-                "min_distance": _compute_min_distances(positions) if need_distance else [],
+                "min_distance": _compute_min_distances(positions_cache) if need_distance else [],
+                "form_order": form_ok,
             }
         )
         return cache
@@ -156,42 +239,22 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
             cache["min_distance"] = _compute_min_distances(cache["positions"])
         return cache
 
-    prev_positions_np = cache.get("prev_positions_np")
-    prev_vel_np = cache.get("prev_vel_np")
-    if prev_positions_np is None or prev_positions_np.shape[0] != len(positions):
-        positions_np = _positions_to_numpy(positions)
-        zeros = [0.0] * len(positions)
-        cache.update(
-            {
-                "scene_name": scene_name,
-                "frame": frame,
-                "prev_frame": None,
-                "signature": signature,
-                "positions": list(positions),
-                "positions_np": positions_np,
-                "prev_positions": list(positions),
-                "prev_positions_np": positions_np.copy(),
-                "prev_vel": [],
-                "prev_vel_np": np.zeros_like(positions_np),
-                "speed_vert": list(zeros),
-                "speed_horiz": list(zeros),
-                "acc": list(zeros),
-                "min_distance": _compute_min_distances(positions) if need_distance else [],
-            }
-        )
-        return cache
-
-    prev_frame = cache.get("frame")
     fps = _get_fps(scene)
     frame_delta = frame - prev_frame if prev_frame is not None else 1
     if frame_delta == 0:
         frame_delta = 1
     dt = (frame_delta / fps) if fps > 0.0 else 1.0
-    positions_np = _positions_to_numpy(positions)
-    if prev_vel_np is None or prev_vel_np.shape[0] != positions_np.shape[0]:
-        prev_vel_np = np.zeros_like(positions_np)
 
-    vel = (positions_np - prev_positions_np) / dt
+    if can_pair_map:
+        pair_ids_np = np.asarray(pair_ids, dtype=np.int64)
+        prev_match = prev_positions_np[pair_ids_np]
+        vel_orig = (positions_np - prev_match) / dt
+        vel = vel_orig[cache_indices] if cache_indices else vel_orig
+    else:
+        vel = (positions_cache_np - prev_positions_np) / dt
+    if prev_vel_np is None or prev_vel_np.shape[0] != positions_np.shape[0]:
+        prev_vel_np = np.zeros_like(vel)
+
     speed_vert = vel[:, 2].tolist()
     speed_horiz = np.linalg.norm(vel[:, :2], axis=1).tolist()
     acc_vec = (vel - prev_vel_np) / dt
@@ -203,16 +266,18 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
             "frame": frame,
             "prev_frame": prev_frame,
             "signature": signature,
-            "positions": list(positions),
-            "positions_np": positions_np,
-            "prev_positions": list(positions),
-            "prev_positions_np": positions_np.copy(),
+            "collection_signature": col_sig,
+            "positions": positions_cache,
+            "positions_np": positions_cache_np,
+            "prev_positions": positions_cache,
+            "prev_positions_np": positions_cache_np.copy(),
             "prev_vel": [],
             "prev_vel_np": vel,
             "speed_vert": speed_vert,
             "speed_horiz": speed_horiz,
             "acc": acc,
-            "min_distance": _compute_min_distances(positions) if need_distance else [],
+            "min_distance": _compute_min_distances(positions_cache) if need_distance else [],
+            "form_order": form_ok,
         }
     )
     return cache

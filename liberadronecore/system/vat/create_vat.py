@@ -165,13 +165,6 @@ def build_vat_images_from_tracks(
         True,
         recreate=recreate_images,
     )
-    col_img = _create_image(
-        f"{prefix}_Color",
-        frame_count,
-        drone_count,
-        False,
-        recreate=recreate_images,
-    )
     pos_img.colorspace_settings.name = "Non-Color"
     
     rx = (pos_max[0] - pos_min[0]) or 1.0
@@ -179,27 +172,23 @@ def build_vat_images_from_tracks(
     rz = (pos_max[2] - pos_min[2]) or 1.0
 
     pos_pixels = np.empty((drone_count, frame_count, 4), dtype=np.float32)
-    col_pixels = np.empty((drone_count, frame_count, 4), dtype=np.float32)
 
     pos_pixels[:, :, 3] = 1.0
-    col_pixels[:, :, 3] = 1.0
 
     for drone_idx, track in enumerate(samples):
         pos_pixels[drone_idx, :, 0] = (track["x"] - pos_min[0]) / rx
         pos_pixels[drone_idx, :, 1] = (track["y"] - pos_min[1]) / ry
         pos_pixels[drone_idx, :, 2] = (track["z"] - pos_min[2]) / rz
 
-        col_pixels[drone_idx, :, 0] = (track["r"])/ 255.0
-        col_pixels[drone_idx, :, 1] = (track["g"])/ 255.0
-        col_pixels[drone_idx, :, 2] = (track["b"])/ 255.0
-
     pos_img.pixels[:] = pos_pixels.ravel()
-    col_img.pixels[:] = col_pixels.ravel()
+    try:
+        pos_img.update()
+    except Exception:
+        pass
 
     _save_image_to_scene_cache(pos_img)
-    _save_image_to_scene_cache(col_img)
 
-    return pos_img, col_img, pos_min, pos_max, duration, drone_count
+    return pos_img, pos_min, pos_max, duration, drone_count
 
 
 def _build_tracks_from_scene(

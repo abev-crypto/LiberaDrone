@@ -63,12 +63,44 @@ def _positions_to_numpy(positions):
 
 
 def _collect_positions(scene, depsgraph):
-    positions, _signature = overlay_checker._collect_formation_positions(scene, depsgraph)
-    return positions
+    positions, pair_ids, form_ids, signature, col_sig = overlay_checker._collect_formation_positions(scene, depsgraph)
+    return positions, pair_ids, form_ids, signature, col_sig
 
 
-def _sample_metric_series(scene):
-    f0, f1 = scene.frame_start, scene.frame_end
+def _get_current_formation_range(scene):
+    try:
+        from liberadronecore.formation import fn_parse
+    except Exception:
+        return None
+    schedule = fn_parse.get_cached_schedule(scene)
+    entries = [entry for entry in schedule if entry.collection]
+    if not entries:
+        return None
+    frame = int(getattr(scene, "frame_current", 0))
+    current = None
+    for entry in entries:
+        if entry.start <= frame < entry.end:
+            current = entry
+            break
+    if current is None:
+        current = entries[0]
+    start = int(current.start)
+    end = int(current.end)
+    if end <= start:
+        end_frame = start
+    else:
+        end_frame = int(end - 1)
+    return start, end_frame
+
+
+def _sample_metric_series(scene, frame_start: int | None = None, frame_end: int | None = None):
+    if frame_start is None:
+        frame_start = scene.frame_start
+    if frame_end is None:
+        frame_end = scene.frame_end
+    f0, f1 = int(frame_start), int(frame_end)
+    if f1 < f0:
+        f1 = f0
     frames = list(range(f0, f1 + 1))
     fps = _get_fps(scene)
 
@@ -82,6 +114,9 @@ def _sample_metric_series(scene):
     prev_positions_np = None
     prev_vel_np = None
     prev_frame = None
+    prev_signature = None
+    prev_col_sig = None
+    prev_form_order = False
 
     view_layer = bpy.context.view_layer
 
@@ -101,37 +136,72 @@ def _sample_metric_series(scene):
                 view_layer.update()
 
             depsgraph = bpy.context.evaluated_depsgraph_get()
-            positions = _collect_positions(scene, depsgraph)
+            positions, pair_ids, form_ids, signature, col_sig = _collect_positions(scene, depsgraph)
             if not positions:
                 for key in series:
                     series[key].append(0.0)
                 prev_positions_np = None
                 prev_vel_np = None
                 prev_frame = None
+                prev_signature = None
+                prev_form_order = False
+                prev_col_sig = None
                 continue
 
             positions_np = _positions_to_numpy(positions)
-            if prev_positions_np is None or prev_positions_np.shape[0] != positions_np.shape[0] or prev_frame is None:
-                speed_vert = [0.0] * len(positions)
-                speed_horiz = [0.0] * len(positions)
-                acc = [0.0] * len(positions)
-                prev_vel_np = np.zeros_like(positions_np)
+            form_indices, form_ok = overlay_checker._order_indices_by_ids(form_ids)
+            if form_ok and len(form_indices) == len(positions):
+                cache_indices = form_indices
+            else:
+                cache_indices = list(range(len(positions)))
+                form_ok = False
+            if cache_indices != list(range(len(positions))):
+                positions_cache = [positions[idx] for idx in cache_indices]
+                positions_cache_np = positions_np[np.asarray(cache_indices, dtype=np.int64)]
+            else:
+                positions_cache = list(positions)
+                positions_cache_np = positions_np
+
+            collection_changed = prev_col_sig is not None and col_sig != prev_col_sig
+            can_pair_map = (
+                collection_changed
+                and prev_form_order
+                and prev_positions_np is not None
+                and overlay_checker._valid_id_map(pair_ids, int(prev_positions_np.shape[0]))
+            )
+            reset = (
+                prev_positions_np is None
+                or prev_positions_np.shape[0] != positions_cache_np.shape[0]
+                or prev_frame is None
+                or (collection_changed and not can_pair_map)
+            )
+            if reset:
+                speed_vert = [0.0] * len(positions_cache)
+                speed_horiz = [0.0] * len(positions_cache)
+                acc = [0.0] * len(positions_cache)
+                prev_vel_np = np.zeros_like(positions_cache_np)
             else:
                 frame_delta = f - prev_frame
                 if frame_delta == 0:
                     frame_delta = 1
                 dt = (frame_delta / fps) if fps > 0.0 else 1.0
-                vel = (positions_np - prev_positions_np) / dt
+                if can_pair_map:
+                    pair_ids_np = np.asarray(pair_ids, dtype=np.int64)
+                    prev_match = prev_positions_np[pair_ids_np]
+                    vel_orig = (positions_np - prev_match) / dt
+                    vel = vel_orig[cache_indices] if cache_indices else vel_orig
+                else:
+                    vel = (positions_cache_np - prev_positions_np) / dt
                 speed_vert = vel[:, 2].tolist()
                 speed_horiz = np.linalg.norm(vel[:, :2], axis=1).tolist()
                 if prev_vel_np is None or prev_vel_np.shape[0] != vel.shape[0]:
-                    acc = [0.0] * len(positions)
+                    acc = [0.0] * len(positions_cache)
                 else:
                     acc_vec = (vel - prev_vel_np) / dt
                     acc = np.linalg.norm(acc_vec, axis=1).tolist()
                 prev_vel_np = vel
 
-            min_dist = overlay_checker._compute_min_distances(positions)
+            min_dist = overlay_checker._compute_min_distances(positions_cache)
 
             max_up = max([v for v in speed_vert if v > 0.0] or [0.0])
             max_down = abs(min([v for v in speed_vert if v < 0.0] or [0.0]))
@@ -145,8 +215,11 @@ def _sample_metric_series(scene):
             series["acc"].append(max_acc)
             series["min_distance"].append(min_distance)
 
-            prev_positions_np = positions_np
+            prev_positions_np = positions_cache_np
             prev_frame = f
+            prev_signature = signature
+            prev_form_order = form_ok
+            prev_col_sig = col_sig
     finally:
         if suspend is not None:
             suspend(False)
@@ -208,14 +281,17 @@ def _draw_candles(ax, ohlc, candle_width_frames: float, title: str, limit: float
         ax.axhline(limit, color=COLOR_WARN, linewidth=1, linestyle="--", alpha=0.6)
 
     ax.grid(True, color="#333333")
+    if limit and limit > 0.0:
+        ax.set_ylim(0.0, float(limit))
 
 class VelocityCandleWindow(QtWidgets.QMainWindow):
     _instance = None
 
-    def __init__(self):
+    def __init__(self, *, use_current_range: bool = False):
         super().__init__()
         self.setWindowTitle("LiberaDrone Check Graph (Candles)")
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+        self.use_current_range = bool(use_current_range)
 
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
@@ -224,6 +300,8 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
         top_row = QtWidgets.QHBoxLayout()
         root.addLayout(top_row)
         top_row.addWidget(QtWidgets.QLabel(f"Target: {TARGET_COLLECTION_NAME}"))
+        self.range_label = QtWidgets.QLabel("Range: -")
+        top_row.addWidget(self.range_label)
 
         top_row.addWidget(QtWidgets.QLabel("Bin Frames"))
         self.spin_bin = QtWidgets.QSpinBox()
@@ -271,7 +349,25 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Error", "Formation collection not found")
             return
 
-        frames, series = _sample_metric_series(scene)
+        range_start = None
+        range_end = None
+        if self.use_current_range:
+            current_range = _get_current_formation_range(scene)
+            if current_range is None:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Error",
+                    "No cached schedule. Run Calculate first.",
+                )
+                return
+            range_start, range_end = current_range
+            self.range_label.setText(f"Range: Current {range_start}-{range_end}")
+        else:
+            range_start = int(scene.frame_start)
+            range_end = int(scene.frame_end)
+            self.range_label.setText(f"Range: Scene {range_start}-{range_end}")
+
+        frames, series = _sample_metric_series(scene, range_start, range_end)
         bin_frames = int(self.spin_bin.value())
         self.frames = frames
         self.ohlc = {key: _to_ohlc(frames, series[key], bin_frames) for key in series}
@@ -317,7 +413,7 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
         self.canvas.draw_idle()
 
     @staticmethod
-    def show_window():
+    def show_window(*, use_current_range: bool = False):
         _ensure_qapp()
 
         if VelocityCandleWindow._instance is not None:
@@ -326,7 +422,7 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
             except Exception:
                 pass
 
-        VelocityCandleWindow._instance = VelocityCandleWindow()
+        VelocityCandleWindow._instance = VelocityCandleWindow(use_current_range=use_current_range)
         VelocityCandleWindow._instance.resize(1100, 800)
         VelocityCandleWindow._instance.show()
         return VelocityCandleWindow._instance

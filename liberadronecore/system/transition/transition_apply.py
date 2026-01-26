@@ -11,6 +11,7 @@ from liberadronecore.formation import fn_parse, fn_parse_pairing
 from liberadronecore.formation.fn_parse_pairing import _collect_mesh_objects
 from liberadronecore.system.transition import bakedt, copyloc, vat_gn
 from liberadronecore.system.vat import create_vat
+from liberadronecore.util import image_util
 
 
 @dataclass
@@ -69,21 +70,38 @@ def _remove_collection_recursive(col: bpy.types.Collection) -> None:
         bpy.data.collections.remove(col)
 
 
-def _purge_transition_collections(node_name: str) -> None:
-    base_name = f"Transition_{node_name}"
+def _transition_base_name(node: bpy.types.Node) -> str:
+    label = (getattr(node, "label", "") or "").strip()
+    return label if label else node.name
+
+
+def _transition_collection_name(node: bpy.types.Node) -> str:
+    return f"Transition_{_transition_base_name(node)}"
+
+
+def _purge_transition_collections(node: bpy.types.Node) -> None:
+    names: set[str] = {f"Transition_{node.name}"}
+    label = (getattr(node, "label", "") or "").strip()
+    if label:
+        names.add(f"Transition_{label}")
     for col in list(bpy.data.collections):
-        if col.name == base_name or col.name.startswith(f"PT_{node_name}_"):
+        if col.name in names or col.name.startswith(f"PT_{node.name}_"):
             _remove_collection_recursive(col)
 
 
 def purge_transition_nodes(nodes: Sequence[bpy.types.Node]) -> None:
     removed: set[str] = set()
     for node in nodes:
-        _purge_transition_collections(node.name)
+        _purge_transition_collections(node)
         col = getattr(node, "collection", None)
-        if col and col.name not in removed:
-            _remove_collection_recursive(col)
-            removed.add(col.name)
+        if col:
+            try:
+                col_name = col.name
+            except ReferenceError:
+                col_name = None
+            if col_name and col_name not in removed:
+                _remove_collection_recursive(col)
+                removed.add(col_name)
         if hasattr(node, "collection"):
             try:
                 node.collection = None
@@ -94,9 +112,7 @@ def purge_transition_nodes(nodes: Sequence[bpy.types.Node]) -> None:
 def _set_transition_collection(node: bpy.types.Node, scene: bpy.types.Scene) -> None:
     if not hasattr(node, "collection"):
         return
-    label = (getattr(node, "label", "") or "").strip()
-    base_name = label if label else node.name
-    col = _ensure_collection(scene, f"Transition_{base_name}")
+    col = _ensure_collection(scene, _transition_collection_name(node))
     _hide_collection(col)
     try:
         node.collection = col
@@ -504,12 +520,21 @@ def _apply_auto(ctx: TransitionContext) -> str:
         scene=ctx.scene,
     )
 
-    prefix = f"Transition_{ctx.node.name}"
-    pos_img, _col_img, pos_min, pos_max, duration, drone_count = create_vat.build_vat_images_from_tracks(
+    prefix = _transition_collection_name(ctx.node)
+    pos_img, pos_min, pos_max, duration, drone_count = create_vat.build_vat_images_from_tracks(
         tracks,
         ctx.fps,
         image_name_prefix=prefix,
         recreate_images=True,
+    )
+    image_util.save_image_to_scene_cache(
+        pos_img,
+        pos_img.name,
+        "OPEN_EXR",
+        scene=ctx.scene,
+        use_float=True,
+        colorspace="Non-Color",
+        link=True,
     )
 
     col = _ensure_collection(ctx.scene, prefix)
@@ -536,7 +561,7 @@ def _apply_auto(ctx: TransitionContext) -> str:
 
 
 def _apply_copyloc(ctx: TransitionContext, *, mode: str, split_count: int, grid_spacing: float) -> str:
-    output_col = _ensure_collection(ctx.scene, f"Transition_{ctx.node.name}")
+    output_col = _ensure_collection(ctx.scene, _transition_collection_name(ctx.node))
     targets_col = _ensure_collection(ctx.scene, f"PT_{ctx.node.name}_Targets")
 
     end_obj = _ensure_point_object(
@@ -620,7 +645,7 @@ def apply_transition_by_node_name(node_name: str, context=None) -> Tuple[bool, s
 
 def apply_transition(node: bpy.types.Node, context=None, *, assign_pairs_after: bool = True) -> Tuple[bool, str]:
     ctx = _build_transition_context(node, context)
-    _purge_transition_collections(node.name)
+    _purge_transition_collections(node)
     if hasattr(node, "collection"):
         try:
             node.collection = None
