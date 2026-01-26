@@ -361,6 +361,17 @@ def _strip_id_prefix(name: str) -> str:
     return name
 
 
+def _hide_collection(col: bpy.types.Collection) -> None:
+    if col is None:
+        return
+    for attr in ("hide_viewport", "hide_render", "hide_select"):
+        if hasattr(col, attr):
+            try:
+                setattr(col, attr, True)
+            except Exception:
+                pass
+
+
 def _read_color_verts() -> tuple[list[tuple[float, float, float, float]], list[int] | None] | None:
     obj = bpy.data.objects.get("ColorVerts")
     if obj is None or obj.type != 'MESH':
@@ -579,7 +590,10 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
                     created_shows += 1
                 flow_index += 1
 
+                existed = bpy.data.collections.get(display_name) is not None
                 col = sheetutils._ensure_collection(scene, display_name)
+                if not existed:
+                    _hide_collection(col)
                 sheetutils._set_socket_collection(node, "Collection", col)
                 sheetutils._set_socket_value(node, "Duration", float(duration))
 
@@ -643,7 +657,10 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
 
                 sheetutils._set_socket_value(trans_node, "Duration", float(transition_total))
                 if has_assets:
+                    existed = bpy.data.collections.get(display_name) is not None
                     col = sheetutils._ensure_collection(scene, display_name)
+                    if not existed:
+                        _hide_collection(col)
                     if hasattr(trans_node, "collection"):
                         try:
                             trans_node.collection = col
