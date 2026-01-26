@@ -69,14 +69,18 @@ def _apply_image_format(
     fmt = (file_format or "").upper()
     if fmt:
         image.file_format = fmt
-    '''if colorspace is None and fmt in {"OPEN_EXR", "EXR"}:
-        colorspace = "Non-Color"
     if colorspace:
-        image.colorspace_settings.name = colorspace
-    if use_float is None and fmt in {"OPEN_EXR", "EXR"}:
-        use_float = True
-    if use_float is not None and hasattr(image, "use_float"):
-        image.use_float = bool(use_float)'''
+        try:
+            image.colorspace_settings.name = colorspace
+        except Exception:
+            pass
+    if use_float and fmt in {"OPEN_EXR", "EXR"}:
+        for attr in ("use_half", "use_half_precision"):
+            if hasattr(image, attr):
+                try:
+                    setattr(image, attr, False)
+                except Exception:
+                    pass
 
 
 def save_image(image, filepath, file_format, *, use_float: bool | None = None, colorspace: str | None = None):
@@ -248,14 +252,7 @@ def write_exr_rgba(path: str, pixels: np.ndarray) -> bool:
             alpha=has_alpha,
             float_buffer=True,
         )
-        try:
-            img.colorspace_settings.name = "Non-Color"
-        except Exception:
-            pass
-        try:
-            img.file_format = "OPEN_EXR"
-        except Exception:
-            pass
+        _apply_image_format(img, "OPEN_EXR", use_float=True, colorspace="Non-Color")
         img.filepath_raw = path
         expected_channels = getattr(img, "channels", 4 if has_alpha else 3)
         if data.shape[2] != expected_channels:

@@ -831,9 +831,6 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
         view_layer = context.view_layer
         depsgraph = context.evaluated_depsgraph_get()
 
-        transitions_dir = os.path.join(export_dir, "Transitions")
-        os.makedirs(transitions_dir, exist_ok=True)
-
         exported = 0
         errors: list[str] = []
         for entry, node in transition_entries:
@@ -912,7 +909,7 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
 
             base_label = getattr(node, "label", "") or node.name
             safe_name = _sanitize_name(base_label)
-            target_dir = os.path.join(transitions_dir, safe_name)
+            target_dir = os.path.join(export_dir, safe_name)
             os.makedirs(target_dir, exist_ok=True)
 
             bounds_suffix = _format_bounds_suffix(pos_min, pos_max)
