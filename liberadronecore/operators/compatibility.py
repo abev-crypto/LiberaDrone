@@ -229,7 +229,8 @@ def _build_compat_sequence(
     for entry in candidates:
         name = str(entry.get("name", ""))
         allowed = selected_names is None or name in selected_names
-        show_mask.append(bool(entry.get("has_assets")) and allowed)
+        is_transition = bool(entry.get("is_transition_marker"))
+        show_mask.append(bool(entry.get("has_assets")) and allowed and not is_transition)
 
     prev_show_idx: list[int | None] = [None] * len(candidates)
     last_idx: int | None = None
@@ -249,7 +250,30 @@ def _build_compat_sequence(
     for idx, entry in enumerate(candidates):
         name = str(entry.get("name", ""))
         allowed = selected_names is None or name in selected_names
-        if show_mask[idx]:
+        is_transition = bool(entry.get("is_transition_marker"))
+        has_assets = bool(entry.get("has_assets"))
+        if is_transition and allowed and has_assets:
+            base_sequence.append(
+                {
+                    "kind": "TRANSITION",
+                    "source_name": name,
+                    "display_name": entry.get("display_name", name),
+                    "meta": entry.get("meta", {}),
+                    "transition_duration": _transition_duration_from_meta(
+                        entry.get("meta", {}),
+                        metadata_defaults.get("transition_duration", 0),
+                    ),
+                    "duration": entry.get("duration", 0),
+                    "frame_count": entry.get("frame_count", 0),
+                    "pos_img": entry.get("pos_img"),
+                    "pos_min": entry.get("pos_min"),
+                    "pos_max": entry.get("pos_max"),
+                    "cat_img": entry.get("cat_img"),
+                    "has_assets": True,
+                    "is_auto": False,
+                }
+            )
+        elif show_mask[idx]:
             base_sequence.append(
                 {
                     "kind": "SHOW",
@@ -267,7 +291,7 @@ def _build_compat_sequence(
             )
         elif (
             allowed
-            and entry.get("is_transition_marker")
+            and is_transition
             and prev_show_idx[idx] is not None
             and next_show_idx[idx] is not None
         ):
@@ -281,6 +305,7 @@ def _build_compat_sequence(
                         entry.get("meta", {}),
                         metadata_defaults.get("transition_duration", 0),
                     ),
+                    "has_assets": False,
                     "is_auto": False,
                 }
             )
@@ -325,6 +350,15 @@ def _sanitize_name(name: str) -> str:
             safe.append("_")
     result = "".join(safe).strip("_")
     return result or "render_range"
+
+
+def _strip_id_prefix(name: str) -> str:
+    if not name:
+        return ""
+    match = re.match(r"^\d+[_-]+(.+)$", name)
+    if match:
+        return match.group(1)
+    return name
 
 
 def _read_color_verts() -> tuple[list[tuple[float, float, float, float]], list[int] | None] | None:
@@ -587,12 +621,17 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
             else:
                 display_name = str(entry.get("display_name", ""))
                 transition_meta = entry.get("meta", {}) or {}
-                transition_duration = _transition_duration_from_meta(
-                    transition_meta,
-                    metadata_defaults.get("transition_duration", 0),
-                )
-                transition_total = max(0, int(transition_duration)) + max(0, int(last_gap_frames))
-                last_gap_frames = 0
+                has_assets = bool(entry.get("has_assets"))
+                if has_assets:
+                    transition_total = max(0, int(entry.get("duration", 0)))
+                    last_gap_frames = 0
+                else:
+                    transition_duration = _transition_duration_from_meta(
+                        transition_meta,
+                        metadata_defaults.get("transition_duration", 0),
+                    )
+                    transition_total = max(0, int(transition_duration)) + max(0, int(last_gap_frames))
+                    last_gap_frames = 0
 
                 trans_node = node_map.get(display_name)
                 if trans_node is None or trans_node.bl_idname != "FN_TransitionNode":
@@ -603,6 +642,34 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
                 flow_index += 1
 
                 sheetutils._set_socket_value(trans_node, "Duration", float(transition_total))
+                if has_assets:
+                    col = sheetutils._ensure_collection(scene, display_name)
+                    if hasattr(trans_node, "collection"):
+                        try:
+                            trans_node.collection = col
+                        except Exception:
+                            pass
+                    pos_img = entry.get("pos_img")
+                    if pos_img is not None:
+                        vat_count = int(pos_img.size[1]) if getattr(pos_img, "size", None) else 1
+                        obj = sheetutils._create_point_object(f"{display_name}_VAT", vat_count, col)
+                        try:
+                            pos_img.colorspace_settings.name = "Non-Color"
+                        except Exception:
+                            pass
+                        start_frame_vat = int(next_start) - 1
+                        frame_count_vat = max(1, int(entry.get("frame_count", 0)))
+                        pos_min = entry.get("pos_min")
+                        pos_max = entry.get("pos_max")
+                        sheetutils._apply_vat_to_object(
+                            obj,
+                            pos_img,
+                            pos_min=pos_min,
+                            pos_max=pos_max,
+                            start_frame=start_frame_vat,
+                            frame_count=frame_count_vat,
+                            drone_count=vat_count,
+                        )
                 if prev_node:
                     sheetutils._link_flow(tree, prev_node, trans_node)
                 prev_node = trans_node
@@ -908,6 +975,7 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
             col_pixels[:, :, :] = colors_arr.transpose((1, 0, 2))
 
             base_label = getattr(node, "label", "") or node.name
+            base_label = _strip_id_prefix(base_label)
             safe_name = _sanitize_name(base_label)
             target_dir = os.path.join(export_dir, safe_name)
             os.makedirs(target_dir, exist_ok=True)
