@@ -36,6 +36,17 @@ def _ensure_collection(scene: bpy.types.Scene, name: str) -> bpy.types.Collectio
     return col
 
 
+def _hide_collection(col: bpy.types.Collection) -> None:
+    if col is None:
+        return
+    for attr in ("hide_viewport", "hide_render", "hide_select"):
+        if hasattr(col, attr):
+            try:
+                setattr(col, attr, True)
+            except Exception:
+                pass
+
+
 def _link_object_to_collection(obj: bpy.types.Object, collection: bpy.types.Collection) -> None:
     for col in list(obj.users_collection):
         col.objects.unlink(obj)
@@ -83,7 +94,10 @@ def purge_transition_nodes(nodes: Sequence[bpy.types.Node]) -> None:
 def _set_transition_collection(node: bpy.types.Node, scene: bpy.types.Scene) -> None:
     if not hasattr(node, "collection"):
         return
-    col = _ensure_collection(scene, f"Transition_{node.name}")
+    label = (getattr(node, "label", "") or "").strip()
+    base_name = label if label else node.name
+    col = _ensure_collection(scene, f"Transition_{base_name}")
+    _hide_collection(col)
     try:
         node.collection = col
     except Exception:
