@@ -13,7 +13,7 @@ class LD_Preferences(bpy.types.AddonPreferences):
     gh_branch: bpy.props.StringProperty(name="Branch", default="main")
     gh_addon_subdir: bpy.props.StringProperty(
         name="Addon Subdir (in repo)",
-        default="",
+        default="liberadronecore",
         description="Relative path in the repo, e.g. src/my_addon",
     )
 
