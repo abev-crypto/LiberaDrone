@@ -842,26 +842,10 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
         cat_path = os.path.join(target_dir, f"{cat_base}.png")
 
         if not image_util.write_exr_rgba(pos_path, pos_pixels):
-            pos_img = bpy.data.images.new(
-                name=vat_base,
-                width=frame_count,
-                height=drone_count,
-                alpha=True,
-                float_buffer=True,
-            )
-            image_util.set_image_pixels(pos_img, pos_pixels)
-            image_util.save_image(pos_img, pos_path, "OPEN_EXR", use_float=True, colorspace="Non-Color")
+            self.report({"ERROR"}, f"Failed to write EXR: {pos_path}")
+            return {"CANCELLED"}
 
-        if not image_util.write_png_rgba(cat_path, col_pixels):
-            col_img = bpy.data.images.new(
-                name=cat_base,
-                width=frame_count,
-                height=drone_count,
-                alpha=True,
-                float_buffer=False,
-            )
-            image_util.set_image_pixels(col_img, col_pixels)
-            image_util.save_image(col_img, cat_path, "PNG")
+        image_util.write_png_rgba(cat_path, col_pixels)
 
         self.report({"INFO"}, f"Exported VAT/CAT to {target_dir}")
         return {"FINISHED"}
@@ -1004,26 +988,10 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
             cat_path = os.path.join(target_dir, f"{cat_base}.png")
 
             if not image_util.write_exr_rgba(pos_path, pos_pixels):
-                pos_img = bpy.data.images.new(
-                    name=vat_base,
-                    width=frame_count,
-                    height=drone_count,
-                    alpha=True,
-                    float_buffer=True,
-                )
-                image_util.set_image_pixels(pos_img, pos_pixels)
-                image_util.save_image(pos_img, pos_path, "OPEN_EXR", use_float=True, colorspace="Non-Color")
+                errors.append(f"{node.name}: Failed to write EXR: {pos_path}")
+                continue
 
-            if not image_util.write_png_rgba(cat_path, col_pixels):
-                col_img = bpy.data.images.new(
-                    name=cat_base,
-                    width=frame_count,
-                    height=drone_count,
-                    alpha=True,
-                    float_buffer=False,
-                )
-                image_util.set_image_pixels(col_img, col_pixels)
-                image_util.save_image(col_img, cat_path, "PNG")
+            image_util.write_png_rgba(cat_path, col_pixels)
 
             exported += 1
 

@@ -10,6 +10,7 @@ from sbutil.light_effects import OUTPUT_VERTEX_COLOR, _normalize_float_sequence
 
 from sbutil.color_key_utils import apply_color_keys_from_key_data
 from sbutil.copyloc_utils import shape_copyloc_influence_curve
+from liberadronecore.util import image_util
 
 # ---------- Utilities ----------
 
@@ -2165,6 +2166,12 @@ def _format_bounds_suffix(pos_min, pos_max):
 
 
 def _save_image(image, filepath, file_format):
+    fmt = (file_format or "").upper()
+    if fmt in {"OPEN_EXR", "EXR"}:
+        pixels = image_util._image_pixels_to_rgba(image)
+        if pixels is None or not image_util.write_exr_rgba(filepath, pixels):
+            raise RuntimeError(f"Failed to write EXR: {filepath}")
+        return
     image.filepath_raw = filepath
     image.file_format = file_format
     image.save()

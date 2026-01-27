@@ -610,15 +610,7 @@ def _export_cut_to_vat_cat(context, cut: dict[str, object], export_dir: str) -> 
     cat_path = os.path.join(target_dir, f"{cat_base}.png")
 
     if not image_util.write_exr_rgba(pos_path, pos_pixels):
-        pos_img = bpy.data.images.new(
-            name=vat_base,
-            width=frame_count,
-            height=drone_count,
-            alpha=True,
-            float_buffer=True,
-        )
-        pos_img.pixels[:] = pos_pixels.ravel()
-        image_util.save_image(pos_img, pos_path, "OPEN_EXR", use_float=True, colorspace="Non-Color")
+        return False, f"Failed to write EXR: {pos_path}"
 
     col_img = bpy.data.images.new(
         name=cat_base,

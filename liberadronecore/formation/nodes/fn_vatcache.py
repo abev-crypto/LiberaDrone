@@ -270,15 +270,18 @@ class FN_VATCacheNode(bpy.types.Node, FN_Node):
         img = _ensure_image(f"{prefix}_VAT", frame_count, drone_count)
         img.pixels[:] = pos_pixels.ravel()
         cache_path = image_util.scene_cache_path(f"{prefix}_VAT", "OPEN_EXR", scene=scene, create=True)
-        if cache_path and image_util.write_exr_rgba(cache_path, pos_pixels):
-            image_util.link_image_to_existing_file(
-                img,
-                cache_path,
-                "OPEN_EXR",
-                use_float=True,
-                colorspace="Non-Color",
-                reload=True,
-            )
+        if not cache_path:
+            raise RuntimeError("Failed to resolve VAT cache path.")
+        if not image_util.write_exr_rgba(cache_path, pos_pixels):
+            raise RuntimeError(f"Failed to write EXR: {cache_path}")
+        image_util.link_image_to_existing_file(
+            img,
+            cache_path,
+            "OPEN_EXR",
+            use_float=True,
+            colorspace="Non-Color",
+            reload=True,
+        )
 
         cache_col = _ensure_collection(scene, prefix)
         obj = _ensure_point_object(

@@ -165,7 +165,7 @@ def build_vat_images_from_tracks(
         True,
         recreate=recreate_images,
     )
-    pos_img.colorspace_settings.name = "Non-Color"
+    image_util._apply_image_format(pos_img, "OPEN_EXR", use_float=True, colorspace="Non-Color")
     
     rx = (pos_max[0] - pos_min[0]) or 1.0
     ry = (pos_max[1] - pos_min[1]) or 1.0

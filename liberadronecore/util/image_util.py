@@ -70,17 +70,10 @@ def _apply_image_format(
     if fmt:
         image.file_format = fmt
     if colorspace:
-        try:
-            image.colorspace_settings.name = colorspace
-        except Exception:
-            pass
-    if use_float and fmt in {"OPEN_EXR", "EXR"}:
-        for attr in ("use_half", "use_half_precision"):
-            if hasattr(image, attr):
-                try:
-                    setattr(image, attr, False)
-                except Exception:
-                    pass
+        image.colorspace_settings.name = colorspace
+    #if use_float and fmt in {"OPEN_EXR", "EXR"}:
+    #    image.use_half_precision = False
+    #    image.use_generated_float = True
 
 
 def set_image_pixels(image, pixels) -> None:
@@ -91,13 +84,36 @@ def set_image_pixels(image, pixels) -> None:
         flat = np.asarray(pixels, dtype=np.float32).ravel()
     except Exception:
         pass
+    image.pixels.foreach_set(flat)
+    image.update()
+
+
+def _image_pixels_to_rgba(image) -> np.ndarray | None:
+    if image is None:
+        return None
+    width, height = image.size
+    if width <= 0 or height <= 0:
+        return None
+    channels = getattr(image, "channels", 4) or 4
+    expected = width * height * channels
     try:
-        image.pixels.foreach_set(flat)
+        flat = np.asarray(image.pixels, dtype=np.float32)
     except Exception:
-        image.pixels[:] = flat
+        return None
+    if flat.size < expected:
+        return None
+    flat = flat[:expected]
+    data = flat.reshape((height, width, channels))
+    if channels > 4:
+        data = data[:, :, :4]
+    elif channels == 3:
+        alpha = np.ones((height, width, 1), dtype=np.float32)
+        data = np.concatenate([data, alpha], axis=2)
+    return data
 
 
 def save_image(image, filepath, file_format, *, use_float: bool | None = None, colorspace: str | None = None):
+    #_apply_image_format(image, file_format, use_float=use_float, colorspace=colorspace)
     image.filepath_raw = filepath
     image.save()
 
@@ -149,7 +165,21 @@ def save_image_to_scene_cache(
     path = scene_cache_path(name, file_format, scene, create=True)
     if not path:
         return None
-    if link:
+    fmt = (file_format or "").upper()
+    if fmt in {"OPEN_EXR", "EXR"}:
+        pixels = _image_pixels_to_rgba(image)
+        if pixels is None or not write_exr_rgba(path, pixels):
+            raise RuntimeError(f"Failed to write EXR: {path}")
+        if link:
+            link_image_to_existing_file(
+                image,
+                path,
+                file_format,
+                use_float=use_float,
+                colorspace=colorspace,
+                reload=True,
+            )
+    elif link:
         link_image_to_file(image, path, file_format, use_float=use_float, colorspace=colorspace)
     else:
         save_image(image, path, file_format, use_float=use_float, colorspace=colorspace)
@@ -242,52 +272,33 @@ def write_exr_rgba(path: str, pixels: np.ndarray) -> bool:
     height, width, channels = data.shape
     if width <= 0 or height <= 0:
         return False
-    if channels > 4:
-        data = data[:, :, :4]
-    has_alpha = data.shape[2] == 4
     base_name = sanitize_filename(os.path.splitext(os.path.basename(path))[0]) or "EXR_Write"
     image_name = f"{base_name}_EXR_Write"
     existing = bpy.data.images.get(image_name)
     if existing is not None:
-        try:
-            bpy.data.images.remove(existing)
-        except Exception:
-            pass
+        bpy.data.images.remove(existing)
     img = None
-    try:
-        dir_path = os.path.dirname(path)
-        if dir_path:
-            os.makedirs(dir_path, exist_ok=True)
-        img = bpy.data.images.new(
-            name=image_name,
-            width=width,
-            height=height,
-            alpha=has_alpha,
-            float_buffer=True,
-        )
-        _apply_image_format(img, "OPEN_EXR", use_float=True, colorspace="Non-Color")
-        img.filepath_raw = path
-        expected_channels = getattr(img, "channels", 4 if has_alpha else 3)
-        if data.shape[2] != expected_channels:
-            if data.shape[2] == 3 and expected_channels == 4:
-                alpha = np.ones((height, width, 1), dtype=np.float32)
-                data = np.concatenate([data, alpha], axis=2)
-            elif data.shape[2] == 4 and expected_channels == 3:
-                data = data[:, :, :3]
-            else:
-                return False
-        set_image_pixels(img, data)
-        try:
-            img.update()
-        except Exception:
-            pass
-        img.save()
-    except Exception:
-        return False
-    finally:
-        if img is not None:
-            try:
-                bpy.data.images.remove(img)
-            except Exception:
-                pass
+    dir_path = os.path.dirname(path)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
+    img = bpy.data.images.new(
+        name=image_name,
+        width=width,
+        height=height,
+        alpha=True,
+        float_buffer=True,
+    )
+    _apply_image_format(img, "OPEN_EXR", use_float=True)
+    img.filepath_raw = path
+    expected_channels = getattr(img, "channels", 4 if True else 3)
+    if data.shape[2] != expected_channels:
+        if data.shape[2] == 3 and expected_channels == 4:
+            alpha = np.ones((height, width, 1), dtype=np.float32)
+            data = np.concatenate([data, alpha], axis=2)
+        elif data.shape[2] == 4 and expected_channels == 3:
+            data = data[:, :, :3]
+        else:
+            return False
+    set_image_pixels(img, data)
+    img.save()
     return True
