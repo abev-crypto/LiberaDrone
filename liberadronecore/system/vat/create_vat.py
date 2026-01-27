@@ -180,7 +180,7 @@ def build_vat_images_from_tracks(
         pos_pixels[drone_idx, :, 1] = (track["y"] - pos_min[1]) / ry
         pos_pixels[drone_idx, :, 2] = (track["z"] - pos_min[2]) / rz
 
-    pos_img.pixels[:] = pos_pixels.ravel()
+    image_util.set_image_pixels(pos_img, pos_pixels)
     try:
         pos_img.update()
     except Exception:

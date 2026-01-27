@@ -83,9 +83,22 @@ def _apply_image_format(
                     pass
 
 
+def set_image_pixels(image, pixels) -> None:
+    if image is None or pixels is None:
+        return
+    flat = pixels
+    try:
+        flat = np.asarray(pixels, dtype=np.float32).ravel()
+    except Exception:
+        pass
+    try:
+        image.pixels.foreach_set(flat)
+    except Exception:
+        image.pixels[:] = flat
+
+
 def save_image(image, filepath, file_format, *, use_float: bool | None = None, colorspace: str | None = None):
     image.filepath_raw = filepath
-    _apply_image_format(image, file_format, use_float=use_float, colorspace=colorspace)
     image.save()
 
 
@@ -203,7 +216,7 @@ def write_png_rgba(path: str, pixels: np.ndarray) -> bool:
                 data = data[:, :, :3]
             else:
                 return False
-        img.pixels[:] = data.ravel()
+        set_image_pixels(img, data)
         try:
             img.update()
         except Exception:
@@ -263,7 +276,7 @@ def write_exr_rgba(path: str, pixels: np.ndarray) -> bool:
                 data = data[:, :, :3]
             else:
                 return False
-        img.pixels[:] = data.ravel()
+        set_image_pixels(img, data)
         try:
             img.update()
         except Exception:

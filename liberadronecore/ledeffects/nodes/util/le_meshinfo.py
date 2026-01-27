@@ -13,6 +13,7 @@ from liberadronecore.ledeffects.nodes.util.le_math import _clamp
 
 _LED_FRAME_CACHE: Dict[str, Any] = {
     "frame": None,
+    "positions": None,
     "object": {},
     "object_transform": {},
     "mesh": {},
@@ -34,6 +35,7 @@ def begin_led_frame_cache(
     formation_ids: Optional[List[int]] = None,
 ) -> None:
     _LED_FRAME_CACHE["frame"] = float(frame)
+    _LED_FRAME_CACHE["positions"] = positions
     _LED_FRAME_CACHE["object"] = {}
     _LED_FRAME_CACHE["object_transform"] = {}
     _LED_FRAME_CACHE["mesh"] = {}
@@ -46,6 +48,7 @@ def begin_led_frame_cache(
 
 def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["frame"] = None
+    _LED_FRAME_CACHE["positions"] = None
     _LED_FRAME_CACHE["object"] = {}
     _LED_FRAME_CACHE["object_transform"] = {}
     _LED_FRAME_CACHE["mesh"] = {}

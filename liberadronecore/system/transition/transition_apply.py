@@ -520,11 +520,12 @@ def _apply_auto(ctx: TransitionContext) -> str:
         scene=ctx.scene,
     )
 
-    prefix = _transition_collection_name(ctx.node)
+    image_prefix = _transition_base_name(ctx.node)
+    collection_name = _transition_collection_name(ctx.node)
     pos_img, pos_min, pos_max, duration, drone_count = create_vat.build_vat_images_from_tracks(
         tracks,
         ctx.fps,
-        image_name_prefix=prefix,
+        image_name_prefix=image_prefix,
         recreate_images=True,
     )
     image_util.save_image_to_scene_cache(
@@ -537,9 +538,9 @@ def _apply_auto(ctx: TransitionContext) -> str:
         link=True,
     )
 
-    col = _ensure_collection(ctx.scene, prefix)
+    col = _ensure_collection(ctx.scene, collection_name)
     obj = _ensure_point_object(
-        f"{prefix}_VAT",
+        f"{collection_name}_VAT",
         ctx.prev_positions,
         col,
         update=True,
@@ -554,7 +555,7 @@ def _apply_auto(ctx: TransitionContext) -> str:
         frame_count,
         drone_count,
         start_frame=ctx.start_frame,
-        base_name=prefix,
+        base_name=collection_name,
     )
     vat_gn._apply_gn_to_object(obj, group)
     return f"Auto transition VAT created: {obj.name}"

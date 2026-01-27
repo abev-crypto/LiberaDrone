@@ -247,8 +247,24 @@ def update_led_effects(scene):
     positions, pair_ids, formation_ids = _collect_formation_positions(scene)
     if positions is None or len(positions) == 0:
         return
+    positions_cache = [tuple(float(v) for v in pos) for pos in positions]
+    if pair_ids is not None and len(pair_ids) == len(positions_cache):
+        ordered: list[tuple[float, float, float] | None] = [None] * len(positions_cache)
+        valid = True
+        for src_idx, pid in enumerate(pair_ids):
+            try:
+                key = int(pid)
+            except (TypeError, ValueError):
+                valid = False
+                break
+            if key < 0 or key >= len(positions_cache) or ordered[key] is not None:
+                valid = False
+                break
+            ordered[key] = positions_cache[src_idx]
+        if valid and all(item is not None for item in ordered):
+            positions_cache = [item for item in ordered if item is not None]
 
-    le_codegen.begin_led_frame_cache(frame, positions, formation_ids=formation_ids)
+    le_codegen.begin_led_frame_cache(frame, positions_cache, formation_ids=formation_ids)
     colors = np.zeros((len(positions), 4), dtype=np.float32)
     try:
         for idx, pos in enumerate(positions):

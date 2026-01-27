@@ -849,7 +849,7 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
                 alpha=True,
                 float_buffer=True,
             )
-            pos_img.pixels[:] = pos_pixels.ravel()
+            image_util.set_image_pixels(pos_img, pos_pixels)
             image_util.save_image(pos_img, pos_path, "OPEN_EXR", use_float=True, colorspace="Non-Color")
 
         if not image_util.write_png_rgba(cat_path, col_pixels):
@@ -860,7 +860,7 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
                 alpha=True,
                 float_buffer=False,
             )
-            col_img.pixels[:] = col_pixels.ravel()
+            image_util.set_image_pixels(col_img, col_pixels)
             image_util.save_image(col_img, cat_path, "PNG")
 
         self.report({"INFO"}, f"Exported VAT/CAT to {target_dir}")
@@ -1011,7 +1011,7 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
                     alpha=True,
                     float_buffer=True,
                 )
-                pos_img.pixels[:] = pos_pixels.ravel()
+                image_util.set_image_pixels(pos_img, pos_pixels)
                 image_util.save_image(pos_img, pos_path, "OPEN_EXR", use_float=True, colorspace="Non-Color")
 
             if not image_util.write_png_rgba(cat_path, col_pixels):
@@ -1022,7 +1022,7 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
                     alpha=True,
                     float_buffer=False,
                 )
-                col_img.pixels[:] = col_pixels.ravel()
+                image_util.set_image_pixels(col_img, col_pixels)
                 image_util.save_image(col_img, cat_path, "PNG")
 
             exported += 1
