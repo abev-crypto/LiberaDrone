@@ -92,7 +92,7 @@ def _read_selected_ids(context) -> tuple[set[int] | None, str | None]:
 
 
 class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
-    """Mask by formation id (uses drone index)."""
+    """Mask by formation_id attribute."""
 
     bl_idname = "LDLEDIDMaskNode"
     bl_label = "ID Mask"
@@ -162,12 +162,13 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         out_var = self.output_var("Mask")
         ids = _node_effective_ids(self, include_legacy=not self.use_custom_ids)
         value = inputs.get("Value", "1.0")
+        fid_var = f"_fid_{self.codegen_id()}_{int(self.as_pointer())}"
         if not ids:
             base_expr = "0.0"
         elif len(ids) == 1:
-            base_expr = f"1.0 if idx == {ids[0]} else 0.0"
+            base_expr = f"1.0 if {fid_var} == {ids[0]} else 0.0"
         else:
-            base_expr = f"1.0 if idx in {tuple(ids)} else 0.0"
+            base_expr = f"1.0 if {fid_var} in {tuple(ids)} else 0.0"
         if self.invert:
             base_expr = f"(1.0 - ({base_expr}))"
         if self.combine_mode == "ADD":
@@ -176,6 +177,11 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
             expr = f"_clamp01(({base_expr}) - ({value}))"
         else:
             expr = f"_clamp01(({base_expr}) * ({value}))"
-        return f"{out_var} = {expr}"
+        return "\n".join(
+            [
+                f"{fid_var} = _formation_id()",
+                f"{out_var} = {expr}",
+            ]
+        )
 
 
