@@ -269,6 +269,11 @@ class LDLEDFrameEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
         self.inputs.new("NodeSocketInt", "Duration")
         self.outputs.new("LDLEDEntrySocket", "Entry")
 
+    def draw_buttons(self, context, layout):
+        op = layout.operator("ldled.frameentry_fill_current", text="Fill from Current")
+        op.node_tree_name = self.id_data.name
+        op.node_name = self.name
+
     def build_code(self, inputs):
         out_var = self.output_var("Entry")
         entry_key = f"{self.codegen_id()}_{int(self.as_pointer())}"

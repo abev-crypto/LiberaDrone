@@ -8,7 +8,9 @@ from liberadronecore.ledeffects.nodes.mask import le_idmask
 from liberadronecore.ledeffects.nodes.mask import le_insidemesh
 from liberadronecore.ledeffects.nodes.position import le_projectionuv
 from liberadronecore.ledeffects.nodes.sampler import le_image
+from liberadronecore.ledeffects.nodes.entry import le_frameentry
 from liberadronecore.ledeffects.nodes.util import le_catcache
+from liberadronecore.formation import fn_parse
 from liberadronecore.reg.base_reg import RegisterBase
 from liberadronecore.ui import ledeffects_panel as led_panel
 
@@ -306,7 +308,7 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
 
         for col_idx, frame in enumerate(range(start_frame, end_frame)):
             positions, pair_ids = le_catcache._resolve_positions(scene, frame)
-            if not positions:
+            if positions is None or len(positions) == 0:
                 continue
             if len(positions) != height:
                 continue
@@ -382,6 +384,52 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
         scene.frame_set(original_frame)
         if suspend is not None:
             suspend(False)
+
+        return {'FINISHED'}
+
+
+class LDLED_OT_frameentry_fill_current(bpy.types.Operator):
+    bl_idname = "ldled.frameentry_fill_current"
+    bl_label = "Fill from Current"
+    bl_description = "Fill Start/Duration from the current frame formation"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        tree = bpy.data.node_groups.get(self.node_tree_name)
+        node = tree.nodes.get(self.node_name) if tree else None
+        if node is None or not isinstance(node, le_frameentry.LDLEDFrameEntryNode):
+            self.report({'ERROR'}, "Frame Entry node not found")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        if scene is None:
+            self.report({'ERROR'}, "No active scene")
+            return {'CANCELLED'}
+
+        schedule = fn_parse.get_cached_schedule(scene)
+        if not schedule:
+            self.report({'ERROR'}, "No formation schedule. Run Calculate first.")
+            return {'CANCELLED'}
+
+        frame = int(scene.frame_current)
+        active = None
+        for entry in schedule:
+            if entry.start <= frame < entry.end:
+                if active is None or entry.start > active.start:
+                    active = entry
+        if active is None:
+            self.report({'ERROR'}, "No active formation at current frame")
+            return {'CANCELLED'}
+
+        start_sock = node.inputs.get("Start")
+        if start_sock is not None and hasattr(start_sock, "default_value"):
+            start_sock.default_value = int(active.start)
+        duration_sock = node.inputs.get("Duration")
+        if duration_sock is not None and hasattr(duration_sock, "default_value"):
+            duration_sock.default_value = max(0, int(active.end - active.start))
 
         return {'FINISHED'}
 
@@ -605,6 +653,7 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.register_class(LDLED_OT_add_reroute)
         bpy.utils.register_class(LDLED_OT_group_selected)
         bpy.utils.register_class(LDLED_OT_cat_cache_bake)
+        bpy.utils.register_class(LDLED_OT_frameentry_fill_current)
         bpy.utils.register_class(LDLED_OT_insidemesh_create_mesh)
         bpy.utils.register_class(LDLED_OT_projectionuv_create_mesh)
         bpy.utils.register_class(LDLED_OT_collectionmask_create_collection)
@@ -618,6 +667,7 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.unregister_class(LDLED_OT_collectionmask_create_collection)
         bpy.utils.unregister_class(LDLED_OT_projectionuv_create_mesh)
         bpy.utils.unregister_class(LDLED_OT_insidemesh_create_mesh)
+        bpy.utils.unregister_class(LDLED_OT_frameentry_fill_current)
         bpy.utils.unregister_class(LDLED_OT_cat_cache_bake)
         bpy.utils.unregister_class(LDLED_OT_group_selected)
         bpy.utils.unregister_class(LDLED_OT_add_reroute)

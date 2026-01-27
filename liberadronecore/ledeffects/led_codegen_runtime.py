@@ -49,6 +49,8 @@ def _default_for_input(socket: bpy.types.NodeSocket) -> str:
             return repr(value.name)
         if isinstance(value, bpy.types.Collection):
             return repr(value.name)
+        if isinstance(value, bpy.types.Image):
+            return repr(value.name)
         if isinstance(value, (float, int)):
             return repr(float(value))
         if isinstance(value, (list, tuple, mathutils.Vector)) or (

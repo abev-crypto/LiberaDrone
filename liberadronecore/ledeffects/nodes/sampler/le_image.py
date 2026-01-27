@@ -97,7 +97,8 @@ class LDLEDImageSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         image_socket = self.inputs.get("Image")
         row = layout.row()
         row.enabled = not (image_socket and image_socket.is_linked)
-        row.prop(self, "image")
+        if image_socket is not None:
+            row.template_ID(image_socket, "default_value", open="image.open")
 
     def build_code(self, inputs):
         u = inputs.get("U", "0.0")

@@ -136,7 +136,7 @@ def _resolve_positions(scene, frame: int):
     view_layer = bpy.context.view_layer
     if view_layer is not None:
         view_layer.update()
-    positions, pair_ids = ledeffects_task._collect_formation_positions(scene)
+    positions, pair_ids, _formation_ids = ledeffects_task._collect_formation_positions(scene)
     return positions, pair_ids
 
 
