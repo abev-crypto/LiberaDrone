@@ -285,10 +285,11 @@ def write_exr_rgba(path: str, pixels: np.ndarray) -> bool:
         name=image_name,
         width=width,
         height=height,
-        alpha=True,
+        #alpha=True,
         float_buffer=True,
     )
-    _apply_image_format(img, "OPEN_EXR", use_float=True)
+    #_apply_image_format(img, "OPEN_EXR", use_float=True, colorspace="Non-Color")
+    img.colorspace_settings.name = "Non-Color"
     img.filepath_raw = path
     expected_channels = getattr(img, "channels", 4 if True else 3)
     if data.shape[2] != expected_channels:
@@ -300,5 +301,6 @@ def write_exr_rgba(path: str, pixels: np.ndarray) -> bool:
         else:
             return False
     set_image_pixels(img, data)
+    img.file_format = "OPEN_EXR"
     img.save()
     return True
