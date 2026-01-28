@@ -61,6 +61,7 @@ def _get_transition_settings(scene):
     exp_distance = max(0.0, _get_scene_setting(scene, "ld_bakedt_exp_distance", EXP_DISTANCE, float))
     relax_dmin_scale = max(0.0, _get_scene_setting(scene, "ld_bakedt_relax_dmin_scale", RELAX_DMIN_SCALE, float))
     relax_edge_frames = max(0, _get_scene_setting(scene, "ld_bakedt_relax_edge_frames", RELAX_EDGE_FRAMES, int))
+    relax_edge_ratio = max(0.0, _get_scene_setting(scene, "ld_bakedt_relax_edge_ratio", RELAX_EDGE_RATIO, float))
     speed_acc_margin = _get_scene_setting(scene, "ld_bakedt_speed_acc_margin", SPEED_ACC_MARGIN, float)
     speed_acc_margin = max(0.0, min(1.0, speed_acc_margin))
     max_neighbors = max(1, _get_scene_setting(scene, "ld_bakedt_max_neighbors", MAX_NEIGHBORS, int))
@@ -71,6 +72,7 @@ def _get_transition_settings(scene):
         "exp_distance": exp_distance,
         "relax_dmin_scale": relax_dmin_scale,
         "relax_edge_frames": relax_edge_frames,
+        "relax_edge_ratio": relax_edge_ratio,
         "speed_acc_margin": speed_acc_margin,
         "max_neighbors": max_neighbors,
     }
@@ -132,11 +134,13 @@ MAX_SHIFT_PER_POSE = 0.25    # baseから許容する最大ずれ (m)
 
 # 本番（フレームごと）
 RUN_RELAX_ITERS = 6          # 本番近接解消反復
-TETHER_RUN = 0.15            # 本番は弱め（強すぎると離れない）
+TETHER_RUN = 0.1            # 本番は弱め（強すぎると離れない）
 MAX_SHIFT_RUN = None         # Noneなら D_MIN*0.75 を使用
+MAX_SHIFT_RUN_RATIO = 0.85
 JERK_SCALE = 0.6             # Start/Endの急加速を緩める
-RELAX_DMIN_SCALE = 1.05      # Relax d_min scale at full strength
+RELAX_DMIN_SCALE = 1.06      # Relax d_min scale at full strength
 RELAX_EDGE_FRAMES = 24       # Frames to ramp up from 1.0 at start/end
+RELAX_EDGE_RATIO = 0.21875   # Ratio of transition frames (105/480)
 SPEED_ACC_MARGIN = 0.995     # Safety margin for speed/acc limits
 
 MAX_NEIGHBORS = 25           # KDTreeで見る近傍数
@@ -512,6 +516,7 @@ def build_tracks_from_positions(
     pre_relax_iters = settings["pre_relax_iters"]
     relax_dmin_scale = settings["relax_dmin_scale"]
     relax_edge_frames = settings["relax_edge_frames"]
+    relax_edge_ratio = settings["relax_edge_ratio"]
 
     start_f = int(frame_start)
     end_f = int(frame_end)
@@ -582,7 +587,7 @@ def build_tracks_from_positions(
     prev_vel_np = np.zeros_like(cur_pos_np)
     dt = 1.0 / fps
 
-    max_shift_run = (d_min_relax * 0.75) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
+    max_shift_run = (d_min_relax * MAX_SHIFT_RUN_RATIO) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
 
     end_np = np.asarray(
         [[p.x, p.y, p.z] for p in Ew],
@@ -630,7 +635,11 @@ def build_tracks_from_positions(
             target = [Vector((float(x), float(y), float(z))) for x, y, z in target_np]
             next_pos = [p.copy() for p in target]
 
-            edge_frames = max(1, int(relax_edge_frames))
+            if relax_edge_ratio > 0.0:
+                edge_frames = int(round(frames * relax_edge_ratio))
+            else:
+                edge_frames = int(relax_edge_frames)
+            edge_frames = max(1, edge_frames)
             edge_dist = min(f - start_f, end_f - f)
             if edge_dist <= 0:
                 d_min_scale = 1.0
@@ -813,7 +822,7 @@ def main():
     cur_pos = [poses[0][i].copy() for i in range(N)]
     prev_vel = [Vector((0.0,0.0,0.0)) for _ in range(N)]
 
-    max_shift_run = (d_min_relax * 0.75) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
+    max_shift_run = (d_min_relax * MAX_SHIFT_RUN_RATIO) if (MAX_SHIFT_RUN is None) else MAX_SHIFT_RUN
 
     # Bake
     for f in range(start_f, end_f + 1):

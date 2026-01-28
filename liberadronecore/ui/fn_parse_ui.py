@@ -379,6 +379,7 @@ class FN_PT_transition_settings(bpy.types.Panel, FN_Register):
         col.prop(scene, "ld_bakedt_exp_distance", text="Exp Distance")
         col.prop(scene, "ld_bakedt_relax_dmin_scale", text="Relax DMin Scale")
         col.prop(scene, "ld_bakedt_relax_edge_frames", text="Relax Edge Frames")
+        col.prop(scene, "ld_bakedt_relax_edge_ratio", text="Relax Edge Ratio")
         col.prop(scene, "ld_bakedt_speed_acc_margin", text="Speed/Acc Margin")
         col.prop(scene, "ld_bakedt_max_neighbors", text="Max Neighbors")
 
@@ -416,6 +417,12 @@ class FN_TransitionSettingsProps(RegisterBase):
             default=bakedt.RELAX_EDGE_FRAMES,
             min=0,
         )
+        bpy.types.Scene.ld_bakedt_relax_edge_ratio = bpy.props.FloatProperty(
+            name="Relax Edge Ratio",
+            default=bakedt.RELAX_EDGE_RATIO,
+            min=0.0,
+            max=1.0,
+        )
         bpy.types.Scene.ld_bakedt_speed_acc_margin = bpy.props.FloatProperty(
             name="Speed/Acc Margin",
             default=bakedt.SPEED_ACC_MARGIN,
@@ -437,6 +444,7 @@ class FN_TransitionSettingsProps(RegisterBase):
             "ld_bakedt_exp_distance",
             "ld_bakedt_relax_dmin_scale",
             "ld_bakedt_relax_edge_frames",
+            "ld_bakedt_relax_edge_ratio",
             "ld_bakedt_speed_acc_margin",
             "ld_bakedt_max_neighbors",
         ):
