@@ -14,7 +14,7 @@ from liberadronecore.util import image_util
 
 # ---------- Utilities ----------
 
-PREFIX_MAP_FILENAME = "prefix_map.json"
+PREFIX_MAP_FILENAME = "prefix_mapLD.json"
 DEFAULT_FOLDER_DURATION = 480
 
 

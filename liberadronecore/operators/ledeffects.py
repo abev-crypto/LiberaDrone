@@ -6,6 +6,7 @@ import bpy
 from liberadronecore.ledeffects.nodes.mask import le_collectionmask
 from liberadronecore.ledeffects.nodes.mask import le_idmask
 from liberadronecore.ledeffects.nodes.mask import le_insidemesh
+from liberadronecore.ledeffects.nodes.mask import le_trail
 from liberadronecore.ledeffects.nodes.position import le_projectionuv
 from liberadronecore.ledeffects.nodes.sampler import le_image
 from liberadronecore.ledeffects.nodes.entry import le_frameentry
@@ -642,6 +643,59 @@ class LDLED_OT_idmask_remove_selection(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class LDLED_OT_trail_set_start(bpy.types.Operator):
+    bl_idname = "ldled.trail_set_start"
+    bl_label = "Set Trail Start"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        tree = bpy.data.node_groups.get(self.node_tree_name)
+        node = tree.nodes.get(self.node_name) if tree else None
+        if node is None or not isinstance(node, le_trail.LDLEDTrailNode):
+            self.report({'ERROR'}, "Trail node not found")
+            return {'CANCELLED'}
+
+        selected_ids, error = le_trail._read_selected_ids_ordered(context, None)
+        if error:
+            self.report({'ERROR'}, error)
+            return {'CANCELLED'}
+        if not selected_ids:
+            self.report({'ERROR'}, "No selected vertices")
+            return {'CANCELLED'}
+        node.start_id = int(selected_ids[0])
+        return {'FINISHED'}
+
+
+class LDLED_OT_trail_set_transit(bpy.types.Operator):
+    bl_idname = "ldled.trail_set_transit"
+    bl_label = "Set Trail Transit"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        tree = bpy.data.node_groups.get(self.node_tree_name)
+        node = tree.nodes.get(self.node_name) if tree else None
+        if node is None or not isinstance(node, le_trail.LDLEDTrailNode):
+            self.report({'ERROR'}, "Trail node not found")
+            return {'CANCELLED'}
+
+        selected_ids, error = le_trail._read_selected_ids_ordered(context, None)
+        if error:
+            self.report({'ERROR'}, error)
+            return {'CANCELLED'}
+        if not selected_ids:
+            self.report({'ERROR'}, "No selected vertices")
+            return {'CANCELLED'}
+
+        node.transit_ids = " ".join(str(i) for i in selected_ids)
+        return {'FINISHED'}
+
+
 class LDLEDEffectsOps(RegisterBase):
     @classmethod
     def register(cls) -> None:
@@ -659,9 +713,13 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.register_class(LDLED_OT_collectionmask_create_collection)
         bpy.utils.register_class(LDLED_OT_idmask_add_selection)
         bpy.utils.register_class(LDLED_OT_idmask_remove_selection)
+        bpy.utils.register_class(LDLED_OT_trail_set_start)
+        bpy.utils.register_class(LDLED_OT_trail_set_transit)
 
     @classmethod
     def unregister(cls) -> None:
+        bpy.utils.unregister_class(LDLED_OT_trail_set_transit)
+        bpy.utils.unregister_class(LDLED_OT_trail_set_start)
         bpy.utils.unregister_class(LDLED_OT_idmask_remove_selection)
         bpy.utils.unregister_class(LDLED_OT_idmask_add_selection)
         bpy.utils.unregister_class(LDLED_OT_collectionmask_create_collection)

@@ -264,7 +264,12 @@ def update_led_effects(scene):
         if valid and all(item is not None for item in ordered):
             positions_cache = [item for item in ordered if item is not None]
 
-    le_codegen.begin_led_frame_cache(frame, positions_cache, formation_ids=formation_ids)
+    le_codegen.begin_led_frame_cache(
+        frame,
+        positions_cache,
+        formation_ids=formation_ids,
+        pair_ids=pair_ids,
+    )
     colors = np.zeros((len(positions), 4), dtype=np.float32)
     try:
         for idx, pos in enumerate(positions):

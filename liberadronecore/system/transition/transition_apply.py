@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import bpy
@@ -323,6 +324,43 @@ def _apply_pair_id_order(values: Sequence, pair_ids: Sequence[int]) -> List:
     return ordered
 
 
+def _update_transition_move_stats(
+    node: bpy.types.Node,
+    prev_positions: Sequence[Vector],
+    next_positions: Sequence[Vector],
+) -> None:
+    if not hasattr(node, "max_move_up"):
+        return
+    if not prev_positions or not next_positions:
+        try:
+            node.max_move_up = -1.0
+            node.max_move_down = -1.0
+            node.max_move_horiz = -1.0
+        except Exception:
+            pass
+        return
+    max_up = 0.0
+    max_down = 0.0
+    max_horiz = 0.0
+    for prev, nxt in zip(prev_positions, next_positions):
+        dx = float(nxt.x - prev.x)
+        dy = float(nxt.y - prev.y)
+        dz = float(nxt.z - prev.z)
+        if dz > max_up:
+            max_up = dz
+        if -dz > max_down:
+            max_down = -dz
+        horiz = math.hypot(dx, dy)
+        if horiz > max_horiz:
+            max_horiz = horiz
+    try:
+        node.max_move_up = max_up
+        node.max_move_down = max_down
+        node.max_move_horiz = max_horiz
+    except Exception:
+        pass
+
+
 def _node_tree_from_context(context, node_name: str) -> Tuple[Optional[bpy.types.NodeTree], Optional[bpy.types.Node]]:
     tree = None
     node = None
@@ -400,6 +438,7 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
     prev_list = _apply_pair_id_order(prev_list, prev_form_ids)
     next_list = _apply_pair_id_order(next_list, next_pair_ids)
     prev_form_ids = list(range(len(prev_list)))
+    _update_transition_move_stats(node, prev_list, next_list)
 
     start_frame = int(getattr(node, "computed_start_frame", 0) or 0)
     duration_value = fn_parse._resolve_input_value(node, "Duration", 0.0, "duration")
@@ -561,6 +600,144 @@ def _apply_auto(ctx: TransitionContext) -> str:
     return f"Auto transition VAT created: {obj.name}"
 
 
+def _stagger_tracks_by_distance(
+    tracks: List[dict],
+    prev_positions: Sequence[Vector],
+    next_positions: Sequence[Vector],
+    start_frame: int,
+    end_frame: int,
+    *,
+    start_per_frame: int,
+) -> None:
+    if not tracks:
+        return
+    if start_per_frame <= 0:
+        return
+    total_frames = max(0, int(end_frame) - int(start_frame))
+    if total_frames <= 0:
+        return
+
+    distances = []
+    for idx, (prev, nxt) in enumerate(zip(prev_positions, next_positions)):
+        distances.append((idx, (nxt - prev).length))
+    distances.sort(key=lambda item: (item[1], item[0]))
+    rank_by_index = {idx: rank for rank, (idx, _dist) in enumerate(distances)}
+
+    for track_idx, track in enumerate(tracks):
+        data = track.get("data") or []
+        if not data:
+            continue
+        rank = rank_by_index.get(track_idx, 0)
+        delay = int(rank // start_per_frame)
+        if delay <= 0:
+            continue
+        available = max(1, total_frames - delay)
+        scale = total_frames / available
+
+        track_frames = max(0, len(data) - 1)
+        base_x = [row.get("x", 0.0) for row in data]
+        base_y = [row.get("y", 0.0) for row in data]
+        base_z = [row.get("z", 0.0) for row in data]
+        base_r = data[0].get("r", 255)
+        base_g = data[0].get("g", 255)
+        base_b = data[0].get("b", 255)
+
+        new_data = []
+        for f in range(int(start_frame), int(end_frame) + 1):
+            if f - start_frame <= delay:
+                x = base_x[0]
+                y = base_y[0]
+                z = base_z[0]
+            else:
+                t = start_frame + (f - start_frame - delay) * scale
+                if t <= start_frame:
+                    idx0 = 0
+                    alpha = 0.0
+                elif t >= end_frame:
+                    idx0 = track_frames
+                    alpha = 0.0
+                else:
+                    pos = t - start_frame
+                    idx0 = int(math.floor(pos))
+                    alpha = pos - idx0
+                idx0 = max(0, min(idx0, track_frames))
+                idx1 = min(idx0 + 1, track_frames)
+                x = base_x[idx0] + (base_x[idx1] - base_x[idx0]) * alpha
+                y = base_y[idx0] + (base_y[idx1] - base_y[idx0]) * alpha
+                z = base_z[idx0] + (base_z[idx1] - base_z[idx0]) * alpha
+            new_data.append(
+                {
+                    "frame": float(f),
+                    "x": float(x),
+                    "y": float(y),
+                    "z": float(z),
+                    "r": base_r,
+                    "g": base_g,
+                    "b": base_b,
+                }
+            )
+        track["data"] = new_data
+
+
+def _apply_construction(ctx: TransitionContext, *, start_per_frame: int) -> str:
+    tracks = bakedt.build_tracks_from_positions(
+        ctx.prev_positions,
+        ctx.next_positions,
+        ctx.start_frame,
+        ctx.end_frame,
+        ctx.fps,
+        scene=ctx.scene,
+    )
+    _stagger_tracks_by_distance(
+        tracks,
+        ctx.prev_positions,
+        ctx.next_positions,
+        ctx.start_frame,
+        ctx.end_frame,
+        start_per_frame=start_per_frame,
+    )
+
+    image_prefix = _transition_base_name(ctx.node)
+    collection_name = _transition_collection_name(ctx.node)
+    pos_img, pos_min, pos_max, duration, drone_count = create_vat.build_vat_images_from_tracks(
+        tracks,
+        ctx.fps,
+        image_name_prefix=image_prefix,
+        recreate_images=True,
+    )
+    image_util.save_image_to_scene_cache(
+        pos_img,
+        pos_img.name,
+        "OPEN_EXR",
+        scene=ctx.scene,
+        use_float=True,
+        colorspace="Non-Color",
+        link=True,
+    )
+
+    col = _ensure_collection(ctx.scene, collection_name)
+    obj = _ensure_point_object(
+        f"{collection_name}_VAT",
+        ctx.prev_positions,
+        col,
+        update=True,
+    )
+    _set_pair_ids(obj.data, ctx.pair_ids)
+
+    frame_count = max(int(duration) + 1, 1)
+    group = vat_gn._create_gn_vat_group(
+        pos_img,
+        pos_min,
+        pos_max,
+        frame_count,
+        drone_count,
+        start_frame=ctx.start_frame,
+        base_name=collection_name,
+    )
+    vat_gn._apply_gn_to_object(obj, group)
+    return f"Construction transition VAT created: {obj.name}"
+
+
 def _apply_copyloc(ctx: TransitionContext, *, mode: str, split_count: int, grid_spacing: float) -> str:
     output_col = _ensure_collection(ctx.scene, _transition_collection_name(ctx.node))
     targets_col = _ensure_collection(ctx.scene, f"PT_{ctx.node.name}_Targets")
@@ -657,6 +834,18 @@ def apply_transition(node: bpy.types.Node, context=None, *, assign_pairs_after: 
         message = _apply_auto(ctx)
         _set_transition_collection(node, ctx.scene)
         fn_parse.compute_schedule(context, assign_pairs=assign_pairs_after)
+        _update_transition_move_stats(ctx.node, ctx.prev_positions, ctx.next_positions)
+        return True, message
+    if mode == "CONSTRUCTION":
+        start_per_frame = getattr(node, "construction_start_count", 1)
+        try:
+            start_per_frame = int(start_per_frame)
+        except Exception:
+            start_per_frame = 1
+        message = _apply_construction(ctx, start_per_frame=max(1, start_per_frame))
+        _set_transition_collection(node, ctx.scene)
+        fn_parse.compute_schedule(context, assign_pairs=assign_pairs_after)
+        _update_transition_move_stats(ctx.node, ctx.prev_positions, ctx.next_positions)
         return True, message
 
     copyloc_mode = getattr(node, "copyloc_mode", "NORMAL")
@@ -670,4 +859,5 @@ def apply_transition(node: bpy.types.Node, context=None, *, assign_pairs_after: 
     )
     _set_transition_collection(node, ctx.scene)
     fn_parse.compute_schedule(context, assign_pairs=assign_pairs_after)
+    _update_transition_move_stats(ctx.node, ctx.prev_positions, ctx.next_positions)
     return True, message

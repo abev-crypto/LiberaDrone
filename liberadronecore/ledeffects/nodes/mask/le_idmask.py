@@ -140,6 +140,7 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         except Exception:
             pass
         self.outputs.new("NodeSocketFloat", "Mask")
+        self.outputs.new("LDLEDIDSocket", "IDs")
 
     def draw_buttons(self, context, layout):
         if self.use_custom_ids:
@@ -160,9 +161,11 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def build_code(self, inputs):
         out_var = self.output_var("Mask")
+        out_ids = self.output_var("IDs")
         ids = _node_effective_ids(self, include_legacy=not self.use_custom_ids)
         value = inputs.get("Value", "1.0")
         fid_var = f"_fid_{self.codegen_id()}_{int(self.as_pointer())}"
+        ids_expr = repr(ids)
         if not ids:
             base_expr = "0.0"
         elif len(ids) == 1:
@@ -180,6 +183,7 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         return "\n".join(
             [
                 f"{fid_var} = _formation_id()",
+                f"{out_ids} = {ids_expr}",
                 f"{out_var} = {expr}",
             ]
         )

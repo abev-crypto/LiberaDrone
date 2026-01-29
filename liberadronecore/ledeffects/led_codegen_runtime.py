@@ -39,6 +39,8 @@ def _default_for_socket(socket: bpy.types.NodeSocket) -> str:
         return "None"
     if getattr(socket, "bl_idname", "") == "LDLEDEntrySocket":
         return "_entry_empty()"
+    if getattr(socket, "bl_idname", "") == "LDLEDIDSocket":
+        return "None"
     return "0.0"
 
 
@@ -68,8 +70,9 @@ def begin_led_frame_cache(
     positions: List[Tuple[float, float, float]],
     *,
     formation_ids: Optional[List[int]] = None,
+    pair_ids: Optional[List[int]] = None,
 ) -> None:
-    le_meshinfo.begin_led_frame_cache(frame, positions, formation_ids)
+    le_meshinfo.begin_led_frame_cache(frame, positions, formation_ids, pair_ids)
 
 
 def end_led_frame_cache() -> None:

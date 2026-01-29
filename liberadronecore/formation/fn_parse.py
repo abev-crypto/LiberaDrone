@@ -391,6 +391,12 @@ def compute_schedule(context: Optional[bpy.types.Context] = None, *, assign_pair
                 node.collection_vertex_count = _count_collection_vertices(col)
             if hasattr(node, "error_message"):
                 node.error_message = ""
+            if hasattr(node, "max_move_up"):
+                node.max_move_up = -1.0
+            if hasattr(node, "max_move_down"):
+                node.max_move_down = -1.0
+            if hasattr(node, "max_move_horiz"):
+                node.max_move_horiz = -1.0
 
         start_nodes = [n for n in tree.nodes if n.bl_idname == "FN_StartNode"]
         if not start_nodes:

@@ -11,7 +11,7 @@ from PySide6 import QtCore, QtWidgets
 import numpy as np
 
 from liberadronecore.system.transition import vat_gn
-from liberadronecore.formation import fn_parse
+from liberadronecore.formation import fn_parse, fn_parse_pairing
 from liberadronecore.system.transition import transition_apply
 from liberadronecore.ui import ledeffects_panel as led_panel
 from liberadronecore.util import image_util
@@ -776,6 +776,11 @@ def _create_point_object(name: str, count: int, collection: bpy.types.Collection
     mesh.clear_geometry()
     mesh.vertices.add(count)
     mesh.update()
+    form_attr = fn_parse_pairing._ensure_int_point_attr(mesh, fn_parse_pairing.FORMATION_ATTR_NAME)
+    pair_attr = fn_parse_pairing._ensure_int_point_attr(mesh, fn_parse_pairing.PAIR_ATTR_NAME)
+    values = list(range(len(mesh.vertices)))
+    form_attr.data.foreach_set("value", values)
+    pair_attr.data.foreach_set("value", values)
     return obj
 
 

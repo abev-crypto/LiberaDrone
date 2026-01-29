@@ -441,6 +441,8 @@ class LD_CompatPreviewItem(bpy.types.PropertyGroup):
     source_name: bpy.props.StringProperty(name="Source", default="")
     kind: bpy.props.StringProperty(name="Kind", default="SHOW")
     checked: bpy.props.BoolProperty(name="Use", default=True)
+    duration: bpy.props.IntProperty(name="Duration", default=0, min=0)
+    has_assets: bpy.props.BoolProperty(name="Has Assets", default=True)
 
 
 class LD_UL_CompatPreview(bpy.types.UIList):
@@ -463,6 +465,9 @@ class LD_UL_CompatPreview(bpy.types.UIList):
         if item.kind == "TRANSITION":
             label = f"{label} (TR)"
         row.label(text=label)
+        if item.kind == "TRANSITION" and not item.has_assets:
+            sub = row.row(align=True)
+            sub.prop(item, "duration", text="Dur")
 
 
 class LD_OT_compat_preview_vatcat(bpy.types.Operator):
@@ -500,6 +505,12 @@ class LD_OT_compat_preview_vatcat(bpy.types.Operator):
             item.source_name = str(entry.get("source_name", ""))
             item.kind = str(entry.get("kind", "SHOW"))
             item.checked = True
+            item.has_assets = bool(entry.get("has_assets", True))
+            if item.kind == "TRANSITION" and not item.has_assets:
+                try:
+                    item.duration = max(0, int(entry.get("transition_duration", 0)))
+                except Exception:
+                    item.duration = 0
 
         scene.ld_compat_preview_index = 0
         self.report({"INFO"}, "Preview generated")
@@ -547,6 +558,22 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
             if not selected_names:
                 self.report({"ERROR"}, "No preview entries selected")
                 return {"CANCELLED"}
+
+        duration_overrides: dict[str, int] = {}
+        if preview_items:
+            for item in preview_items:
+                if not item.checked:
+                    continue
+                if getattr(item, "kind", "") != "TRANSITION":
+                    continue
+                if bool(getattr(item, "has_assets", True)):
+                    continue
+                try:
+                    dur = int(getattr(item, "duration", 0))
+                except Exception:
+                    dur = 0
+                if dur > 0:
+                    duration_overrides[str(getattr(item, "source_name", ""))] = dur
 
         sequence = _build_compat_sequence(
             candidates,
@@ -646,6 +673,10 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
                     )
                     transition_total = max(0, int(transition_duration)) + max(0, int(last_gap_frames))
                     last_gap_frames = 0
+                if not has_assets:
+                    override = duration_overrides.get(str(entry.get("source_name", "")))
+                    if override and override > 0:
+                        transition_total = override
 
                 trans_node = node_map.get(display_name)
                 if trans_node is None or trans_node.bl_idname != "FN_TransitionNode":

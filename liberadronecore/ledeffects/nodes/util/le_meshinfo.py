@@ -22,6 +22,8 @@ _LED_FRAME_CACHE: Dict[str, Any] = {
     "collection_ids": {},
     "bbox": {},
     "formation_ids": None,
+    "pair_ids": None,
+    "formation_id_map": None,
 }
 _LED_CURRENT_INDEX: Optional[int] = None
 _LED_SOURCE_INDEX: Optional[int] = None
@@ -33,6 +35,7 @@ def begin_led_frame_cache(
     frame: float,
     positions: List[Tuple[float, float, float]],
     formation_ids: Optional[List[int]] = None,
+    pair_ids: Optional[List[int]] = None,
 ) -> None:
     _LED_FRAME_CACHE["frame"] = float(frame)
     _LED_FRAME_CACHE["positions"] = positions
@@ -44,6 +47,8 @@ def begin_led_frame_cache(
     _LED_FRAME_CACHE["collection_ids"] = {}
     _LED_FRAME_CACHE["bbox"] = {}
     _LED_FRAME_CACHE["formation_ids"] = formation_ids
+    _LED_FRAME_CACHE["pair_ids"] = pair_ids
+    _LED_FRAME_CACHE["formation_id_map"] = None
 
 
 def end_led_frame_cache() -> None:
@@ -57,6 +62,8 @@ def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["collection_ids"] = {}
     _LED_FRAME_CACHE["bbox"] = {}
     _LED_FRAME_CACHE["formation_ids"] = None
+    _LED_FRAME_CACHE["pair_ids"] = None
+    _LED_FRAME_CACHE["formation_id_map"] = None
 
 
 def set_led_runtime_index(idx: Optional[int]) -> None:

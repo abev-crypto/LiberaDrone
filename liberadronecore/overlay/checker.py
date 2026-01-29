@@ -38,9 +38,21 @@ _CHECK_CACHE = {
     "prev_vel_np": None,
     "speed_vert": [],
     "speed_horiz": [],
+    "speed_all": [],
     "acc": [],
     "min_distance": [],
     "form_order": False,
+}
+
+_FLOW_CACHE = {
+    "scene_name": None,
+    "frame": None,
+    "signature": None,
+    "positions_np": None,
+    "prev_positions_np": None,
+    "speed": [],
+    "direction": [],
+    "pair_id_map": {},
 }
 
 def _get_fps(scene: bpy.types.Scene) -> float:
@@ -142,6 +154,161 @@ def _compute_min_distances(positions: list[Vector]) -> list[float]:
     return distances
 
 
+def _build_pair_id_map(pair_ids: list[int] | None) -> dict[int, int]:
+    mapping: dict[int, int] = {}
+    if not pair_ids:
+        return mapping
+    for idx, pid in enumerate(pair_ids):
+        try:
+            key = int(pid)
+        except (TypeError, ValueError):
+            continue
+        if key not in mapping:
+            mapping[key] = idx
+    return mapping
+
+
+def _collect_flow_positions(
+    scene: bpy.types.Scene,
+    depsgraph,
+) -> tuple[np.ndarray, list[int] | None, tuple[tuple[str, int | str], ...]]:
+    positions, pair_ids, _form_ids, signature = formation_positions.collect_formation_positions_with_form_ids(
+        scene,
+        depsgraph,
+        collection_name=FORMATION_ROOT,
+        sort_by_pair_id=True,
+        include_signature=True,
+        as_numpy=True,
+    )
+    if positions is None or len(positions) == 0:
+        return np.zeros((0, 3), dtype=np.float64), None, signature or ()
+    if not isinstance(positions, np.ndarray):
+        positions = _positions_to_numpy(positions)
+    return positions, pair_ids, signature or ()
+
+
+def _update_flow_cache(scene: bpy.types.Scene) -> dict | None:
+    cache = _FLOW_CACHE
+    if scene is None:
+        return None
+
+    scene_name = scene.name if scene else None
+    frame = int(getattr(scene, "frame_current", 0))
+    if cache["scene_name"] == scene_name and cache["frame"] == frame and cache["speed"]:
+        return cache
+
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    positions_np, pair_ids, signature = _collect_flow_positions(scene, depsgraph)
+    count = int(positions_np.shape[0]) if positions_np is not None else 0
+    if count <= 0:
+        cache.update(
+            {
+                "scene_name": scene_name,
+                "frame": frame,
+                "signature": signature,
+                "positions_np": None,
+                "prev_positions_np": None,
+                "speed": [],
+                "direction": [],
+                "pair_id_map": {},
+            }
+        )
+        return cache
+
+    prev_positions_np = cache.get("prev_positions_np")
+    prev_frame = cache.get("frame")
+
+    reset = (
+        prev_positions_np is None
+        or prev_positions_np.shape[0] != positions_np.shape[0]
+        or prev_frame is None
+        or cache.get("signature") != signature
+    )
+    pair_id_map = _build_pair_id_map(pair_ids)
+    if reset:
+        zeros = [0.0] * count
+        dir_zeros = [(0.0, 0.0, 0.0)] * count
+        cache.update(
+            {
+                "scene_name": scene_name,
+                "frame": frame,
+                "signature": signature,
+                "positions_np": positions_np,
+                "prev_positions_np": positions_np.copy(),
+                "speed": list(zeros),
+                "direction": list(dir_zeros),
+                "pair_id_map": pair_id_map,
+            }
+        )
+        return cache
+
+    fps = _get_fps(scene)
+    frame_delta = frame - prev_frame
+    if frame_delta == 0:
+        frame_delta = 1
+    dt = (frame_delta / fps) if fps > 0.0 else 1.0
+
+    vel = (positions_np - prev_positions_np) / dt
+    speed = np.linalg.norm(vel, axis=1)
+    direction = np.zeros_like(vel)
+    mask = speed > 1.0e-8
+    if np.any(mask):
+        direction[mask] = vel[mask] / speed[mask, None]
+
+    cache.update(
+        {
+            "scene_name": scene_name,
+            "frame": frame,
+            "signature": signature,
+            "positions_np": positions_np,
+            "prev_positions_np": positions_np.copy(),
+            "speed": speed.tolist(),
+            "direction": [tuple(row) for row in direction.tolist()],
+            "pair_id_map": pair_id_map,
+        }
+    )
+    return cache
+
+
+def get_flow_values(idx: int, frame: float) -> float:
+    scene = getattr(bpy.context, "scene", None)
+    cache = _update_flow_cache(scene)
+    if not cache:
+        return 0.0
+    try:
+        idx_i = int(idx)
+    except (TypeError, ValueError):
+        idx_i = -1
+    pair_id_map = cache.get("pair_id_map") or {}
+    if idx_i in pair_id_map:
+        idx_i = pair_id_map[idx_i]
+    speed = cache.get("speed", [])
+    if idx_i < 0 or idx_i >= len(speed):
+        return 0.0
+    return float(speed[idx_i])
+
+
+def get_flow_direction(idx: int, frame: float) -> tuple[float, float, float]:
+    scene = getattr(bpy.context, "scene", None)
+    cache = _update_flow_cache(scene)
+    if not cache:
+        return 0.0, 0.0, 0.0
+    try:
+        idx_i = int(idx)
+    except (TypeError, ValueError):
+        idx_i = -1
+    pair_id_map = cache.get("pair_id_map") or {}
+    if idx_i in pair_id_map:
+        idx_i = pair_id_map[idx_i]
+    direction = cache.get("direction", [])
+    if idx_i < 0 or idx_i >= len(direction):
+        return 0.0, 0.0, 0.0
+    vec = direction[idx_i]
+    if not vec or len(vec) < 3:
+        return 0.0, 0.0, 0.0
+    return float(vec[0]), float(vec[1]), float(vec[2])
+
+
 def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dict | None:
     cache = _CHECK_CACHE
     if scene is None:
@@ -172,6 +339,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
                 "prev_vel_np": None,
                 "speed_vert": [],
                 "speed_horiz": [],
+                "speed_all": [],
                 "acc": [],
                 "min_distance": [],
                 "form_order": False,
@@ -227,6 +395,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
                 "prev_vel_np": np.zeros_like(positions_cache_np),
                 "speed_vert": list(zeros),
                 "speed_horiz": list(zeros),
+                "speed_all": list(zeros),
                 "acc": list(zeros),
                 "min_distance": _compute_min_distances(positions_cache) if need_distance else [],
                 "form_order": form_ok,
@@ -257,6 +426,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
 
     speed_vert = vel[:, 2].tolist()
     speed_horiz = np.linalg.norm(vel[:, :2], axis=1).tolist()
+    speed_all = np.linalg.norm(vel, axis=1).tolist()
     acc_vec = (vel - prev_vel_np) / dt
     acc = np.linalg.norm(acc_vec, axis=1).tolist()
 
@@ -275,6 +445,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
             "prev_vel_np": vel,
             "speed_vert": speed_vert,
             "speed_horiz": speed_horiz,
+            "speed_all": speed_all,
             "acc": acc,
             "min_distance": _compute_min_distances(positions_cache) if need_distance else [],
             "form_order": form_ok,

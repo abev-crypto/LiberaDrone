@@ -180,6 +180,30 @@ def _entry_progress(
 
 
 @register_runtime_function
+def _entry_elapsed(
+    entry: Optional[Dict[str, List[Tuple[float, float]]]],
+    frame: float,
+) -> float:
+    if not entry:
+        return 0.0
+    fr = float(frame)
+    best_t = -1.0
+    best_elapsed = 0.0
+    for spans in entry.values():
+        for start, end in spans:
+            start_f = float(start)
+            end_f = float(end)
+            if end_f <= start_f:
+                continue
+            if start_f <= fr < end_f:
+                t = (fr - start_f) / (end_f - start_f)
+                if t > best_t:
+                    best_t = t
+                    best_elapsed = fr - start_f
+    return best_elapsed
+
+
+@register_runtime_function
 def _entry_fade(
     entry: Optional[Dict[str, List[Tuple[float, float]]]],
     frame: float,

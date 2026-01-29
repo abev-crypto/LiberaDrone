@@ -1,28 +1,16 @@
 import bpy
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects.runtime_registry import register_runtime_function
 from liberadronecore.ledeffects.nodes.util.le_math import _clamp01
 from liberadronecore.ledeffects.nodes.util import le_meshinfo
+from liberadronecore.ledeffects.nodes.util import le_particlebase
 
 
 _CHAIN_CACHE: Dict[str, Dict[str, object]] = {}
 _NEIGHBOR_COUNT = 8
-
-
-def _chain_fps() -> float:
-    scene = getattr(bpy.context, "scene", None)
-    if scene is None:
-        return 24.0
-    fps = float(getattr(scene.render, "fps", 24.0))
-    base = float(getattr(scene.render, "fps_base", 1.0) or 1.0)
-    if fps <= 0.0:
-        fps = 24.0
-    if base <= 0.0:
-        base = 1.0
-    return fps / base
 
 
 def _seed_from_key(key: str) -> int:
@@ -69,32 +57,46 @@ def _pick_neighbor(
     move_mode: str,
     angle: float,
     center: Tuple[float, float, float],
+    allowed_indices: Sequence[int],
+    neighbor_map: Optional[Sequence[Sequence[int]]] = None,
 ) -> int:
     count = len(positions)
     if count <= 1:
         return current_idx
     if current_idx < 0 or current_idx >= count:
         return current_idx
-    cx, cy, cz = positions[current_idx]
-    dists: List[Tuple[float, int, float, float, float]] = []
-    for idx, pos in enumerate(positions):
-        if idx == current_idx or idx == prev_idx:
-            continue
-        dx = pos[0] - cx
-        dy = pos[1] - cy
-        dz = pos[2] - cz
-        dists.append((dx * dx + dy * dy + dz * dz, idx, dx, dy, dz))
-    if not dists:
+    if not allowed_indices:
         return current_idx
-    dists.sort(key=lambda item: item[0])
-    top = dists[: min(_NEIGHBOR_COUNT, len(dists))]
+    cx, cy, cz = positions[current_idx]
+    if neighbor_map is not None and current_idx < len(neighbor_map):
+        top = [idx for idx in neighbor_map[current_idx] if idx != prev_idx]
+        if not top:
+            return current_idx
+    else:
+        dists: List[Tuple[float, int, float, float, float]] = []
+        for idx in allowed_indices:
+            if idx < 0 or idx >= count:
+                continue
+            pos = positions[idx]
+            if idx == current_idx or idx == prev_idx:
+                continue
+            dx = pos[0] - cx
+            dy = pos[1] - cy
+            dz = pos[2] - cz
+            dists.append((dx * dx + dy * dy + dz * dz, idx, dx, dy, dz))
+        if not dists:
+            return current_idx
+        dists.sort(key=lambda item: item[0])
+        top = [item[1] for item in dists[: min(_NEIGHBOR_COUNT, len(dists))]]
 
     mode = (move_mode or "RANDOM").upper()
     if mode == "DIRECTION":
         dir_x, dir_y = _direction_vector(angle)
         best_idx = None
         best_dot = -1.0e9
-        for _dist, idx, dx, dy, _dz in top:
+        for idx in top:
+            dx = positions[idx][0] - cx
+            dy = positions[idx][1] - cy
             length = math.hypot(dx, dy)
             if length <= 1e-6:
                 continue
@@ -115,7 +117,9 @@ def _pick_neighbor(
                 rx, ry = -ry, rx
             best_idx = None
             best_dot = -1.0e9
-            for _dist, idx, dx, dy, _dz in top:
+            for idx in top:
+                dx = positions[idx][0] - cx
+                dy = positions[idx][1] - cy
                 length = math.hypot(dx, dy)
                 if length <= 1e-6:
                     continue
@@ -127,7 +131,7 @@ def _pick_neighbor(
                 return best_idx
 
     pick = int(_rand01(state) * len(top))
-    return top[pick][1]
+    return top[pick]
 
 
 def _init_chain_state(key: str, count: int) -> Dict[str, object]:
@@ -138,6 +142,7 @@ def _init_chain_state(key: str, count: int) -> Dict[str, object]:
         "particles": [],
         "spawn_acc": 0.0,
         "spawned_spans": set(),
+        "route_sig": None,
         "rng": _seed_from_key(key),
     }
 
@@ -148,11 +153,15 @@ def _spawn_particle(
     life_frames: int,
     frame: int,
     speed_frames: int,
+    allowed_indices: Sequence[int],
 ) -> None:
     count = len(positions)
     if count <= 0:
         return
-    idx = int(_rand01(state) * count)
+    if allowed_indices:
+        idx = allowed_indices[int(_rand01(state) * len(allowed_indices))]
+    else:
+        return
     particles = state.get("particles", [])
     particles.append(
         {
@@ -179,11 +188,19 @@ def _advance_chain_state(
     decay: float,
     move_mode: str,
     angle: float,
+    allowed_indices: Sequence[int],
+    mask_enabled: bool,
+    allowed_set: Optional[set[int]],
 ) -> None:
     count = len(positions)
     if count <= 0:
         return
-    speed_frames = max(1, int(round(float(speed))))
+    fps = le_particlebase._particle_fps()
+    speed_rate = max(0.0, float(speed))
+    if speed_rate > 0.0:
+        speed_frames = max(1, int(round(fps / speed_rate)))
+    else:
+        speed_frames = max(1, int(round(fps)))
     decay_val = max(0.0, float(decay))
     current_frame = int(frame)
     last_frame = state.get("frame")
@@ -192,10 +209,28 @@ def _advance_chain_state(
     if current_frame - int(last_frame) > 1000:
         state.update(_init_chain_state(state.get("key", ""), count))
         last_frame = current_frame - 1
-    cx = sum(pos[0] for pos in positions) / count
-    cy = sum(pos[1] for pos in positions) / count
-    cz = sum(pos[2] for pos in positions) / count
+    if allowed_indices:
+        cx = sum(positions[idx][0] for idx in allowed_indices) / len(allowed_indices)
+        cy = sum(positions[idx][1] for idx in allowed_indices) / len(allowed_indices)
+        cz = sum(positions[idx][2] for idx in allowed_indices) / len(allowed_indices)
+    else:
+        cx = sum(pos[0] for pos in positions) / count
+        cy = sum(pos[1] for pos in positions) / count
+        cz = sum(pos[2] for pos in positions) / count
     center = (cx, cy, cz)
+    allowed_count = len(allowed_indices)
+    particle_count = len(state.get("particles", []))
+    move_rate = max(1, int(speed_frames))
+    expected_moves = particle_count / float(move_rate) if move_rate > 0 else float(particle_count)
+    neighbor_map = None
+    if allowed_count and (allowed_count <= 96 or expected_moves >= allowed_count):
+        neighbor_map = le_particlebase._neighbor_map(
+            state,
+            positions,
+            allowed_indices,
+            _NEIGHBOR_COUNT,
+            frame=current_frame,
+        )
 
     for step_frame in range(int(last_frame) + 1, current_frame + 1):
         if decay_val > 0.0:
@@ -215,16 +250,18 @@ def _advance_chain_state(
                 if span_idx not in spawned:
                     spawn_count = max(0, int(round(float(spawn))))
                     for _ in range(spawn_count):
-                        _spawn_particle(state, positions, life_frames, step_frame, speed_frames)
+                        _spawn_particle(state, positions, life_frames, step_frame, speed_frames, allowed_indices)
                     spawned.add(span_idx)
                     state["spawned_spans"] = spawned
             else:
-                fps = _chain_fps()
                 rate = max(0.0, float(spawn))
                 acc = float(state.get("spawn_acc", 0.0))
-                acc += rate / fps if fps > 0.0 else 0.0
+                if rate > 0.0 and fps > 0.0:
+                    acc += rate / fps
+                elif rate <= 0.0:
+                    acc = 0.0
                 while acc >= 1.0:
-                    _spawn_particle(state, positions, life_frames, step_frame, speed_frames)
+                    _spawn_particle(state, positions, life_frames, step_frame, speed_frames, allowed_indices)
                     acc -= 1.0
                 state["spawn_acc"] = acc
 
@@ -246,6 +283,8 @@ def _advance_chain_state(
                     move_mode,
                     angle,
                     center,
+                    allowed_indices,
+                    neighbor_map,
                 )
                 if new_idx != idx:
                     prev = idx
@@ -263,7 +302,7 @@ def _advance_chain_state(
         values = state.get("values", [])
         active = {int(p["idx"]) for p in new_particles}
         for idx in active:
-            if 0 <= idx < len(values):
+            if 0 <= idx < len(values) and (not mask_enabled or (allowed_set and idx in allowed_set)):
                 values[idx] = 1.0
         state["values"] = values
 
@@ -282,22 +321,54 @@ def _chain_mask(
     decay: float,
     move_mode: str,
     angle: float,
+    allowed_ids: Sequence[int],
 ) -> float:
     positions = le_meshinfo._LED_FRAME_CACHE.get("positions") or []
     count = len(positions)
     if count <= 0:
         return 0.0
+    if not isinstance(allowed_ids, (list, tuple, set)):
+        allowed_ids = []
+    allowed_ids = list(allowed_ids)
     cache_key = str(key or "")
+    route_sig = (tuple(allowed_ids),)
     state = _CHAIN_CACHE.get(cache_key)
-    if state is None or int(state.get("count", -1)) != count or frame < float(state.get("frame") or -1):
+    if (
+        state is None
+        or int(state.get("count", -1)) != count
+        or frame < float(state.get("frame") or -1)
+        or state.get("route_sig") != route_sig
+    ):
         state = _init_chain_state(cache_key, count)
         state["key"] = cache_key
+        state["route_sig"] = route_sig
         _CHAIN_CACHE[cache_key] = state
-    if int(state.get("frame") or -1) != int(frame):
+    frame_i = int(frame)
+    prep_frame = state.get("prep_frame")
+    prep_sig = state.get("prep_sig")
+    if prep_frame != frame_i or prep_sig != route_sig:
+        mapping = le_particlebase._formation_id_map()
+        if allowed_ids:
+            allowed_indices = le_particlebase._map_allowed_indices(allowed_ids, count, mapping)
+            mask_enabled = True
+        else:
+            allowed_indices = list(range(count))
+            mask_enabled = False
+        allowed_set = set(allowed_indices) if mask_enabled else None
+        state["prep_frame"] = frame_i
+        state["prep_sig"] = route_sig
+        state["prep_allowed_indices"] = allowed_indices
+        state["prep_allowed_set"] = allowed_set
+        state["prep_mask_enabled"] = mask_enabled
+    else:
+        allowed_indices = state.get("prep_allowed_indices") or list(range(count))
+        allowed_set = state.get("prep_allowed_set")
+        mask_enabled = bool(state.get("prep_mask_enabled"))
+    if int(state.get("frame") or -1) != frame_i:
         _advance_chain_state(
             state,
             positions,
-            int(frame),
+            frame_i,
             entry,
             mode,
             spawn,
@@ -305,15 +376,23 @@ def _chain_mask(
             decay,
             move_mode,
             angle,
+            allowed_indices,
+            mask_enabled,
+            allowed_set,
         )
     values = state.get("values", [])
     if idx < 0 or idx >= len(values):
+        return 0.0
+    if mask_enabled and (not allowed_set or idx not in allowed_set):
         return 0.0
     return _clamp01(float(values[idx]))
 
 
 class LDLEDChainNode(bpy.types.Node, LDLED_CodeNodeBase):
     """Spawn-and-hop chain mask."""
+
+    NODE_CATEGORY_ID = "LD_LED_SIMULATE"
+    NODE_CATEGORY_LABEL = "Simulate"
 
     bl_idname = "LDLEDChainNode"
     bl_label = "Chain"
@@ -342,12 +421,18 @@ class LDLEDChainNode(bpy.types.Node, LDLED_CodeNodeBase):
         default="RANDOM",
         options={'LIBRARY_EDITABLE'},
     )
+    seed: bpy.props.IntProperty(
+        name="Seed",
+        default=0,
+        options={'LIBRARY_EDITABLE'},
+    )
 
     @classmethod
     def poll(cls, ntree):
         return ntree.bl_idname == "LD_LedEffectsTree"
 
     def init(self, context):
+        self.inputs.new("LDLEDIDSocket", "IDs")
         self.inputs.new("LDLEDEntrySocket", "Entry")
         spawn = self.inputs.new("NodeSocketFloat", "Spawn")
         spawn.default_value = 1.0
@@ -360,18 +445,21 @@ class LDLEDChainNode(bpy.types.Node, LDLED_CodeNodeBase):
         self.outputs.new("NodeSocketFloat", "Mask")
 
     def draw_buttons(self, context, layout):
+        layout.label(text="Spawn/Speed are per second")
         layout.prop(self, "mode", text="")
         layout.prop(self, "move_mode", text="")
+        layout.prop(self, "seed")
 
     def build_code(self, inputs):
+        ids = inputs.get("IDs", "None")
         entry = inputs.get("Entry", "_entry_empty()")
         spawn = inputs.get("Spawn", "1.0")
         speed = inputs.get("Speed", "1.0")
         decay = inputs.get("Decay", "0.0")
         angle = inputs.get("Angle", "0.0")
         out_var = self.output_var("Mask")
-        cache_key = f"{self.codegen_id()}_{int(self.as_pointer())}"
+        cache_key = f"{self.name}_{int(self.seed)}"
         return (
             f"{out_var} = _chain_mask({cache_key!r}, idx, frame, {entry}, "
-            f"{self.mode!r}, {spawn}, {speed}, {decay}, {self.move_mode!r}, {angle})"
+            f"{self.mode!r}, {spawn}, {speed}, {decay}, {self.move_mode!r}, {angle}, {ids})"
         )

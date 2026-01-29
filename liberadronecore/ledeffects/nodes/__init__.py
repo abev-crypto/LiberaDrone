@@ -3,7 +3,9 @@ from .effect import le_blend
 from .effect import le_clamp
 from .effect import le_cutoff
 from .effect import le_level
+from .effect import le_blur
 from .effect import le_hsvedit
+from .effect import le_echo
 from .mask import le_random
 from .entry import le_editentry
 from .entry import le_formationentry
@@ -19,6 +21,8 @@ from .mask import le_chain
 from .mask import le_idmask
 from .mask import le_insidemesh
 from .mask import le_time
+from .mask import le_flow
+from .mask import le_trail
 from .sampler import le_vertexcolor
 from .position import le_formationuv
 from .position import le_meshuv

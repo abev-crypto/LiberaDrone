@@ -52,6 +52,7 @@ class LDLEDCollectionMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         except Exception:
             pass
         self.outputs.new("NodeSocketFloat", "Mask")
+        self.outputs.new("LDLEDIDSocket", "IDs")
 
     def draw_buttons(self, context, layout):
         op = layout.operator("ldled.collectionmask_create_collection", text="From Selection")
@@ -63,12 +64,14 @@ class LDLEDCollectionMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def build_code(self, inputs):
         out_var = self.output_var("Mask")
+        out_ids = self.output_var("IDs")
         col_socket = self.inputs.get("Collection")
         col_name = inputs.get("Collection", "None")
         if (col_socket is None or not col_socket.is_linked) and col_name in {"None", "''"} and self.collection:
             col_name = repr(self.collection.name)
         value = inputs.get("Value", "1.0")
         ids_var = f"_col_ids_{self.codegen_id()}_{int(self.as_pointer())}"
+        list_var = f"_col_list_{self.codegen_id()}_{int(self.as_pointer())}"
         base_expr = f"{ids_var}[idx] if idx < len({ids_var}) else 0.0"
         if self.invert:
             base_expr = f"(1.0 - ({base_expr}))"
@@ -81,6 +84,8 @@ class LDLEDCollectionMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         return "\n".join(
             [
                 f"{ids_var} = _collection_formation_ids({col_name}, {bool(self.use_children)!r})",
+                f"{list_var} = [i for i, v in enumerate({ids_var}) if v]",
+                f"{out_ids} = {list_var}",
                 f"{out_var} = {expr}",
             ]
         )

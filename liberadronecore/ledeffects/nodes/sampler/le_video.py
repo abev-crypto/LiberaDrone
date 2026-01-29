@@ -103,8 +103,12 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         vid_id = f"{self.codegen_id()}_{int(self.as_pointer())}"
         return "\n".join(
             [
-                f"_progress_{vid_id} = _entry_progress({entry}, frame)",
-                f"_frame_{vid_id} = ({start_offset}) + (frame * ({speed}))",
-                f"{out_var} = _sample_video({video_path!r}, _frame_{vid_id}, {u}, {v}, {bool(self.loop)!r}) if _progress_{vid_id} > 0.0 else (0.0, 0.0, 0.0, 1.0)",
+                f"_active_{vid_id} = _entry_active_count({entry}, frame)",
+                f"_elapsed_{vid_id} = _entry_elapsed({entry}, frame)",
+                f"if _entry_is_empty({entry}):",
+                f"    _active_{vid_id} = 1",
+                f"    _elapsed_{vid_id} = frame",
+                f"_frame_{vid_id} = ({start_offset}) + (_elapsed_{vid_id} * ({speed}))",
+                f"{out_var} = _sample_video({video_path!r}, _frame_{vid_id}, {u}, {v}, {bool(self.loop)!r}) if _active_{vid_id} > 0 else (0.0, 0.0, 0.0, 1.0)",
             ]
         )
