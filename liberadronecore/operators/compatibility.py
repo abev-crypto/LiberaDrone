@@ -177,7 +177,7 @@ def _build_compat_candidates(base_dir: str, report, fps: float) -> tuple[list[di
         if folder_path:
             pos_path, cat_path = sheetutils._find_vat_cat_files(folder_path)
             pos_img = sheetutils._load_image(pos_path) if pos_path else None
-            cat_img = sheetutils._load_image(cat_path) if cat_path else None
+            cat_img = sheetutils._load_image(cat_path, colorspace="Non-Color") if cat_path else None
 
         frame_count = 0
         if pos_img is not None and getattr(pos_img, "size", None):
@@ -876,7 +876,7 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
             self.report({"ERROR"}, f"Failed to write EXR: {pos_path}")
             return {"CANCELLED"}
 
-        image_util.write_png_rgba(cat_path, col_pixels)
+        image_util.write_png_rgba(cat_path, col_pixels, colorspace="Non-Color")
 
         self.report({"INFO"}, f"Exported VAT/CAT to {target_dir}")
         return {"FINISHED"}
@@ -1022,7 +1022,7 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
                 errors.append(f"{node.name}: Failed to write EXR: {pos_path}")
                 continue
 
-            image_util.write_png_rgba(cat_path, col_pixels)
+            image_util.write_png_rgba(cat_path, col_pixels, colorspace="Non-Color")
 
             exported += 1
 

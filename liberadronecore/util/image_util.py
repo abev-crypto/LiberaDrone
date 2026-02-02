@@ -205,7 +205,12 @@ def link_image_to_existing_file(
         image.reload()
 
 
-def write_png_rgba(path: str, pixels: np.ndarray) -> bool:
+def write_png_rgba(
+    path: str,
+    pixels: np.ndarray,
+    *,
+    colorspace: str | None = None,
+) -> bool:
     if pixels is None:
         return False
     data = np.asarray(pixels, dtype=np.float32)
@@ -237,6 +242,11 @@ def write_png_rgba(path: str, pixels: np.ndarray) -> bool:
             alpha=has_alpha,
             float_buffer=False,
         )
+        if colorspace:
+            try:
+                img.colorspace_settings.name = colorspace
+            except Exception:
+                pass
         expected_channels = getattr(img, "channels", 4 if has_alpha else 3)
         if data.shape[2] != expected_channels:
             if data.shape[2] == 3 and expected_channels == 4:
@@ -249,6 +259,10 @@ def write_png_rgba(path: str, pixels: np.ndarray) -> bool:
         set_image_pixels(img, data)
         try:
             img.update()
+        except Exception:
+            pass
+        try:
+            img.file_format = "PNG"
         except Exception:
             pass
         save_image(img, path, "PNG", use_float=False)

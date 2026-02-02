@@ -612,15 +612,8 @@ def _export_cut_to_vat_cat(context, cut: dict[str, object], export_dir: str) -> 
     if not image_util.write_exr_rgba(pos_path, pos_pixels):
         return False, f"Failed to write EXR: {pos_path}"
 
-    col_img = bpy.data.images.new(
-        name=cat_base,
-        width=frame_count,
-        height=drone_count,
-        alpha=True,
-        float_buffer=False,
-    )
-    col_img.pixels[:] = col_pixels.ravel()
-    image_util.save_image(col_img, cat_path, "PNG")
+    if not image_util.write_png_rgba(cat_path, col_pixels, colorspace="Non-Color"):
+        return False, f"Failed to write PNG: {cat_path}"
 
     return True, f"Exported: {name}"
 
@@ -676,20 +669,31 @@ def _ensure_collection(scene: bpy.types.Scene, name: str) -> bpy.types.Collectio
     return col
 
 
-def _load_image(path: str) -> bpy.types.Image | None:
+def _load_image(path: str, *, colorspace: str | None = None) -> bpy.types.Image | None:
     if not path or not os.path.isfile(path):
         return None
     abs_path = os.path.abspath(path)
     for img in bpy.data.images:
         try:
             if os.path.abspath(bpy.path.abspath(img.filepath)) == abs_path:
+                if colorspace:
+                    try:
+                        img.colorspace_settings.name = colorspace
+                    except Exception:
+                        pass
                 return img
         except Exception:
             continue
     try:
-        return bpy.data.images.load(abs_path)
+        img = bpy.data.images.load(abs_path)
     except Exception:
         return None
+    if colorspace and img is not None:
+        try:
+            img.colorspace_settings.name = colorspace
+        except Exception:
+            pass
+    return img
 
 
 def _parse_bounds_from_name(filename: str) -> tuple[tuple[float, float, float], tuple[float, float, float]] | None:

@@ -351,7 +351,11 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
             scene=scene,
             create=True,
         )
-        if png_path and le_catcache.image_util.write_png_rgba(png_path, pixels):
+        if png_path and le_catcache.image_util.write_png_rgba(
+            png_path,
+            pixels,
+            colorspace="Non-Color",
+        ):
             abs_path = bpy.path.abspath(png_path)
             img = node.image
             if img is not None:

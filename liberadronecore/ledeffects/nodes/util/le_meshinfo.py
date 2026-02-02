@@ -24,6 +24,7 @@ _LED_FRAME_CACHE: Dict[str, Any] = {
     "formation_ids": None,
     "pair_ids": None,
     "formation_id_map": None,
+    "formation_id_inv_map": None,
 }
 _LED_CURRENT_INDEX: Optional[int] = None
 _LED_SOURCE_INDEX: Optional[int] = None
@@ -49,6 +50,7 @@ def begin_led_frame_cache(
     _LED_FRAME_CACHE["formation_ids"] = formation_ids
     _LED_FRAME_CACHE["pair_ids"] = pair_ids
     _LED_FRAME_CACHE["formation_id_map"] = None
+    _LED_FRAME_CACHE["formation_id_inv_map"] = None
 
 
 def end_led_frame_cache() -> None:
@@ -64,6 +66,7 @@ def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["formation_ids"] = None
     _LED_FRAME_CACHE["pair_ids"] = None
     _LED_FRAME_CACHE["formation_id_map"] = None
+    _LED_FRAME_CACHE["formation_id_inv_map"] = None
 
 
 def set_led_runtime_index(idx: Optional[int]) -> None:
@@ -249,14 +252,24 @@ def _distance_to_bbox(pos: Tuple[float, float, float], bounds) -> float:
 @register_runtime_function
 def _project_bbox_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[float, float]:
     obj = _get_object(obj_name)
-    bounds = _object_world_bbox(obj)
-    if not bounds:
+    if obj is None:
         return 0.0, 0.0
-    (min_x, _, min_z), (max_x, _, max_z) = bounds
+    bbox = obj.bound_box
+    if not bbox:
+        return 0.0, 0.0
+    min_x = min(co[0] for co in bbox)
+    max_x = max(co[0] for co in bbox)
+    min_z = min(co[2] for co in bbox)
+    max_z = max(co[2] for co in bbox)
     span_x = max(0.0001, max_x - min_x)
     span_z = max(0.0001, max_z - min_z)
-    u = _clamp((pos[0] - min_x) / span_x, 0.0, 1.0)
-    v = _clamp((pos[2] - min_z) / span_z, 0.0, 1.0)
+    try:
+        local = obj.matrix_world.inverted() @ mathutils.Vector(pos)
+        u = _clamp((local.x - min_x) / span_x, 0.0, 1.0)
+        v = _clamp((local.z - min_z) / span_z, 0.0, 1.0)
+    except Exception:
+        u = 0.0
+        v = 0.0
     return u, v
 
 
