@@ -32,7 +32,14 @@ def _get_video_sampler(path: str):
 
 
 @register_runtime_function
-def _sample_video(path: str, frame: float, u: float, v: float, loop: bool = False) -> Tuple[float, float, float, float]:
+def _sample_video(
+    path: str,
+    frame: float,
+    u: float,
+    v: float,
+    loop: bool = False,
+    reverse: bool = False,
+) -> Tuple[float, float, float, float]:
     sampler = _get_video_sampler(path)
     if sampler is None:
         return 0.0, 0.0, 0.0, 1.0
@@ -48,6 +55,8 @@ def _sample_video(path: str, frame: float, u: float, v: float, loop: bool = Fals
             frame_idx = max(0, min(frame_idx, frame_count - 1))
     else:
         frame_idx = max(0, frame_idx)
+    if reverse and frame_count > 0:
+        frame_idx = (frame_count - 1) - frame_idx
     rgba = sampler.sample_uv(frame_idx, float(u), float(v))
     if hasattr(rgba, "__len__") and len(rgba) >= 4:
         return float(rgba[0]), float(rgba[1]), float(rgba[2]), float(rgba[3])
@@ -73,6 +82,11 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         default=False,
         options={'LIBRARY_EDITABLE'},
     )
+    reverse: bpy.props.BoolProperty(
+        name="Reverse",
+        default=False,
+        options={'LIBRARY_EDITABLE'},
+    )
 
     @classmethod
     def poll(cls, ntree):
@@ -91,6 +105,7 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
     def draw_buttons(self, context, layout):
         layout.prop(self, "filepath")
         layout.prop(self, "loop")
+        layout.prop(self, "reverse")
 
     def build_code(self, inputs):
         u = inputs.get("U", "0.0")
@@ -116,6 +131,6 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
                 f"        _frame_{vid_id} = _offset_{vid_id}",
                 "    else:",
                 f"        _frame_{vid_id} = _offset_{vid_id} + ((_elapsed_{vid_id} - _offset_{vid_id}) * ({speed}))",
-                f"{out_var} = _sample_video({video_path!r}, _frame_{vid_id}, {u}, {v}, {bool(self.loop)!r}) if _active_{vid_id} > 0 else (0.0, 0.0, 0.0, 1.0)",
+                f"{out_var} = _sample_video({video_path!r}, _frame_{vid_id}, {u}, {v}, {bool(self.loop)!r}, {bool(self.reverse)!r}) if _active_{vid_id} > 0 else (0.0, 0.0, 0.0, 1.0)",
             ]
         )
