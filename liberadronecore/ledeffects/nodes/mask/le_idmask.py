@@ -34,7 +34,10 @@ def _node_effective_ids(node: "LDLEDIDMaskNode", include_legacy: bool) -> list[i
         return _sorted_ids([item.value for item in node.ids])
     if not include_legacy:
         return []
-    return _sorted_ids([node.formation_id])
+    fid = getattr(node, "formation_id", -1)
+    if fid < 0:
+        return []
+    return _sorted_ids([fid])
 
 
 def _set_node_ids(node: "LDLEDIDMaskNode", ids: list[int]) -> None:
@@ -106,8 +109,8 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     formation_id: bpy.props.IntProperty(
         name="Formation ID",
-        default=0,
-        min=0,
+        default=-1,
+        min=-1,
         options={'LIBRARY_EDITABLE'},
     )
     use_custom_ids: bpy.props.BoolProperty(
@@ -148,7 +151,10 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
             label = ", ".join(str(i) for i in ids) if ids else "-"
             layout.label(text=f"IDs: {label}")
         else:
-            layout.label(text=f"ID: {int(self.formation_id)}")
+            if int(self.formation_id) < 0:
+                layout.label(text="ID: -")
+            else:
+                layout.label(text=f"ID: {int(self.formation_id)}")
         row = layout.row(align=True)
         op = row.operator("ldled.idmask_add_selection", text="Add Selection")
         op.node_tree_name = self.id_data.name

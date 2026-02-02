@@ -187,7 +187,7 @@ def _entry_elapsed(
     if not entry:
         return 0.0
     fr = float(frame)
-    best_t = -1.0
+    best_start = None
     best_elapsed = 0.0
     for spans in entry.values():
         for start, end in spans:
@@ -196,9 +196,8 @@ def _entry_elapsed(
             if end_f <= start_f:
                 continue
             if start_f <= fr < end_f:
-                t = (fr - start_f) / (end_f - start_f)
-                if t > best_t:
-                    best_t = t
+                if best_start is None or start_f > best_start:
+                    best_start = start_f
                     best_elapsed = fr - start_f
     return best_elapsed
 

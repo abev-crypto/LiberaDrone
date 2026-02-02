@@ -108,7 +108,14 @@ class LDLEDVideoSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
                 f"if _entry_is_empty({entry}):",
                 f"    _active_{vid_id} = 1",
                 f"    _elapsed_{vid_id} = frame",
-                f"_frame_{vid_id} = ({start_offset}) + (_elapsed_{vid_id} * ({speed}))",
+                f"_offset_{vid_id} = float({start_offset})",
+                f"if _offset_{vid_id} <= 0.0:",
+                f"    _frame_{vid_id} = _offset_{vid_id} + (_elapsed_{vid_id} * ({speed}))",
+                "else:",
+                f"    if _elapsed_{vid_id} < _offset_{vid_id}:",
+                f"        _frame_{vid_id} = _offset_{vid_id}",
+                "    else:",
+                f"        _frame_{vid_id} = _offset_{vid_id} + ((_elapsed_{vid_id} - _offset_{vid_id}) * ({speed}))",
                 f"{out_var} = _sample_video({video_path!r}, _frame_{vid_id}, {u}, {v}, {bool(self.loop)!r}) if _active_{vid_id} > 0 else (0.0, 0.0, 0.0, 1.0)",
             ]
         )

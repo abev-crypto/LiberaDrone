@@ -6,6 +6,7 @@ from .effect import le_level
 from .effect import le_blur
 from .effect import le_hsvedit
 from .effect import le_echo
+from .effect import le_nega
 from .mask import le_random
 from .entry import le_editentry
 from .entry import le_formationentry
