@@ -177,9 +177,12 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         layout.prop(self, "combine_mode", text="")
         layout.prop(self, "invert")
         layout.prop(self, "remap_rows")
-        row = layout.row()
+        row = layout.row(align=True)
         row.enabled = self.remap_rows
         row.prop(self, "remap_frame")
+        op = row.operator("ldled.remapframe_fill_current", text="Now")
+        op.node_tree_name = self.id_data.name
+        op.node_name = self.name
 
     def build_code(self, inputs):
         out_var = self.output_var("Mask")
@@ -189,9 +192,9 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         fid_var = f"_fid_{self.codegen_id()}_{int(self.as_pointer())}"
         if self.remap_rows:
             if int(self.remap_frame) >= 0:
-                fid_expr = f"_cat_row_index_at_frame(idx, {int(self.remap_frame)}, 0)"
+                fid_expr = f"_cat_ref_fid_locked(idx, frame, {int(self.remap_frame)})"
             else:
-                fid_expr = "_cat_row_index(idx, 0)"
+                fid_expr = "_cat_ref_fid(idx)"
         else:
             fid_expr = "_formation_id()"
         ids_expr = repr(ids)

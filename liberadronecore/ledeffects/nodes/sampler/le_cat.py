@@ -7,7 +7,12 @@ from liberadronecore.util import formation_positions
 
 
 @register_runtime_function
-def _cat_row_index(idx: int, height: int) -> int:
+def _cat_row_index(idx: int, height: int, mode: str = "PAIR_TO_FORM") -> int:
+    return _cat_row_index_mode(idx, height, mode)
+
+
+@register_runtime_function
+def _cat_row_index_mode(idx: int, height: int, mode: str = "PAIR_TO_FORM") -> int:
     try:
         height_val = int(height)
     except (TypeError, ValueError):
@@ -16,27 +21,35 @@ def _cat_row_index(idx: int, height: int) -> int:
         idx_val = int(idx)
     except (TypeError, ValueError):
         idx_val = 0
-    cache = le_meshinfo._LED_FRAME_CACHE
-    inv = cache.get("formation_id_inv_map")
-    if not isinstance(inv, dict):
+    if str(mode) == "REF_TO_REF":
+        fid_val = int(le_meshinfo._formation_id())
         mapping = le_particlebase._formation_id_map()
-        inv = {}
-        if isinstance(mapping, dict):
-            for fid, rid in mapping.items():
-                try:
-                    rid_val = int(rid)
-                except (TypeError, ValueError):
-                    continue
-                if rid_val in inv:
-                    continue
-                inv[rid_val] = fid
-        cache["formation_id_inv_map"] = inv
-    row_val = idx_val
-    if isinstance(inv, dict):
         try:
-            row_val = int(inv.get(idx_val, idx_val))
+            row_val = int(mapping.get(fid_val, fid_val))
         except (TypeError, ValueError):
-            row_val = idx_val
+            row_val = fid_val
+    else:
+        cache = le_meshinfo._LED_FRAME_CACHE
+        inv = cache.get("formation_id_inv_map")
+        if not isinstance(inv, dict):
+            mapping = le_particlebase._formation_id_map()
+            inv = {}
+            if isinstance(mapping, dict):
+                for fid, rid in mapping.items():
+                    try:
+                        rid_val = int(rid)
+                    except (TypeError, ValueError):
+                        continue
+                    if rid_val in inv:
+                        continue
+                    inv[rid_val] = fid
+            cache["formation_id_inv_map"] = inv
+        row_val = idx_val
+        if isinstance(inv, dict):
+            try:
+                row_val = int(inv.get(idx_val, idx_val))
+            except (TypeError, ValueError):
+                row_val = idx_val
     if height_val > 0:
         if row_val < 0:
             row_val = 0
@@ -45,17 +58,20 @@ def _cat_row_index(idx: int, height: int) -> int:
     return row_val
 
 
-_REF_FORMATION_INV_CACHE: dict[tuple[str, int], dict[int, int]] = {}
+_REF_FORMATION_MAP_CACHE: dict[tuple[str, int], dict[str, dict[int, int]]] = {}
 
 
-def _build_reference_inv_map(frame: int) -> dict[int, int]:
+def _build_reference_maps(frame: int) -> tuple[dict[int, int], dict[int, int]]:
     scene = getattr(bpy.context, "scene", None)
     if scene is None:
-        return {}
+        return {}, {}
     key = (scene.name, int(frame))
-    cached = _REF_FORMATION_INV_CACHE.get(key)
+    cached = _REF_FORMATION_MAP_CACHE.get(key)
     if isinstance(cached, dict):
-        return cached
+        pair_to_form = cached.get("pair_to_form")
+        form_to_pair = cached.get("form_to_pair")
+        if isinstance(pair_to_form, dict) and isinstance(form_to_pair, dict):
+            return pair_to_form, form_to_pair
 
     original_frame = int(getattr(scene, "frame_current", 0))
     view_layer = getattr(bpy.context, "view_layer", None)
@@ -107,10 +123,11 @@ def _build_reference_inv_map(frame: int) -> dict[int, int]:
                 except Exception:
                     pass
 
-    mapping: dict[int, int] = {}
+    pair_to_form: dict[int, int] = {}
+    form_to_pair: dict[int, int] = {}
     if formation_ids is None:
-        _REF_FORMATION_INV_CACHE[key] = mapping
-        return mapping
+        _REF_FORMATION_MAP_CACHE[key] = {"pair_to_form": pair_to_form, "form_to_pair": form_to_pair}
+        return pair_to_form, form_to_pair
 
     use_pair_ids = False
     if pair_ids is not None and len(pair_ids) == len(formation_ids):
@@ -138,16 +155,112 @@ def _build_reference_inv_map(frame: int) -> dict[int, int]:
                 runtime_idx = int(pair_ids[src_idx])
             except (TypeError, ValueError):
                 runtime_idx = src_idx
-        if runtime_idx in mapping:
-            continue
-        mapping[runtime_idx] = fid_val
+        if runtime_idx not in pair_to_form:
+            pair_to_form[runtime_idx] = fid_val
+        if fid_val not in form_to_pair:
+            form_to_pair[fid_val] = runtime_idx
 
-    _REF_FORMATION_INV_CACHE[key] = mapping
-    return mapping
+    _REF_FORMATION_MAP_CACHE[key] = {"pair_to_form": pair_to_form, "form_to_pair": form_to_pair}
+    return pair_to_form, form_to_pair
 
 
 @register_runtime_function
-def _cat_row_index_at_frame(idx: int, frame: int, height: int) -> int:
+def _cat_ref_fid_locked(idx: int, frame: int, ref_frame: int) -> int:
+    try:
+        idx_val = int(idx)
+    except (TypeError, ValueError):
+        idx_val = 0
+    try:
+        frame_val = int(frame)
+    except (TypeError, ValueError):
+        frame_val = 0
+    try:
+        ref_val = int(ref_frame)
+    except (TypeError, ValueError):
+        ref_val = -1
+
+    if ref_val < 0:
+        return _cat_ref_fid(idx_val)
+
+    if frame_val <= ref_val:
+        pair_to_form, _form_to_pair = _build_reference_maps(ref_val)
+        try:
+            return int(pair_to_form.get(idx_val, idx_val))
+        except (TypeError, ValueError):
+            return idx_val
+    return idx_val
+
+
+@register_runtime_function
+def _cat_row_index_locked(idx: int, frame: int, ref_frame: int, height: int) -> int:
+    try:
+        height_val = int(height)
+    except (TypeError, ValueError):
+        height_val = 0
+    row_val = _cat_ref_fid_locked(idx, frame, ref_frame)
+    try:
+        row_val = int(row_val)
+    except (TypeError, ValueError):
+        row_val = 0
+    if height_val > 0:
+        if row_val < 0:
+            row_val = 0
+        elif row_val >= height_val:
+            row_val = height_val - 1
+    return row_val
+
+
+@register_runtime_function
+def _cat_ref_fid(idx: int, mode: str = "PAIR_TO_FORM") -> int:
+    try:
+        idx_val = int(idx)
+    except (TypeError, ValueError):
+        idx_val = 0
+    if str(mode) == "REF_TO_REF":
+        return int(le_meshinfo._formation_id())
+    cache = le_meshinfo._LED_FRAME_CACHE
+    inv = cache.get("formation_id_inv_map")
+    if not isinstance(inv, dict):
+        mapping = le_particlebase._formation_id_map()
+        inv = {}
+        if isinstance(mapping, dict):
+            for fid, rid in mapping.items():
+                try:
+                    rid_val = int(rid)
+                except (TypeError, ValueError):
+                    continue
+                if rid_val in inv:
+                    continue
+                inv[rid_val] = fid
+        cache["formation_id_inv_map"] = inv
+    try:
+        return int(inv.get(idx_val, idx_val))
+    except (TypeError, ValueError):
+        return idx_val
+
+
+@register_runtime_function
+def _cat_ref_fid_at_frame(idx: int, frame: int, mode: str = "PAIR_TO_FORM") -> int:
+    try:
+        idx_val = int(idx)
+    except (TypeError, ValueError):
+        idx_val = 0
+    if str(mode) == "REF_TO_REF":
+        return int(le_meshinfo._formation_id())
+    pair_to_form, _form_to_pair = _build_reference_maps(frame)
+    try:
+        return int(pair_to_form.get(idx_val, idx_val))
+    except (TypeError, ValueError):
+        return idx_val
+
+
+@register_runtime_function
+def _cat_row_index_at_frame(
+    idx: int,
+    frame: int,
+    height: int,
+    mode: str = "PAIR_TO_FORM",
+) -> int:
     try:
         idx_val = int(idx)
     except (TypeError, ValueError):
@@ -161,11 +274,18 @@ def _cat_row_index_at_frame(idx: int, frame: int, height: int) -> int:
     except (TypeError, ValueError):
         frame_val = 0
 
-    mapping = _build_reference_inv_map(frame_val)
-    try:
-        row_val = int(mapping.get(idx_val, idx_val))
-    except (TypeError, ValueError):
-        row_val = idx_val
+    pair_to_form, form_to_pair = _build_reference_maps(frame_val)
+    if str(mode) == "REF_TO_REF":
+        fid_val = int(le_meshinfo._formation_id())
+        try:
+            row_val = int(form_to_pair.get(fid_val, fid_val))
+        except (TypeError, ValueError):
+            row_val = fid_val
+    else:
+        try:
+            row_val = int(pair_to_form.get(idx_val, idx_val))
+        except (TypeError, ValueError):
+            row_val = idx_val
 
     if height_val > 0:
         if row_val < 0:
@@ -219,9 +339,12 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         row = layout.row()
         row.enabled = not self.use_formation_id
         row.prop(self, "remap_rows")
-        row = layout.row()
+        row = layout.row(align=True)
         row.enabled = (not self.use_formation_id) and self.remap_rows
         row.prop(self, "remap_frame")
+        op = row.operator("ldled.remapframe_fill_current", text="Now")
+        op.node_tree_name = self.id_data.name
+        op.node_name = self.name
 
     def build_code(self, inputs):
         entry = inputs.get("Entry", "_entry_empty()")
@@ -232,7 +355,10 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         idx_expr = "_formation_id()" if self.use_formation_id else "idx"
         if use_remap:
             if int(self.remap_frame) >= 0:
-                idx_expr = f"_cat_row_index_at_frame(idx, {int(self.remap_frame)}, _im_{cat_id}.size[1])"
+                idx_expr = (
+                    f"_cat_row_index_locked(idx, frame, {int(self.remap_frame)}, "
+                    f"_im_{cat_id}.size[1])"
+                )
             else:
                 idx_expr = f"_cat_row_index(idx, _im_{cat_id}.size[1])"
         return "\n".join(
