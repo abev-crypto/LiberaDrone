@@ -130,6 +130,18 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         default=False,
         options={'LIBRARY_EDITABLE'},
     )
+    remap_rows: bpy.props.BoolProperty(
+        name="Remap Rows",
+        description="Match IDs using the current drone index mapping",
+        default=False,
+        options={'LIBRARY_EDITABLE'},
+    )
+    remap_frame: bpy.props.IntProperty(
+        name="Remap Frame",
+        description="Use formation IDs from this frame when remapping rows",
+        default=-1,
+        options={'LIBRARY_EDITABLE'},
+    )
 
     @classmethod
     def poll(cls, ntree):
@@ -164,6 +176,10 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         op.node_name = self.name
         layout.prop(self, "combine_mode", text="")
         layout.prop(self, "invert")
+        layout.prop(self, "remap_rows")
+        row = layout.row()
+        row.enabled = self.remap_rows
+        row.prop(self, "remap_frame")
 
     def build_code(self, inputs):
         out_var = self.output_var("Mask")
@@ -171,6 +187,13 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         ids = _node_effective_ids(self, include_legacy=not self.use_custom_ids)
         value = inputs.get("Value", "1.0")
         fid_var = f"_fid_{self.codegen_id()}_{int(self.as_pointer())}"
+        if self.remap_rows:
+            if int(self.remap_frame) >= 0:
+                fid_expr = f"_cat_row_index_at_frame(idx, {int(self.remap_frame)}, 0)"
+            else:
+                fid_expr = "_cat_row_index(idx, 0)"
+        else:
+            fid_expr = "_formation_id()"
         ids_expr = repr(ids)
         if not ids:
             base_expr = "0.0"
@@ -188,7 +211,7 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
             expr = f"_clamp01(({base_expr}) * ({value}))"
         return "\n".join(
             [
-                f"{fid_var} = _formation_id()",
+                f"{fid_var} = {fid_expr}",
                 f"{out_ids} = {ids_expr}",
                 f"{out_var} = {expr}",
             ]

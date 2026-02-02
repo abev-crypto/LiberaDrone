@@ -38,6 +38,18 @@ class LDLEDCollectionMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         default=False,
         options={'LIBRARY_EDITABLE'},
     )
+    remap_rows: bpy.props.BoolProperty(
+        name="Remap Rows",
+        description="Match collection IDs using the current drone index mapping",
+        default=False,
+        options={'LIBRARY_EDITABLE'},
+    )
+    remap_frame: bpy.props.IntProperty(
+        name="Remap Frame",
+        description="Use formation IDs from this frame when remapping rows",
+        default=-1,
+        options={'LIBRARY_EDITABLE'},
+    )
 
     @classmethod
     def poll(cls, ntree):
@@ -61,6 +73,10 @@ class LDLEDCollectionMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         layout.prop(self, "use_children")
         layout.prop(self, "combine_mode", text="")
         layout.prop(self, "invert")
+        layout.prop(self, "remap_rows")
+        row = layout.row()
+        row.enabled = self.remap_rows
+        row.prop(self, "remap_frame")
 
     def build_code(self, inputs):
         out_var = self.output_var("Mask")
@@ -72,7 +88,15 @@ class LDLEDCollectionMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         value = inputs.get("Value", "1.0")
         ids_var = f"_col_ids_{self.codegen_id()}_{int(self.as_pointer())}"
         list_var = f"_col_list_{self.codegen_id()}_{int(self.as_pointer())}"
-        base_expr = f"{ids_var}[idx] if idx < len({ids_var}) else 0.0"
+        row_var = f"_col_row_{self.codegen_id()}_{int(self.as_pointer())}"
+        if self.remap_rows:
+            if int(self.remap_frame) >= 0:
+                row_expr = f"_cat_row_index_at_frame(idx, {int(self.remap_frame)}, 0)"
+            else:
+                row_expr = "_cat_row_index(idx, 0)"
+        else:
+            row_expr = "idx"
+        base_expr = f"{ids_var}[{row_var}] if {row_var} < len({ids_var}) else 0.0"
         if self.invert:
             base_expr = f"(1.0 - ({base_expr}))"
         if self.combine_mode == "ADD":
@@ -85,6 +109,7 @@ class LDLEDCollectionMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
             [
                 f"{ids_var} = _collection_formation_ids({col_name}, {bool(self.use_children)!r})",
                 f"{list_var} = [i for i, v in enumerate({ids_var}) if v]",
+                f"{row_var} = {row_expr}",
                 f"{out_ids} = {list_var}",
                 f"{out_var} = {expr}",
             ]
