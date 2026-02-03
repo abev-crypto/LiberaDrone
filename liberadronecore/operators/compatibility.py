@@ -6,6 +6,7 @@ import bpy
 import numpy as np
 
 from liberadronecore.formation import fn_parse
+from liberadronecore.ledeffects import led_codegen_runtime as le_codegen
 from liberadronecore.reg.base_reg import RegisterBase
 from liberadronecore.system.transition import transition_apply
 from liberadronecore.ui.import_sheet import sheetutils
@@ -177,7 +178,7 @@ def _build_compat_candidates(base_dir: str, report, fps: float) -> tuple[list[di
         if folder_path:
             pos_path, cat_path = sheetutils._find_vat_cat_files(folder_path)
             pos_img = sheetutils._load_image(pos_path) if pos_path else None
-            cat_img = sheetutils._load_image(cat_path, colorspace="Non-Color") if cat_path else None
+            cat_img = sheetutils._load_image(cat_path, colorspace="sRGB") if cat_path else None
 
         frame_count = 0
         if pos_img is not None and getattr(pos_img, "size", None):
@@ -419,6 +420,45 @@ def _order_by_pair_id(items, pair_ids):
     if any(entry is None for entry in ordered):
         return items
     return ordered
+
+
+def _evaluate_led_colors(effect_fn, positions, pair_ids, formation_ids, frame):
+    if effect_fn is None or positions is None:
+        return None
+    positions_list = [tuple(float(v) for v in pos) for pos in positions]
+    positions_cache = positions_list
+    if pair_ids is not None and len(pair_ids) == len(positions_list):
+        positions_cache = _order_by_pair_id(positions_list, pair_ids)
+    le_codegen.begin_led_frame_cache(
+        frame,
+        positions_cache,
+        formation_ids=formation_ids,
+        pair_ids=pair_ids,
+    )
+    colors = np.zeros((len(positions_list), 4), dtype=np.float32)
+    try:
+        for idx, pos in enumerate(positions_list):
+            runtime_idx = idx
+            if pair_ids is not None and idx < len(pair_ids):
+                pid = pair_ids[idx]
+                if pid is not None:
+                    try:
+                        runtime_idx = int(pid)
+                    except (TypeError, ValueError):
+                        runtime_idx = idx
+            le_codegen.set_led_source_index(idx)
+            le_codegen.set_led_runtime_index(runtime_idx)
+            color = effect_fn(runtime_idx, pos, frame)
+            if not color:
+                continue
+            for chan in range(min(4, len(color))):
+                colors[idx, chan] = float(color[chan])
+    finally:
+        le_codegen.set_led_runtime_index(None)
+        le_codegen.set_led_source_index(None)
+        le_codegen.end_led_frame_cache()
+    np.clip(colors, 0.0, 1.0, out=colors)
+    return colors
 
 
 def _format_bounds_suffix(pos_min, pos_max) -> str:
@@ -784,6 +824,15 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
             self.report({"ERROR"}, "Formation collection not found")
             return {"CANCELLED"}
 
+        tree = le_codegen.get_active_tree(scene)
+        if tree is None:
+            self.report({"ERROR"}, "LED effects tree not found")
+            return {"CANCELLED"}
+        effect_fn = le_codegen.get_compiled_effect(tree)
+        if effect_fn is None:
+            self.report({"ERROR"}, "LED effects output not available")
+            return {"CANCELLED"}
+
         original_frame = scene.frame_current
         view_layer = context.view_layer
         depsgraph = context.evaluated_depsgraph_get()
@@ -795,8 +844,8 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
             scene.frame_set(frame)
             if view_layer is not None:
                 view_layer.update()
-            positions, pair_ids, _ = transition_apply._collect_positions_for_collection(
-                col, frame, depsgraph
+            positions, pair_ids, formation_ids = transition_apply._collect_positions_for_collection(
+                col, frame, depsgraph, collect_form_ids=True
             )
             if not positions:
                 scene.frame_set(original_frame)
@@ -807,24 +856,18 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
             mapped_positions = _order_by_pair_id(positions, pair_ids)
             ordered_pos = [(float(p.x), float(p.y), float(p.z)) for p in mapped_positions]
 
-            color_data = _read_color_verts()
-            if color_data is None:
+            colors = _evaluate_led_colors(effect_fn, positions, pair_ids, formation_ids, frame)
+            if colors is None or len(colors) != len(positions):
                 scene.frame_set(original_frame)
                 if view_layer is not None:
                     view_layer.update()
-                self.report({"ERROR"}, "ColorVerts not available")
+                self.report({"ERROR"}, "LED effects evaluation failed")
                 return {"CANCELLED"}
-            colors, color_pair_ids = color_data
-            if len(colors) != len(ordered_pos):
-                scene.frame_set(original_frame)
-                if view_layer is not None:
-                    view_layer.update()
-                self.report({"ERROR"}, "ColorVerts count mismatch")
-                return {"CANCELLED"}
-            mapped_colors = _order_by_pair_id(colors, color_pair_ids)
-            colors_frames.append(
-                [(float(c[0]), float(c[1]), float(c[2]), float(c[3])) for c in mapped_colors]
+            mapped_colors = _order_by_pair_id(
+                [(float(c[0]), float(c[1]), float(c[2]), float(c[3])) for c in colors],
+                pair_ids,
             )
+            colors_frames.append(mapped_colors)
             positions_frames.append(ordered_pos)
 
         scene.frame_set(original_frame)
@@ -876,7 +919,7 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
             self.report({"ERROR"}, f"Failed to write EXR: {pos_path}")
             return {"CANCELLED"}
 
-        image_util.write_png_rgba(cat_path, col_pixels, colorspace="Non-Color")
+        image_util.write_png_rgba(cat_path, col_pixels, colorspace="sRGB")
 
         self.report({"INFO"}, f"Exported VAT/CAT to {target_dir}")
         return {"FINISHED"}
@@ -930,6 +973,15 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
         view_layer = context.view_layer
         depsgraph = context.evaluated_depsgraph_get()
 
+        tree = le_codegen.get_active_tree(scene)
+        if tree is None:
+            self.report({"ERROR"}, "LED effects tree not found")
+            return {"CANCELLED"}
+        effect_fn = le_codegen.get_compiled_effect(tree)
+        if effect_fn is None:
+            self.report({"ERROR"}, "LED effects output not available")
+            return {"CANCELLED"}
+
         exported = 0
         errors: list[str] = []
         for entry, node in transition_entries:
@@ -945,10 +997,11 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
                 scene.frame_set(frame)
                 if view_layer is not None:
                     view_layer.update()
-                positions, pair_ids, _ = transition_apply._collect_positions_for_collection(
+                positions, pair_ids, formation_ids = transition_apply._collect_positions_for_collection(
                     entry.collection,
                     frame,
                     depsgraph,
+                    collect_form_ids=True,
                 )
                 if not positions:
                     errors.append(f"{node.name}: No positions at frame {frame}")
@@ -957,20 +1010,16 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
                 mapped_positions = _order_by_pair_id(positions, pair_ids)
                 ordered_pos = [(float(p.x), float(p.y), float(p.z)) for p in mapped_positions]
 
-                color_data = _read_color_verts()
-                if color_data is None:
-                    errors.append(f"{node.name}: ColorVerts not available")
+                colors = _evaluate_led_colors(effect_fn, positions, pair_ids, formation_ids, frame)
+                if colors is None or len(colors) != len(positions):
+                    errors.append(f"{node.name}: LED effects evaluation failed")
                     failed = True
                     break
-                colors, color_pair_ids = color_data
-                if len(colors) != len(ordered_pos):
-                    errors.append(f"{node.name}: ColorVerts count mismatch")
-                    failed = True
-                    break
-                mapped_colors = _order_by_pair_id(colors, color_pair_ids)
-                colors_frames.append(
-                    [(float(c[0]), float(c[1]), float(c[2]), float(c[3])) for c in mapped_colors]
+                mapped_colors = _order_by_pair_id(
+                    [(float(c[0]), float(c[1]), float(c[2]), float(c[3])) for c in colors],
+                    pair_ids,
                 )
+                colors_frames.append(mapped_colors)
                 positions_frames.append(ordered_pos)
 
             if failed:
@@ -1022,7 +1071,7 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
                 errors.append(f"{node.name}: Failed to write EXR: {pos_path}")
                 continue
 
-            image_util.write_png_rgba(cat_path, col_pixels, colorspace="Non-Color")
+            image_util.write_png_rgba(cat_path, col_pixels, colorspace="sRGB")
 
             exported += 1
 

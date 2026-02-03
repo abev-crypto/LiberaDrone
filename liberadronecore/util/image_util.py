@@ -226,54 +226,32 @@ def write_png_rgba(
     image_name = f"{base_name}_PNG_Write"
     existing = bpy.data.images.get(image_name)
     if existing is not None:
-        try:
-            bpy.data.images.remove(existing)
-        except Exception:
-            pass
-    img = None
-    try:
-        dir_path = os.path.dirname(path)
-        if dir_path:
-            os.makedirs(dir_path, exist_ok=True)
-        img = bpy.data.images.new(
-            name=image_name,
-            width=width,
-            height=height,
-            alpha=has_alpha,
-            float_buffer=False,
-        )
-        if colorspace:
-            try:
-                img.colorspace_settings.name = colorspace
-            except Exception:
-                pass
-        expected_channels = getattr(img, "channels", 4 if has_alpha else 3)
-        if data.shape[2] != expected_channels:
-            if data.shape[2] == 3 and expected_channels == 4:
-                alpha = np.ones((height, width, 1), dtype=np.float32)
-                data = np.concatenate([data, alpha], axis=2)
-            elif data.shape[2] == 4 and expected_channels == 3:
-                data = data[:, :, :3]
-            else:
-                return False
-        set_image_pixels(img, data)
-        try:
-            img.update()
-        except Exception:
-            pass
-        try:
-            img.file_format = "PNG"
-        except Exception:
-            pass
-        save_image(img, path, "PNG", use_float=False)
-    except Exception:
-        return False
-    finally:
-        if img is not None:
-            try:
-                bpy.data.images.remove(img)
-            except Exception:
-                pass
+        bpy.data.images.remove(existing)
+    dir_path = os.path.dirname(path)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
+    img = bpy.data.images.new(
+        name=image_name,
+        width=width,
+        height=height,
+        alpha=has_alpha,
+        float_buffer=False,
+    )
+    if colorspace:
+            img.colorspace_settings.name = colorspace
+    img.filepath_raw = path
+    expected_channels = getattr(img, "channels", 4 if has_alpha else 3)
+    if data.shape[2] != expected_channels:
+        if data.shape[2] == 3 and expected_channels == 4:
+            alpha = np.ones((height, width, 1), dtype=np.float32)
+            data = np.concatenate([data, alpha], axis=2)
+        elif data.shape[2] == 4 and expected_channels == 3:
+            data = data[:, :, :3]
+        else:
+            return False
+    set_image_pixels(img, data)
+    img.file_format = "PNG"
+    img.save()
     return True
 
 

@@ -282,9 +282,12 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
                     span_items.append((float(s), float(e), str(key)))
         span_items.sort(key=lambda item: (item[0], item[1], item[2]))
         span_preview = span_items[:3]
+        start_positions, _start_pairs, _start_formations = le_catcache._resolve_positions(
+            scene, start_frame
+        )
         print(
             f"[CATCache] Bake node={node.name} start={start_frame} end={end_frame} "
-            f"size={width}x{max(0, len(le_catcache._resolve_positions(scene, start_frame)[0]))} "
+            f"size={width}x{max(0, len(start_positions))} "
             f"spans={len(span_items)} preview={span_preview}"
         )
 
@@ -299,7 +302,7 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
         if suspend is not None:
             suspend(True)
 
-        positions, pair_ids = le_catcache._resolve_positions(scene, start_frame)
+        positions, pair_ids, formation_ids = le_catcache._resolve_positions(scene, start_frame)
         height = len(positions)
         if height <= 0:
             self.report({'ERROR'}, "No formation vertices")
@@ -308,33 +311,62 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
         pixels = le_catcache.np.zeros((height, width, 4), dtype=le_catcache.np.float32)
 
         for col_idx, frame in enumerate(range(start_frame, end_frame)):
-            positions, pair_ids = le_catcache._resolve_positions(scene, frame)
+            positions, pair_ids, formation_ids = le_catcache._resolve_positions(scene, frame)
             if positions is None or len(positions) == 0:
                 continue
             if len(positions) != height:
                 continue
+            positions_cache = [tuple(float(v) for v in pos) for pos in positions]
+            if pair_ids is not None and len(pair_ids) == len(positions_cache):
+                ordered = [None] * len(positions_cache)
+                valid = True
+                for src_idx, pid in enumerate(pair_ids):
+                    try:
+                        key = int(pid)
+                    except (TypeError, ValueError):
+                        valid = False
+                        break
+                    if key < 0 or key >= len(positions_cache) or ordered[key] is not None:
+                        valid = False
+                        break
+                    ordered[key] = positions_cache[src_idx]
+                if valid and all(item is not None for item in ordered):
+                    positions_cache = [item for item in ordered if item is not None]
+            le_catcache.led_codegen_runtime.begin_led_frame_cache(
+                frame,
+                positions_cache,
+                formation_ids=formation_ids,
+                pair_ids=pair_ids,
+            )
             frame_logs: list[str] = []
-            for idx, pos in enumerate(positions):
-                runtime_idx = idx
-                if pair_ids is not None:
-                    pid = pair_ids[idx]
-                    if pid is not None:
-                        try:
-                            runtime_idx = int(pid)
-                        except (TypeError, ValueError):
-                            runtime_idx = idx
-                if runtime_idx < 0 or runtime_idx >= height:
-                    continue
-                color = color_fn(runtime_idx, pos, frame)
-                if not color:
-                    continue
-                rgba = [0.0, 0.0, 0.0, 1.0]
-                for chan in range(min(4, len(color))):
-                    rgba[chan] = float(color[chan])
-                pixels[runtime_idx, col_idx] = rgba
-                frame_logs.append(
-                    f"[CATCache] frame={frame} idx={idx} runtime_idx={runtime_idx} color={rgba}"
-                )
+            try:
+                for idx, pos in enumerate(positions):
+                    runtime_idx = idx
+                    if pair_ids is not None:
+                        pid = pair_ids[idx]
+                        if pid is not None:
+                            try:
+                                runtime_idx = int(pid)
+                            except (TypeError, ValueError):
+                                runtime_idx = idx
+                    if runtime_idx < 0 or runtime_idx >= height:
+                        continue
+                    le_catcache.led_codegen_runtime.set_led_source_index(idx)
+                    le_catcache.led_codegen_runtime.set_led_runtime_index(runtime_idx)
+                    color = color_fn(runtime_idx, pos, frame)
+                    if not color:
+                        continue
+                    rgba = [0.0, 0.0, 0.0, 1.0]
+                    for chan in range(min(4, len(color))):
+                        rgba[chan] = float(color[chan])
+                    pixels[runtime_idx, col_idx] = rgba
+                    frame_logs.append(
+                        f"[CATCache] frame={frame} idx={idx} runtime_idx={runtime_idx} color={rgba}"
+                    )
+            finally:
+                le_catcache.led_codegen_runtime.set_led_runtime_index(None)
+                le_catcache.led_codegen_runtime.set_led_source_index(None)
+                le_catcache.led_codegen_runtime.end_led_frame_cache()
             if frame_logs:
                 print("\n".join(frame_logs))
         try:
@@ -435,6 +467,10 @@ class LDLED_OT_frameentry_fill_current(bpy.types.Operator):
         duration_sock = node.inputs.get("Duration")
         if duration_sock is not None and hasattr(duration_sock, "default_value"):
             duration_sock.default_value = max(0, int(active.end - active.start))
+        try:
+            node.end_frame = int(active.end)
+        except Exception:
+            pass
 
         return {'FINISHED'}
 

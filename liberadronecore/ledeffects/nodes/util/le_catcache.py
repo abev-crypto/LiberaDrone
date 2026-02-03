@@ -131,12 +131,12 @@ def _resolve_positions(scene, frame: int):
     try:
         from liberadronecore.tasks import ledeffects_task
     except Exception:
-        return [], None
+        return [], None, None
     scene.frame_set(frame)
     view_layer = bpy.context.view_layer
     if view_layer is not None:
         view_layer.update()
-    positions, pair_ids, _formation_ids = ledeffects_task._collect_formation_positions(scene)
-    return positions, pair_ids
+    positions, pair_ids, formation_ids = ledeffects_task._collect_formation_positions(scene)
+    return positions, pair_ids, formation_ids
 
 

@@ -360,7 +360,7 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             if name:
                 folder = os.path.join(base_dir, name)
                 _pos_path, cat_path = _find_vat_cat_files(folder)
-                cat_img = _load_image(cat_path, colorspace="Non-Color") if cat_path else None
+                cat_img = _load_image(cat_path, colorspace="sRGB") if cat_path else None
             if cat_img is not None:
                 _build_cat_led_graph(
                     bpy.context,

@@ -283,6 +283,17 @@ class LDLEDFrameEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
     bl_label = "Frame Entry"
     bl_icon = "TIME"
 
+    end_frame: bpy.props.IntProperty(
+        name="End Frame",
+        default=0,
+        update=lambda self, _context: self._sync_from_end_frame(),
+        options={'LIBRARY_EDITABLE'},
+    )
+    sync_guard: bpy.props.BoolProperty(
+        default=False,
+        options={'HIDDEN'},
+    )
+
     @classmethod
     def poll(cls, ntree):
         return ntree.bl_idname == "LD_LedEffectsTree"
@@ -291,11 +302,64 @@ class LDLEDFrameEntryNode(bpy.types.Node, LDLED_CodeNodeBase):
         self.inputs.new("NodeSocketInt", "Start")
         self.inputs.new("NodeSocketInt", "Duration")
         self.outputs.new("LDLEDEntrySocket", "Entry")
+        self._sync_from_inputs()
 
     def draw_buttons(self, context, layout):
+        layout.prop(self, "end_frame")
         op = layout.operator("ldled.frameentry_fill_current", text="Fill from Current")
-        op.node_tree_name = self.id_data.name
-        op.node_name = self.name
+        if op is not None:
+            op.node_tree_name = self.id_data.name if self.id_data else ""
+            op.node_name = self.name
+
+    def update(self):
+        self._sync_from_inputs()
+
+    def _get_input_value(self, name: str, default: int = 0) -> int:
+        sock = self.inputs.get(name) if hasattr(self, "inputs") else None
+        if sock is None or not hasattr(sock, "default_value"):
+            return int(default)
+        try:
+            return int(sock.default_value)
+        except Exception:
+            return int(default)
+
+    def _set_input_value(self, name: str, value: int) -> None:
+        sock = self.inputs.get(name) if hasattr(self, "inputs") else None
+        if sock is None or not hasattr(sock, "default_value"):
+            return
+        try:
+            sock.default_value = int(value)
+        except Exception:
+            pass
+
+    def _sync_from_end_frame(self) -> None:
+        if getattr(self, "sync_guard", False):
+            return
+        self.sync_guard = True
+        try:
+            start_val = self._get_input_value("Start", 0)
+            end_val = int(self.end_frame)
+            duration = max(0, end_val - start_val)
+            self._set_input_value("Duration", duration)
+            normalized_end = start_val + duration
+            if int(self.end_frame) != normalized_end:
+                self.end_frame = normalized_end
+        finally:
+            self.sync_guard = False
+
+    def _sync_from_inputs(self) -> None:
+        if getattr(self, "sync_guard", False):
+            return
+        start_val = self._get_input_value("Start", 0)
+        duration_val = max(0, self._get_input_value("Duration", 0))
+        end_val = start_val + duration_val
+        if int(self.end_frame) == int(end_val):
+            return
+        self.sync_guard = True
+        try:
+            self.end_frame = int(end_val)
+        finally:
+            self.sync_guard = False
 
     def build_code(self, inputs):
         out_var = self.output_var("Entry")
