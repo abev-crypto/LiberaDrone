@@ -6,6 +6,7 @@ from bpy.props import PointerProperty
 from liberadronecore.formation.fn_nodecategory import FN_Node
 from liberadronecore.system.transition import vat_gn, transition_apply
 from liberadronecore.util import image_util
+from liberadronecore.util import pair_id
 
 
 def _ensure_collection(scene: bpy.types.Scene, name: str) -> bpy.types.Collection:
@@ -44,22 +45,6 @@ def _ensure_point_object(
     if obj.name not in collection.objects:
         collection.objects.link(obj)
     return obj
-
-
-def _order_by_pair_id(items, pair_ids):
-    if pair_ids is None or len(items) != len(pair_ids):
-        return items
-    count = len(items)
-    ordered = [None] * count
-    for idx, pid in enumerate(pair_ids):
-        if pid is None or pid < 0 or pid >= count:
-            return items
-        if ordered[pid] is not None:
-            return items
-        ordered[pid] = items[idx]
-    if any(entry is None for entry in ordered):
-        return items
-    return ordered
 
 
 def _ensure_image(name: str, width: int, height: int) -> bpy.types.Image:
@@ -233,7 +218,7 @@ class FN_VATCacheNode(bpy.types.Node, FN_Node):
                 if view_layer is not None:
                     view_layer.update()
                 raise RuntimeError(f"No positions at frame {frame}.")
-            ordered_positions = _order_by_pair_id(positions, pair_ids)
+            ordered_positions = pair_id.order_by_pair_id(positions, pair_ids)
             if drone_count is None:
                 drone_count = len(ordered_positions)
             elif len(ordered_positions) != drone_count:
