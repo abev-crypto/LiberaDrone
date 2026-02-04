@@ -30,6 +30,8 @@ def _fract(x: float) -> float:
 @register_runtime_function
 def _loop_factor(value: float, mode: str = "REPEAT") -> float:
     mode = (mode or "REPEAT").upper()
+    if mode in {"NONE", "OFF", "NO_LOOP", "NOLOOP"}:
+        return float(value)
     frac = _fract(float(value))
     if mode in {"PINGPONG", "PING_PONG", "PING-PONG"}:
         return 1.0 - abs(2.0 * frac - 1.0)

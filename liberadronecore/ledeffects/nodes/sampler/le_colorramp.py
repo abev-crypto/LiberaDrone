@@ -142,6 +142,7 @@ class LDLEDColorRampNode(bpy.types.Node, LDLED_CodeNodeBase):
     )
 
     loop_items = [
+        ("NONE", "None", "Do not loop the factor"),
         ("REPEAT", "Repeat", "Wrap the factor each loop"),
         ("PINGPONG", "Ping-Pong", "Mirror each loop"),
     ]

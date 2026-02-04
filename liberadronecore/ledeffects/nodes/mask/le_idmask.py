@@ -49,8 +49,26 @@ def _set_node_ids(node: "LDLEDIDMaskNode", ids: list[int]) -> None:
 
 def _read_selected_ids(context) -> tuple[set[int] | None, str | None]:
     obj = getattr(context, "active_object", None)
-    if obj is None or obj.type != 'MESH' or obj.mode != 'EDIT':
-        return None, "Select vertices in Edit Mode"
+    if obj is None or obj.type != 'MESH':
+        return None, "Select mesh objects"
+    if obj.mode != 'EDIT':
+        selected = [o for o in getattr(context, "selected_objects", []) if o.type == 'MESH']
+        if not selected:
+            selected = [obj]
+        ids = set()
+        for sel in selected:
+            attr = sel.data.attributes.get(fn_parse_pairing.FORMATION_ATTR_NAME)
+            if attr is None:
+                attr = sel.data.attributes.get(fn_parse_pairing.FORMATION_ID_ATTR)
+            if attr is None or attr.domain != 'POINT' or attr.data_type != 'INT':
+                return None, "formation_id attribute not found"
+            if len(attr.data) != len(sel.data.vertices):
+                return None, "formation_id data missing"
+            for idx in range(len(sel.data.vertices)):
+                ids.add(int(attr.data[idx].value))
+        if not ids:
+            return None, "No IDs found on selected objects"
+        return ids, None
     try:
         import bmesh
     except Exception:
