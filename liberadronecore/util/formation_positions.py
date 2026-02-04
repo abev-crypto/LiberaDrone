@@ -7,26 +7,7 @@ import numpy as np
 from mathutils import Vector
 
 from liberadronecore.system.transition import transition_apply
-
-
-def _order_indices_by_pair_ids(pair_ids: Optional[Sequence[int]]):
-    if not pair_ids:
-        return [], False
-    paired = []
-    fallback = []
-    for idx, pid in enumerate(pair_ids):
-        try:
-            key = int(pid)
-        except (TypeError, ValueError):
-            key = None
-        if key is None:
-            fallback.append(idx)
-        else:
-            paired.append((key, idx))
-    if not paired:
-        return [], False
-    paired.sort(key=lambda item: (item[0], item[1]))
-    return [idx for _key, idx in paired] + fallback, True
+from liberadronecore.util import pair_id
 
 
 def _pair_ids_hash(pair_ids: Optional[Sequence[int]]) -> int:
@@ -50,7 +31,7 @@ def _order_by_pair_ids(
     if not pair_ids or len(pair_ids) != len(positions):
         return positions, pair_ids, False
 
-    indices, ok = _order_indices_by_pair_ids(pair_ids)
+    indices, ok = pair_id.order_indices_by_pair_id(pair_ids)
     if not ok:
         return positions, pair_ids, False
 
@@ -162,7 +143,7 @@ def collect_formation_positions_with_form_ids(
 
     pair_sort = False
     if sort_by_pair_id:
-        indices, ok = _order_indices_by_pair_ids(pair_ids)
+        indices, ok = pair_id.order_indices_by_pair_id(pair_ids)
         if ok:
             if isinstance(positions, np.ndarray):
                 positions = positions[np.asarray(indices, dtype=np.int64)]

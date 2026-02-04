@@ -401,20 +401,6 @@ def _active_entry_for_frame(entries, frame: int):
     return None
 
 
-def _map_by_pair_id(items, pair_ids):
-    if pair_ids is None or len(items) != len(pair_ids):
-        return items
-    count = len(items)
-    mapped = [None] * count
-    for dst_idx, pid in enumerate(pair_ids):
-        if pid is None or pid < 0 or pid >= count:
-            return items
-        mapped[dst_idx] = items[pid]
-    if any(entry is None for entry in mapped):
-        return items
-    return mapped
-
-
 def _sanitize_name(name: str) -> str:
     safe = []
     for ch in name or "":

@@ -9,11 +9,12 @@ import bpy
 from bpy.app.handlers import persistent
 
 from liberadronecore.ledeffects import led_codegen_runtime as le_codegen
+from liberadronecore.ledeffects.nodes.util import le_meshinfo
 from liberadronecore.util import formation_positions
+from liberadronecore.util import led_eval
 import numpy as np
 
 
-_color_column_cache: dict[int, list[list[float]]] = {}
 _UNDO_DEPTH = 0
 _SUSPEND_LED_EFFECTS = 0
 _LED_UPDATE_PENDING = False
@@ -77,6 +78,7 @@ def schedule_led_effects_update(scene: bpy.types.Scene) -> None:
     _LED_UPDATE_PENDING = True
     bpy.app.timers.register(_do_update, first_interval=0.0)
 
+
 def _is_any_viewport_wireframe() -> bool:
     wm = bpy.context.window_manager
     for window in wm.windows:
@@ -91,9 +93,6 @@ def _is_any_viewport_wireframe() -> bool:
                 if shading.type == 'WIREFRAME':
                     return True
     return False
-
-def _write_column_to_cache(column: int, colors) -> None:
-    _color_column_cache[column] = [list(color) for color in colors]
 
 
 def _write_led_color_attribute(colors) -> None:
@@ -149,56 +148,6 @@ def _collect_formation_positions(scene):
     return positions, pair_ids, formation_ids
 
 
-def _order_positions_by_pair_id(
-    positions: list[tuple[float, float, float]],
-    pair_ids: list[int] | None,
-) -> tuple[list[tuple[float, float, float]], list[int] | None]:
-    if not pair_ids or len(pair_ids) != len(positions):
-        return positions, pair_ids
-    indexed: list[tuple[int, int, tuple[float, float, float]]] = []
-    for idx, pid in enumerate(pair_ids):
-        key = int(pid)
-        indexed.append((key, idx, positions[idx]))
-    if not indexed:
-        return positions, pair_ids
-    indexed.sort(key=lambda item: (item[0], item[1]))
-    ordered_positions = [pos for _key, _idx, pos in indexed]
-    ordered_pair_ids = [pair_ids[idx] for _key, idx, _pos in indexed]
-    return ordered_positions, ordered_pair_ids
-
-
-def _order_positions_cache_by_pair_ids(
-    positions,
-    pair_ids,
-):
-    ordered = [None] * len(positions)
-    inv_map = [None] * len(positions)
-    for dst_idx, pid in enumerate(pair_ids):
-        src_idx = int(pid)
-        inv_map[src_idx] = dst_idx
-        ordered[dst_idx] = positions[src_idx]
-    return ordered, inv_map
-
-
-def _eval_effect_colors_by_map(
-    positions,
-    pair_ids,
-    dst_indices,
-    effect_fn,
-    frame: float,
-):
-    colors = np.zeros((len(positions), 4), dtype=np.float32)
-    for src_idx, pos in enumerate(positions):
-        runtime_idx = int(pair_ids[src_idx])
-        dst_idx = int(dst_indices[src_idx])
-        color = effect_fn(runtime_idx, pos, frame)
-        if not color:
-            continue
-        for chan in range(min(4, len(color))):
-            colors[dst_idx, chan] = float(color[chan])
-    return colors
-
-
 @persistent
 def update_led_effects(scene):
     if _is_undo_running():
@@ -226,22 +175,22 @@ def update_led_effects(scene):
     positions, pair_ids, formation_ids = _collect_formation_positions(scene)
     if positions is None or len(positions) == 0:
         return
-    positions_cache, inv_map = _order_positions_cache_by_pair_ids(positions, pair_ids)
+    positions_cache, inv_map = led_eval.order_positions_cache_by_pair_ids(positions, pair_ids)
 
-    le_codegen.begin_led_frame_cache(
+    le_meshinfo.begin_led_frame_cache(
         frame,
         positions_cache,
         formation_ids=formation_ids,
         pair_ids=pair_ids,
     )
-    colors = _eval_effect_colors_by_map(
+    colors = led_eval.eval_effect_colors_by_map(
         positions,
         pair_ids,
         inv_map,
         effect_fn,
         frame,
     )
-    le_codegen.end_led_frame_cache()
+    le_meshinfo.end_led_frame_cache()
 
     _write_led_color_attribute(colors)
 

@@ -13,6 +13,7 @@ from liberadronecore.formation.fn_parse_pairing import _collect_mesh_objects
 from liberadronecore.system.transition import bakedt, copyloc, vat_gn
 from liberadronecore.system.vat import create_vat
 from liberadronecore.util import image_util
+from liberadronecore.util import pair_id
 
 
 @dataclass
@@ -271,31 +272,6 @@ def _collect_positions_for_nodes(
     return positions, pair_ids, form_ids
 
 
-def _valid_pair_ids(pair_ids: Optional[Sequence[int]], count: int) -> bool:
-    if pair_ids is None or len(pair_ids) != count or count <= 0:
-        return False
-    seen = set()
-    for pid in pair_ids:
-        if pid < 0 or pid >= count or pid in seen:
-            return False
-        seen.add(pid)
-    return True
-
-
-def _apply_pair_id_order(values: Sequence, pair_ids: Sequence[int]) -> List:
-    count = len(values)
-    if count != len(pair_ids):
-        return list(values)
-    ordered: list = [None] * count
-    for idx, pid in enumerate(pair_ids):
-        if pid < 0 or pid >= count or ordered[pid] is not None:
-            return list(values)
-        ordered[pid] = values[idx]
-    if any(item is None for item in ordered):
-        return list(values)
-    return ordered
-
-
 def _update_transition_move_stats(
     node: bpy.types.Node,
     prev_positions: Sequence[Vector],
@@ -394,13 +370,13 @@ def _build_transition_context(node: bpy.types.Node, context) -> TransitionContex
     prev_list = list(prev_positions)
     next_list = list(next_positions)
 
-    if prev_form_ids is None or not _valid_pair_ids(prev_form_ids, len(prev_list)):
+    if prev_form_ids is None or not pair_id.is_pair_id_permutation(prev_form_ids, len(prev_list)):
         raise RuntimeError("formation_id not set on previous formation")
-    if next_pair_ids is None or not _valid_pair_ids(next_pair_ids, len(next_list)):
+    if next_pair_ids is None or not pair_id.is_pair_id_permutation(next_pair_ids, len(next_list)):
         raise RuntimeError("pair_id not set on next formation")
 
-    prev_list = _apply_pair_id_order(prev_list, prev_form_ids)
-    next_list = _apply_pair_id_order(next_list, next_pair_ids)
+    prev_list = pair_id.order_items_by_pair_id(list(prev_list), prev_form_ids)
+    next_list = pair_id.order_items_by_pair_id(list(next_list), next_pair_ids)
     prev_form_ids = list(range(len(prev_list)))
     _update_transition_move_stats(node, prev_list, next_list)
 

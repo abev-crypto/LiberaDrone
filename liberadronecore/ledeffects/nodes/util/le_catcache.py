@@ -132,12 +132,4 @@ def _first_entry_span(entry) -> tuple[float, float] | None:
     return spans[0]
 
 
-def _resolve_positions(scene, frame: int):
-    from liberadronecore.tasks import ledeffects_task
-    scene.frame_set(frame)
-    view_layer = bpy.context.view_layer
-    view_layer.update()
-    positions, pair_ids, formation_ids = ledeffects_task._collect_formation_positions(scene)
-    return positions, pair_ids, formation_ids
-
 

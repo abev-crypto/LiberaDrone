@@ -29,5 +29,5 @@ class LDLEDImageInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
         out_var = self.output_var("Image")
         image_name = self.image.name if self.image else ""
         if image_name:
-            return f"{out_var} = bpy.data.images.get({image_name!r})"
+            return f"{out_var} = _get_image_cached({image_name!r})"
         return f"{out_var} = None"

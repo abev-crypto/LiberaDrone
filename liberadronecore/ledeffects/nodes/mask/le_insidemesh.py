@@ -1,7 +1,5 @@
 import bpy
-from mathutils import Matrix, Vector
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
-from liberadronecore.util.modeling import delaunay
 
 
 class LDLEDInsideMeshNode(bpy.types.Node, LDLED_CodeNodeBase):
@@ -66,76 +64,5 @@ class LDLEDInsideMeshNode(bpy.types.Node, LDLED_CodeNodeBase):
         return f"{out_var} = {expr}"
 
 
-def _unique_name(base: str) -> str:
-    if not bpy.data.objects.get(base):
-        return base
-    idx = 1
-    while True:
-        name = f"{base}.{idx:03d}"
-        if not bpy.data.objects.get(name):
-            return name
-        idx += 1
-
-
-def _ensure_collection(context) -> bpy.types.Collection:
-    if context and getattr(context, "collection", None):
-        return context.collection
-    scene = getattr(context, "scene", None) or bpy.context.scene
-    return scene.collection
-
-
-def _freeze_object_transform(obj: bpy.types.Object) -> None:
-    if obj is None or obj.type != 'MESH':
-        return
-    if obj.matrix_world != Matrix.Identity(4):
-        obj.data.transform(obj.matrix_world)
-        obj.matrix_world = Matrix.Identity(4)
-        obj.data.update()
-
-
-def _selected_world_vertices(context) -> list[Vector]:
-    obj = getattr(context, "active_object", None)
-    if obj is None or obj.type != 'MESH':
-        return []
-    if obj.mode != 'EDIT':
-        return []
-    try:
-        import bmesh
-    except Exception:
-        return []
-    bm = bmesh.from_edit_mesh(obj.data)
-    mw = obj.matrix_world
-    return [mw @ v.co for v in bm.verts if v.select]
-
-
-def _selected_mesh_objects(context) -> list[bpy.types.Object]:
-    selected = getattr(context, "selected_objects", None) or []
-    return [obj for obj in selected if obj.type == 'MESH']
-
-
-def _collect_points(context) -> list[Vector]:
-    verts = _selected_world_vertices(context)
-    if verts:
-        return verts
-    points: list[Vector] = []
-    for obj in _selected_mesh_objects(context):
-        mw = obj.matrix_world
-        for v in obj.data.vertices:
-            points.append(mw @ v.co)
-    return points
-
-
-def _apply_solidify(obj: bpy.types.Object) -> None:
-    solid = obj.modifiers.new("Solidify", type='SOLIDIFY')
-    solid.thickness = 0.2
-    solid.offset = 0.0
-    solid.use_rim = True
-    solid.use_even_offset = True
-    for attr in ("use_quality_normals", "nonmanifold_boundary_mode"):
-        if hasattr(solid, attr):
-            try:
-                setattr(solid, attr, True if isinstance(getattr(solid, attr), bool) else getattr(solid, attr))
-            except Exception:
-                pass
 
 

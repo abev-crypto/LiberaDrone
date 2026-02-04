@@ -1,7 +1,8 @@
 import bpy
+
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects.le_nodecategory import LDLED_Register
-from liberadronecore.formation import fn_parse_pairing
+from liberadronecore.ledeffects.util import idmask as idmask_util
 
 
 class LDLEDIDMaskItem(bpy.types.PropertyGroup, LDLED_Register):
@@ -12,104 +13,6 @@ class LDLEDIDMaskItem(bpy.types.PropertyGroup, LDLED_Register):
         options={'LIBRARY_EDITABLE'},
     )
 
-
-def _sorted_ids(values) -> list[int]:
-    ids: list[int] = []
-    seen: set[int] = set()
-    for val in values:
-        try:
-            item = int(val)
-        except (TypeError, ValueError):
-            continue
-        if item in seen:
-            continue
-        seen.add(item)
-        ids.append(item)
-    ids.sort()
-    return ids
-
-
-def _node_effective_ids(node: "LDLEDIDMaskNode", include_legacy: bool) -> list[int]:
-    if getattr(node, "use_custom_ids", False):
-        return _sorted_ids([item.value for item in node.ids])
-    if not include_legacy:
-        return []
-    fid = getattr(node, "formation_id", -1)
-    if fid < 0:
-        return []
-    return _sorted_ids([fid])
-
-
-def _set_node_ids(node: "LDLEDIDMaskNode", ids: list[int]) -> None:
-    node.ids.clear()
-    for val in ids:
-        item = node.ids.add()
-        item.value = int(val)
-
-
-def _read_selected_ids(context) -> tuple[set[int] | None, str | None]:
-    obj = getattr(context, "active_object", None)
-    if obj is None or obj.type != 'MESH':
-        return None, "Select mesh objects"
-    if obj.mode != 'EDIT':
-        selected = [o for o in getattr(context, "selected_objects", []) if o.type == 'MESH']
-        if not selected:
-            selected = [obj]
-        ids = set()
-        for sel in selected:
-            attr = sel.data.attributes.get(fn_parse_pairing.FORMATION_ATTR_NAME)
-            if attr is None:
-                attr = sel.data.attributes.get(fn_parse_pairing.FORMATION_ID_ATTR)
-            if attr is None or attr.domain != 'POINT' or attr.data_type != 'INT':
-                return None, "formation_id attribute not found"
-            if len(attr.data) != len(sel.data.vertices):
-                return None, "formation_id data missing"
-            for idx in range(len(sel.data.vertices)):
-                ids.add(int(attr.data[idx].value))
-        if not ids:
-            return None, "No IDs found on selected objects"
-        return ids, None
-    try:
-        import bmesh
-    except Exception:
-        return None, "bmesh not available"
-
-    bm = bmesh.from_edit_mesh(obj.data)
-    bm.verts.ensure_lookup_table()
-    selected = [v for v in bm.verts if v.select]
-    if not selected:
-        return None, "No selected vertices"
-
-    layer = bm.verts.layers.int.get(fn_parse_pairing.FORMATION_ATTR_NAME)
-    if layer is None:
-        layer = bm.verts.layers.int.get(fn_parse_pairing.FORMATION_ID_ATTR)
-    if layer is not None:
-        ids = set()
-        for v in selected:
-            try:
-                ids.add(int(v[layer]))
-            except Exception:
-                continue
-        if ids:
-            return ids, None
-
-    attr = obj.data.attributes.get(fn_parse_pairing.FORMATION_ATTR_NAME)
-    if attr is None:
-        attr = obj.data.attributes.get(fn_parse_pairing.FORMATION_ID_ATTR)
-    if attr is None or attr.domain != 'POINT' or attr.data_type != 'INT':
-        return None, "formation_id attribute not found"
-
-    ids = set()
-    for v in selected:
-        if v.index >= len(attr.data):
-            continue
-        try:
-            ids.add(int(attr.data[v.index].value))
-        except Exception:
-            continue
-    if not ids:
-        return None, "formation_id data missing"
-    return ids, None
 
 
 class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
@@ -177,7 +80,7 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def draw_buttons(self, context, layout):
         if self.use_custom_ids:
-            ids = _node_effective_ids(self, include_legacy=False)
+            ids = idmask_util._node_effective_ids(self, include_legacy=False)
             label = ", ".join(str(i) for i in ids) if ids else "-"
             layout.label(text=f"IDs: {label}")
         else:
@@ -205,7 +108,7 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
     def build_code(self, inputs):
         out_var = self.output_var("Mask")
         out_ids = self.output_var("IDs")
-        ids = _node_effective_ids(self, include_legacy=not self.use_custom_ids)
+        ids = idmask_util._node_effective_ids(self, include_legacy=not self.use_custom_ids)
         value = inputs.get("Value", "1.0")
         fid_var = f"_fid_{self.codegen_id()}_{int(self.as_pointer())}"
         if self.remap_rows:

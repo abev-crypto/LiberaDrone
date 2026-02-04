@@ -218,7 +218,7 @@ class FN_VATCacheNode(bpy.types.Node, FN_Node):
                 if view_layer is not None:
                     view_layer.update()
                 raise RuntimeError(f"No positions at frame {frame}.")
-            ordered_positions = pair_id.order_by_pair_id(positions, pair_ids)
+            ordered_positions = pair_id.order_items_by_pair_id(positions, pair_ids)
             if drone_count is None:
                 drone_count = len(ordered_positions)
             elif len(ordered_positions) != drone_count:

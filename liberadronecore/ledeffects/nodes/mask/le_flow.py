@@ -5,15 +5,8 @@ from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects.runtime_registry import register_runtime_function
 from liberadronecore.overlay import checker as overlay_checker
 
-
-@register_runtime_function
-def _flow_values(idx: int, frame: float):
-    return overlay_checker.get_flow_values(idx, frame)
-
-
-@register_runtime_function
-def _flow_direction(idx: int, frame: float):
-    return overlay_checker.get_flow_direction(idx, frame)
+register_runtime_function(overlay_checker.get_flow_values, name="_flow_values")
+register_runtime_function(overlay_checker.get_flow_direction, name="_flow_direction")
 
 
 @register_runtime_function

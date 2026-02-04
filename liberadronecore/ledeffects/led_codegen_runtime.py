@@ -10,7 +10,6 @@ from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
 from liberadronecore.ledeffects import le_codegen_base
 from liberadronecore.ledeffects.runtime_registry import runtime_functions
 from liberadronecore.ledeffects.nodes.sampler import le_image
-from liberadronecore.ledeffects.nodes.util import le_meshinfo
 
 def _sanitize_identifier(text: str) -> str:
     safe = []
@@ -61,24 +60,6 @@ def _default_for_input(socket: bpy.types.NodeSocket) -> str:
         ):
             return repr(tuple(float(v) for v in value))
     return _default_for_socket(socket)
-
-
-def begin_led_frame_cache(
-    frame: float,
-    positions: List[Tuple[float, float, float]],
-    *,
-    formation_ids: Optional[List[int]] = None,
-    pair_ids: Optional[List[int]] = None,
-) -> None:
-    le_meshinfo.begin_led_frame_cache(frame, positions, formation_ids, pair_ids)
-
-
-def end_led_frame_cache() -> None:
-    le_meshinfo.end_led_frame_cache()
-
-
-def _prewarm_tree_images(tree: Optional[bpy.types.NodeTree]) -> None:
-    le_image._prewarm_tree_images(tree)
 
 
 def _get_output_var(node: bpy.types.Node, socket: bpy.types.NodeSocket) -> str:
@@ -343,7 +324,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
     env = {"bpy": bpy, "math": math, "mathutils": mathutils}
     env.update(runtime_functions())
     exec(code, env)
-    _prewarm_tree_images(tree)
+    le_image._prewarm_tree_images(tree)
     return env["_led_effect"]
 
 
@@ -356,7 +337,7 @@ def compile_led_socket(
 ) -> Optional[Callable]:
     if tree is None or node is None or not socket_name:
         return None
-    _prewarm_tree_images(tree)
+    le_image._prewarm_tree_images(tree)
     socket = node.inputs.get(socket_name) if hasattr(node, "inputs") else None
     if socket is None:
         return None

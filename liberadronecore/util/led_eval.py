@@ -1,41 +1,54 @@
 import bpy
 import numpy as np
 
-from liberadronecore.ledeffects import led_codegen_runtime as le_codegen
+from liberadronecore.ledeffects.nodes.util import le_meshinfo
 from liberadronecore.util import pair_id
 
 
+def order_positions_cache_by_pair_ids(positions, pair_ids):
+    inv_map = pair_id.build_inverse_map(pair_ids, len(positions))
+    ordered = [positions[src_idx] for src_idx in inv_map]
+    return ordered, inv_map
+
+
+def eval_effect_colors_by_map(
+    positions,
+    pair_ids,
+    dst_indices,
+    effect_fn,
+    frame: float,
+):
+    colors = np.zeros((len(positions), 4), dtype=np.float32)
+    for src_idx, pos in enumerate(positions):
+        runtime_idx = int(pair_ids[src_idx])
+        dst_idx = int(dst_indices[src_idx])
+        color = effect_fn(runtime_idx, pos, frame)
+        if not color:
+            continue
+        for chan in range(min(4, len(color))):
+            colors[dst_idx, chan] = float(color[chan])
+    return colors
+
+
 def evaluate_led_colors(effect_fn, positions, pair_ids, formation_ids, frame):
-    if effect_fn is None or positions is None:
-        return None
     positions_list = [tuple(float(v) for v in pos) for pos in positions]
-    positions_cache = positions_list
-    if pair_ids is not None and len(pair_ids) == len(positions_list):
-        positions_cache = pair_id.order_by_pair_id(positions_list, pair_ids)
-    le_codegen.begin_led_frame_cache(
+    positions_cache, _inv_map = order_positions_cache_by_pair_ids(positions_list, pair_ids)
+    le_meshinfo.begin_led_frame_cache(
         frame,
         positions_cache,
         formation_ids=formation_ids,
         pair_ids=pair_ids,
     )
-    colors = np.zeros((len(positions_list), 4), dtype=np.float32)
     try:
-        for idx, pos in enumerate(positions_list):
-            runtime_idx = idx
-            if pair_ids is not None and idx < len(pair_ids):
-                pid = pair_ids[idx]
-                if pid is not None:
-                    try:
-                        runtime_idx = int(pid)
-                    except (TypeError, ValueError):
-                        runtime_idx = idx
-            color = effect_fn(runtime_idx, pos, frame)
-            if not color:
-                continue
-            for chan in range(min(4, len(color))):
-                colors[idx, chan] = float(color[chan])
+        colors = eval_effect_colors_by_map(
+            positions_list,
+            pair_ids,
+            range(len(positions_list)),
+            effect_fn,
+            frame,
+        )
     finally:
-        le_codegen.end_led_frame_cache()
+        le_meshinfo.end_led_frame_cache()
     np.clip(colors, 0.0, 1.0, out=colors)
 
     return colors, positions

@@ -6,7 +6,6 @@ from liberadronecore.ledeffects.runtime_registry import register_runtime_functio
 from liberadronecore.ledeffects.nodes.util.le_math import _clamp01
 from liberadronecore.ledeffects.nodes.util import le_meshinfo
 from liberadronecore.ledeffects.nodes.util import le_particlebase
-from liberadronecore.formation import fn_parse_pairing
 
 
 _TRAIL_CACHE: Dict[str, Dict[str, object]] = {}
@@ -355,83 +354,6 @@ def _parse_ids(text: str, *, allow_duplicates: bool) -> List[int]:
             seen.add(val)
         values.append(val)
     return values
-
-
-def _ordered_selected_verts(context, target_obj: Optional[bpy.types.Object] = None):
-    obj = None
-    if target_obj is not None and target_obj.type == 'MESH' and target_obj.mode == 'EDIT':
-        obj = target_obj
-    else:
-        active = getattr(context, "active_object", None)
-        if active is not None and active.type == 'MESH' and active.mode == 'EDIT':
-            obj = active
-    if obj is None:
-        return None, None, None, "Select vertices in Edit Mode"
-    try:
-        import bmesh
-    except Exception:
-        return None, None, None, "bmesh not available"
-    bm = bmesh.from_edit_mesh(obj.data)
-    bm.verts.ensure_lookup_table()
-    ordered = []
-    seen = set()
-    for elem in bm.select_history:
-        if not isinstance(elem, bmesh.types.BMVert):
-            continue
-        if not elem.select:
-            continue
-        idx = elem.index
-        if idx in seen:
-            continue
-        seen.add(idx)
-        ordered.append(elem)
-    if not ordered:
-        ordered = [v for v in bm.verts if v.select]
-    if not ordered:
-        return None, None, None, "No selected vertices"
-    return ordered, obj, bm, None
-
-
-def _read_selected_ids_ordered(context, target_obj: Optional[bpy.types.Object] = None):
-    ordered, mesh_obj, bm, error = _ordered_selected_verts(context, target_obj)
-    if error:
-        return None, error
-    if not ordered:
-        return None, "No selected vertices"
-    layer = None
-    try:
-        layer = bm.verts.layers.int.get(fn_parse_pairing.FORMATION_ATTR_NAME)
-        if layer is None:
-            layer = bm.verts.layers.int.get(fn_parse_pairing.FORMATION_ID_ATTR)
-    except Exception:
-        layer = None
-    ids: List[int] = []
-    if layer is not None:
-        for v in ordered:
-            try:
-                ids.append(int(v[layer]))
-            except Exception:
-                continue
-        if ids:
-            return ids, None
-
-    if mesh_obj is None or mesh_obj.type != 'MESH':
-        return None, "formation_id attribute not found"
-    attr = mesh_obj.data.attributes.get(fn_parse_pairing.FORMATION_ATTR_NAME)
-    if attr is None:
-        attr = mesh_obj.data.attributes.get(fn_parse_pairing.FORMATION_ID_ATTR)
-    if attr is None or attr.domain != 'POINT' or attr.data_type != 'INT':
-        return None, "formation_id attribute not found"
-    for v in ordered:
-        if v.index >= len(attr.data):
-            continue
-        try:
-            ids.append(int(attr.data[v.index].value))
-        except Exception:
-            continue
-    if not ids:
-        return None, "formation_id data missing"
-    return ids, None
 
 
 class LDLEDTrailNode(bpy.types.Node, LDLED_CodeNodeBase):

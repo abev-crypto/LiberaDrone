@@ -12,6 +12,7 @@ from mathutils import Vector
 from mathutils.kdtree import KDTree
 
 from liberadronecore.util import formation_positions
+from liberadronecore.util import pair_id
 from liberadronecore.formation import fn_parse_pairing
 
 FORMATION_ROOT = "Formation"
@@ -95,39 +96,6 @@ def _collect_formation_positions(
     return positions, pair_ids, form_ids, signature or (), _collection_signature(FORMATION_ROOT)
 
 
-def _order_indices_by_ids(ids: list[int] | None):
-    if not ids:
-        return [], False
-    paired = []
-    fallback = []
-    for idx, val in enumerate(ids):
-        try:
-            key = int(val)
-        except (TypeError, ValueError):
-            key = None
-        if key is None:
-            fallback.append(idx)
-        else:
-            paired.append((key, idx))
-    if not paired:
-        return [], False
-    paired.sort(key=lambda item: (item[0], item[1]))
-    return [idx for _key, idx in paired] + fallback, True
-
-
-def _valid_id_map(ids: list[int] | None, count: int) -> bool:
-    if not ids or count <= 0 or len(ids) != len(set(ids)):
-        return False
-    for val in ids:
-        try:
-            key = int(val)
-        except (TypeError, ValueError):
-            return False
-        if key < 0 or key >= count:
-            return False
-    return True
-
-
 def _positions_to_numpy(positions: list[Vector]) -> np.ndarray:
     if not positions:
         return np.zeros((0, 3), dtype=np.float64)
@@ -152,20 +120,6 @@ def _compute_min_distances(positions: list[Vector]) -> list[float]:
             break
         distances[idx] = float(nearest) if nearest is not None else 0.0
     return distances
-
-
-def _build_pair_id_map(pair_ids: list[int] | None) -> dict[int, int]:
-    mapping: dict[int, int] = {}
-    if not pair_ids:
-        return mapping
-    for idx, pid in enumerate(pair_ids):
-        try:
-            key = int(pid)
-        except (TypeError, ValueError):
-            continue
-        if key not in mapping:
-            mapping[key] = idx
-    return mapping
 
 
 def _collect_flow_positions(
@@ -224,7 +178,7 @@ def _update_flow_cache(scene: bpy.types.Scene) -> dict | None:
         or prev_frame is None
         or cache.get("signature") != signature
     )
-    pair_id_map = _build_pair_id_map(pair_ids)
+    pair_id_map = pair_id.build_pair_id_map(pair_ids)
     if reset:
         zeros = [0.0] * count
         dir_zeros = [(0.0, 0.0, 0.0)] * count
@@ -349,7 +303,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
 
     collection_changed = cache.get("collection_signature") != col_sig
     positions_np = _positions_to_numpy(positions)
-    form_indices, form_ok = _order_indices_by_ids(form_ids)
+    form_indices, form_ok = pair_id.order_indices_by_pair_id(form_ids)
     if form_ok and len(form_indices) == len(positions):
         cache_indices = form_indices
     else:
@@ -370,7 +324,7 @@ def _update_checker_cache(scene: bpy.types.Scene, *, need_distance: bool) -> dic
         collection_changed
         and prev_form_order
         and prev_positions_np is not None
-        and _valid_id_map(pair_ids, int(prev_positions_np.shape[0]))
+        and pair_id.is_pair_id_permutation_lenient(pair_ids, int(prev_positions_np.shape[0]))
     )
 
     if (

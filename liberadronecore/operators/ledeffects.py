@@ -2,6 +2,7 @@ import json
 import os
 
 import bpy
+import numpy as np
 
 from liberadronecore.ledeffects.nodes.mask import le_collectionmask
 from liberadronecore.ledeffects.nodes.mask import le_idmask
@@ -11,9 +12,18 @@ from liberadronecore.ledeffects.nodes.position import le_projectionuv
 from liberadronecore.ledeffects.nodes.sampler import le_image
 from liberadronecore.ledeffects.nodes.entry import le_frameentry
 from liberadronecore.ledeffects.nodes.util import le_catcache
+from liberadronecore.ledeffects.nodes.util import le_meshinfo
 from liberadronecore.formation import fn_parse
 from liberadronecore.reg.base_reg import RegisterBase
 from liberadronecore.ui import ledeffects_panel as led_panel
+from liberadronecore.ledeffects.util import collectionmask as collectionmask_util
+from liberadronecore.ledeffects.util import idmask as idmask_util
+from liberadronecore.ledeffects.util import insidemesh as insidemesh_util
+from liberadronecore.ledeffects.util import projectionuv as projectionuv_util
+from liberadronecore.ledeffects.util import trail as trail_util
+from liberadronecore.util import led_eval
+from liberadronecore.util.modeling import delaunay
+from liberadronecore.tasks import ledeffects_task
 
 
 class LDLED_OT_create_output_node(bpy.types.Operator):
@@ -275,40 +285,45 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
                     span_items.append((float(s), float(e), str(key)))
         span_items.sort(key=lambda item: (item[0], item[1], item[2]))
         span_preview = span_items[:3]
-        start_positions, _start_pairs, _start_formations = le_catcache._resolve_positions(
-            scene, start_frame
-        )
+        view_layer = context.view_layer
+
+        def _set_frame(frame: int) -> None:
+            scene.frame_set(int(frame))
+            view_layer.update()
+
+        _set_frame(start_frame)
+        start_positions, _start_pairs, _start_formations = ledeffects_task._collect_formation_positions(scene)
         print(
             f"[CATCache] Bake node={node.name} start={start_frame} end={end_frame} "
             f"size={width}x{max(0, len(start_positions))} "
             f"spans={len(span_items)} preview={span_preview}"
         )
 
-        from liberadronecore.tasks import ledeffects_task
-
         ledeffects_task.suspend_led_effects(True)
 
-        positions, pair_ids, formation_ids = le_catcache._resolve_positions(scene, start_frame)
+        _set_frame(start_frame)
+        positions, pair_ids, formation_ids = ledeffects_task._collect_formation_positions(scene)
         height = len(positions)
         if height <= 0:
             self.report({'ERROR'}, "No formation vertices")
             return {'CANCELLED'}
 
-        pixels = le_catcache.np.zeros((height, width, 4), dtype=le_catcache.np.float32)
+        pixels = np.zeros((height, width, 4), dtype=np.float32)
 
         for col_idx, frame in enumerate(range(start_frame, end_frame)):
-            positions, pair_ids, formation_ids = le_catcache._resolve_positions(scene, frame)
-            positions_cache, _inv_map = ledeffects_task._order_positions_cache_by_pair_ids(
+            _set_frame(frame)
+            positions, pair_ids, formation_ids = ledeffects_task._collect_formation_positions(scene)
+            positions_cache, _inv_map = led_eval.order_positions_cache_by_pair_ids(
                 positions,
                 pair_ids,
             )
-            le_catcache.led_codegen_runtime.begin_led_frame_cache(
+            le_meshinfo.begin_led_frame_cache(
                 frame,
                 positions_cache,
                 formation_ids=formation_ids,
                 pair_ids=pair_ids,
             )
-            colors = ledeffects_task._eval_effect_colors_by_map(
+            colors = led_eval.eval_effect_colors_by_map(
                 positions,
                 pair_ids,
                 formation_ids,
@@ -316,10 +331,10 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
                 frame,
             )
             pixels[:, col_idx] = colors
-            le_catcache.led_codegen_runtime.end_led_frame_cache()
+            le_meshinfo.end_led_frame_cache()
         min_val = float(pixels.min())
         max_val = float(pixels.max())
-        nonzero = int(le_catcache.np.count_nonzero(pixels))
+        nonzero = int(np.count_nonzero(pixels))
         print(f"[CATCache] pixels stats min={min_val} max={max_val} nonzero={nonzero}")
         img = None
         png_path = le_catcache.image_util.scene_cache_path(
@@ -460,18 +475,18 @@ class LDLED_OT_insidemesh_create_mesh(bpy.types.Operator):
             self.report({'ERROR'}, "Inside Mesh node not found")
             return {'CANCELLED'}
 
-        points = le_insidemesh._collect_points(context)
+        points = insidemesh_util._collect_points(context)
         if len(points) < 3:
             self.report({'ERROR'}, "Select at least 3 vertices or a mesh")
             return {'CANCELLED'}
 
-        mesh = le_insidemesh.delaunay.build_planar_mesh_from_points(points)
-        name = le_insidemesh._unique_name(f"{node.name}_Inside")
+        mesh = delaunay.build_planar_mesh_from_points(points)
+        name = insidemesh_util._unique_name(f"{node.name}_Inside")
         obj = bpy.data.objects.new(name, mesh)
-        le_insidemesh._ensure_collection(context).objects.link(obj)
+        insidemesh_util._ensure_collection(context).objects.link(obj)
         obj.display_type = 'BOUNDS'
-        le_insidemesh._apply_solidify(obj)
-        le_insidemesh._freeze_object_transform(obj)
+        insidemesh_util._apply_solidify(obj)
+        insidemesh_util._freeze_object_transform(obj)
         mesh_socket = node.inputs.get("Mesh")
         if mesh_socket is not None and hasattr(mesh_socket, "default_value"):
             mesh_socket.default_value = obj
@@ -504,24 +519,24 @@ class LDLED_OT_projectionuv_create_mesh(bpy.types.Operator):
         bounds = None
         if self.mode == "AREA":
             obj = bpy.data.objects.get("AreaObject")
-            bounds = le_projectionuv._world_bbox_from_object(obj) if obj else None
+            bounds = projectionuv_util._world_bbox_from_object(obj) if obj else None
             if bounds is None:
                 self.report({'ERROR'}, "AreaObject not found")
                 return {'CANCELLED'}
         elif self.mode == "FORMATION":
             col = bpy.data.collections.get("Formation")
-            bounds = le_projectionuv._world_bbox_from_collection(col)
+            bounds = projectionuv_util._world_bbox_from_collection(col)
             if bounds is None:
                 self.report({'ERROR'}, "Formation collection not found")
                 return {'CANCELLED'}
         else:
-            verts = le_projectionuv._selected_world_vertices(context)
+            verts = projectionuv_util._selected_world_vertices(context)
             if verts:
-                bounds = le_projectionuv._world_bbox_from_points(verts)
+                bounds = projectionuv_util._world_bbox_from_points(verts)
             else:
                 bounds = None
-                for obj in le_projectionuv._selected_mesh_objects(context):
-                    obj_bounds = le_projectionuv._world_bbox_from_object(obj)
+                for obj in projectionuv_util._selected_mesh_objects(context):
+                    obj_bounds = projectionuv_util._world_bbox_from_object(obj)
                     if obj_bounds is None:
                         continue
                     if bounds is None:
@@ -537,8 +552,8 @@ class LDLED_OT_projectionuv_create_mesh(bpy.types.Operator):
                 self.report({'ERROR'}, "No selection mesh or vertices")
                 return {'CANCELLED'}
 
-        name = le_projectionuv._unique_name(f"{node.name}_Projection")
-        obj = le_projectionuv._create_xz_plane(name, bounds, context)
+        name = projectionuv_util._unique_name(f"{node.name}_Projection")
+        obj = projectionuv_util._create_xz_plane(name, bounds, context)
         obj.display_type = 'BOUNDS'
         mesh_socket = node.inputs.get("Mesh")
         if mesh_socket is not None and hasattr(mesh_socket, "default_value"):
@@ -572,7 +587,7 @@ class LDLED_OT_collectionmask_create_collection(bpy.types.Operator):
             self.report({'ERROR'}, "No active scene")
             return {'CANCELLED'}
 
-        name = le_collectionmask._unique_collection_name(f"{node.name}_Mask")
+        name = collectionmask_util._unique_collection_name(f"{node.name}_Mask")
         col = bpy.data.collections.new(name)
         scene.collection.children.link(col)
 
@@ -601,14 +616,14 @@ class LDLED_OT_idmask_add_selection(bpy.types.Operator):
             self.report({'ERROR'}, "ID Mask node not found")
             return {'CANCELLED'}
 
-        selected_ids, error = le_idmask._read_selected_ids(context)
+        selected_ids, error = idmask_util._read_selected_ids(context)
         if error:
             self.report({'ERROR'}, error)
             return {'CANCELLED'}
 
-        existing = set(le_idmask._node_effective_ids(node, include_legacy=True))
+        existing = set(idmask_util._node_effective_ids(node, include_legacy=True))
         merged = existing | set(selected_ids or [])
-        le_idmask._set_node_ids(node, le_idmask._sorted_ids(merged))
+        idmask_util._set_node_ids(node, idmask_util._sorted_ids(merged))
         node.use_custom_ids = True
         return {'FINISHED'}
 
@@ -628,14 +643,14 @@ class LDLED_OT_idmask_remove_selection(bpy.types.Operator):
             self.report({'ERROR'}, "ID Mask node not found")
             return {'CANCELLED'}
 
-        selected_ids, error = le_idmask._read_selected_ids(context)
+        selected_ids, error = idmask_util._read_selected_ids(context)
         if error:
             self.report({'ERROR'}, error)
             return {'CANCELLED'}
 
-        existing = set(le_idmask._node_effective_ids(node, include_legacy=True))
+        existing = set(idmask_util._node_effective_ids(node, include_legacy=True))
         remaining = existing - set(selected_ids or [])
-        le_idmask._set_node_ids(node, le_idmask._sorted_ids(remaining))
+        idmask_util._set_node_ids(node, idmask_util._sorted_ids(remaining))
         node.use_custom_ids = True
         return {'FINISHED'}
 
@@ -655,7 +670,7 @@ class LDLED_OT_trail_set_start(bpy.types.Operator):
             self.report({'ERROR'}, "Trail node not found")
             return {'CANCELLED'}
 
-        selected_ids, error = le_trail._read_selected_ids_ordered(context, None)
+        selected_ids, error = trail_util._read_selected_ids_ordered(context, None)
         if error:
             self.report({'ERROR'}, error)
             return {'CANCELLED'}
@@ -681,7 +696,7 @@ class LDLED_OT_trail_set_transit(bpy.types.Operator):
             self.report({'ERROR'}, "Trail node not found")
             return {'CANCELLED'}
 
-        selected_ids, error = le_trail._read_selected_ids_ordered(context, None)
+        selected_ids, error = trail_util._read_selected_ids_ordered(context, None)
         if error:
             self.report({'ERROR'}, error)
             return {'CANCELLED'}
