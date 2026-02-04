@@ -823,8 +823,6 @@ def _build_cat_led_graph(
                 duration_sock.default_value = duration
         elif getattr(node, "bl_idname", "") == "LDLEDCatSamplerNode":
             node.image = cat_image
-            if hasattr(node, "use_formation_id"):
-                node.use_formation_id = True
     if new_nodes:
         for node in new_nodes:
             if getattr(node, "bl_idname", "") != "LDLEDFrameEntryNode":

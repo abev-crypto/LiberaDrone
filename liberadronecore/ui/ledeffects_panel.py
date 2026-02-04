@@ -2,6 +2,7 @@
 
 from liberadronecore.reg.base_reg import RegisterBase
 from liberadronecore.ledeffects import led_codegen_runtime
+from liberadronecore.ledeffects.nodes.util import le_meshinfo
 import json
 import os
 
@@ -418,7 +419,9 @@ def _set_active_output(context, node: bpy.types.Node) -> None:
     node.select = True
     tree.nodes.active = node
     if context and getattr(context, "space_data", None):
-        context.space_data.node_tree = tree
+        space = context.space_data
+        if getattr(space, "type", "") == "NODE_EDITOR" and hasattr(space, "node_tree"):
+            space.node_tree = tree
 def _update_output_index(self, context):
     tree = _get_led_tree(context)
     if tree is None:
@@ -575,6 +578,16 @@ class LDLED_OT_input_remove(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class LDLED_OT_cache_clear(bpy.types.Operator):
+    bl_idname = "ldled.cache_clear"
+    bl_label = "Clear Cache"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        le_meshinfo.clear_led_frame_cache()
+        return {'FINISHED'}
+
+
 def _sanitize_filename(name: str) -> str:
     safe = []
     for ch in name or "":
@@ -651,6 +664,7 @@ class LDLED_PT_panel(bpy.types.Panel):
         row = layout.row(align=True)
         row.operator("ldled.export_template", text="Export")
         row.operator("ldled.import_template", text="Import")
+        layout.operator("ldled.cache_clear", text="Clear Cache")
 
         node = _get_selected_output_node(context, tree)
         if node is not None and getattr(node, "bl_idname", "") == "LDLEDOutputNode":
@@ -681,6 +695,7 @@ class LDLED_UI(RegisterBase):
         bpy.utils.register_class(LDLED_UL_InputList)
         bpy.utils.register_class(LDLED_OT_input_add)
         bpy.utils.register_class(LDLED_OT_input_remove)
+        bpy.utils.register_class(LDLED_OT_cache_clear)
         bpy.utils.register_class(LDLED_PT_panel)
         if not hasattr(bpy.types.Scene, "ld_led_output_items"):
             bpy.types.Scene.ld_led_output_items = bpy.props.CollectionProperty(type=LDLEDOutputItem)
@@ -706,6 +721,7 @@ class LDLED_UI(RegisterBase):
         if hasattr(bpy.types.Scene, "ld_led_output_items"):
             del bpy.types.Scene.ld_led_output_items
         bpy.utils.unregister_class(LDLED_PT_panel)
+        bpy.utils.unregister_class(LDLED_OT_cache_clear)
         bpy.utils.unregister_class(LDLED_OT_input_remove)
         bpy.utils.unregister_class(LDLED_OT_input_add)
         bpy.utils.unregister_class(LDLED_UL_InputList)

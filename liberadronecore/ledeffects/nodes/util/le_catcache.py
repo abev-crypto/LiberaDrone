@@ -70,12 +70,13 @@ class LDLEDCatCacheNode(bpy.types.Node, LDLED_CodeNodeBase):
                 f"    _active_{cat_id} = 1",
                 f"_progress_{cat_id} = _entry_progress({entry}, frame)",
                 f"_img_{cat_id} = {image_name!r}",
-                f"_v_{cat_id} = 0.0",
+                f"_x_{cat_id} = 0",
+                f"_y_{cat_id} = 0",
                 f"if _img_{cat_id}:",
-                f"    _im_{cat_id} = bpy.data.images.get(_img_{cat_id})",
-                f"    if _im_{cat_id} and _im_{cat_id}.size[1] > 1:",
-                f"        _v_{cat_id} = _clamp(idx / float(_im_{cat_id}.size[1] - 1), 0.0, 1.0)",
-                f"{out_color} = _sample_image(_img_{cat_id}, (_progress_{cat_id}, _v_{cat_id})) if _active_{cat_id} > 0 else (0.0, 0.0, 0.0, 1.0)",
+                f"    _im_{cat_id} = _get_image_cached(_img_{cat_id})",
+                f"    _x_{cat_id} = int(_progress_{cat_id} * (_im_{cat_id}.size[0] - 1))",
+                f"    _y_{cat_id} = int(_formation_id(idx))",
+                f"{out_color} = _sample_image_index(_im_{cat_id}, _x_{cat_id}, _y_{cat_id}) if _active_{cat_id} > 0 else (0.0, 0.0, 0.0, 1.0)",
             ]
         )
 
@@ -86,17 +87,34 @@ def _pack_cat_image(img: bpy.types.Image) -> None:
     if getattr(img, "packed_file", None) is not None:
         return
 
-    img.pack(as_png=True)
-    if getattr(img, "packed_file", None) is not None:
-        return
-    img.pack()
-    if getattr(img, "packed_file", None) is not None:
-        return
-    if getattr(bpy.data, "is_saved", False):
-        img.filepath_raw = f"//{img.name}"
-        img.file_format = 'PNG'
-        img.save()
+    if getattr(bpy.app, "version", (0, 0, 0)) >= (4, 0, 0):
+        path = bpy.path.abspath(getattr(img, "filepath", "") or "")
+        if not path:
+            path = bpy.path.abspath(getattr(img, "filepath_raw", "") or "")
+        if not path and getattr(bpy.data, "is_saved", False):
+            img.filepath_raw = f"//{img.name}"
+            img.file_format = 'PNG'
+            img.save()
+            path = bpy.path.abspath(getattr(img, "filepath_raw", "") or "")
+        if not path or not os.path.isfile(path):
+            raise RuntimeError(f"[CATCache] Image path not found for pack: {img.name}")
+        with open(path, "rb") as handle:
+            data = handle.read()
+        if not data:
+            raise RuntimeError(f"[CATCache] Empty image data for pack: {img.name}")
+        img.pack(data=data, data_len=len(data))
+    else:
+        img.pack(as_png=True)
+        if getattr(img, "packed_file", None) is not None:
+            return
         img.pack()
+        if getattr(img, "packed_file", None) is not None:
+            return
+        if getattr(bpy.data, "is_saved", False):
+            img.filepath_raw = f"//{img.name}"
+            img.file_format = 'PNG'
+            img.save()
+            img.pack()
     if getattr(img, "packed_file", None) is None:
         raise RuntimeError(f"[CATCache] Failed to pack image {img.name}")
 

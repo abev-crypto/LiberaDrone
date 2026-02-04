@@ -70,6 +70,12 @@ def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["pair_id_inv_map"] = None
 
 
+def clear_led_frame_cache() -> None:
+    end_led_frame_cache()
+    _FORMATION_BBOX_CACHE.clear()
+    _COLLECTION_IDS_CACHE.clear()
+
+
 @register_runtime_function
 def _formation_id(idx: int) -> int:
     idx_val = int(idx)

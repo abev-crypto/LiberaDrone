@@ -209,11 +209,6 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         type=bpy.types.Image,
         options={'LIBRARY_EDITABLE'},
     )
-    use_formation_id: bpy.props.BoolProperty(
-        name="Use Formation ID",
-        default=False,
-        options={'LIBRARY_EDITABLE'},
-    )
     remap_rows: bpy.props.BoolProperty(
         name="Remap Rows",
         description="Remap CAT rows to match the current drone index",
@@ -237,12 +232,9 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
 
     def draw_buttons(self, context, layout):
         layout.prop(self, "image")
-        layout.prop(self, "use_formation_id")
-        row = layout.row()
-        row.enabled = not self.use_formation_id
-        row.prop(self, "remap_rows")
+        layout.prop(self, "remap_rows")
         row = layout.row(align=True)
-        row.enabled = (not self.use_formation_id) and self.remap_rows
+        row.enabled = self.remap_rows
         row.prop(self, "remap_frame")
         op = row.operator("ldled.remapframe_fill_current", text="Now")
         op.node_tree_name = self.id_data.name
@@ -253,8 +245,8 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         out_var = self.output_var("Color")
         image_name = self.image.name if self.image else ""
         cat_id = f"{self.codegen_id()}_{int(self.as_pointer())}"
-        use_remap = bool(self.remap_rows) and not self.use_formation_id
-        idx_expr = "_formation_id(idx)" if self.use_formation_id else "idx"
+        use_remap = bool(self.remap_rows)
+        idx_expr = "_formation_id(idx)"
         if use_remap:
             if int(self.remap_frame) >= 0:
                 idx_expr = (
@@ -270,11 +262,12 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
                 f"    _active_{cat_id} = 1",
                 f"_progress_{cat_id} = _entry_progress({entry}, frame)",
                 f"_img_{cat_id} = {image_name!r}",
-                f"_v_{cat_id} = 0.0",
+                f"_x_{cat_id} = 0",
+                f"_y_{cat_id} = 0",
                 f"if _img_{cat_id}:",
-                f"    _im_{cat_id} = bpy.data.images.get(_img_{cat_id})",
-                f"    if _im_{cat_id} and _im_{cat_id}.size[1] > 1:",
-                f"        _v_{cat_id} = _clamp({idx_expr} / float(_im_{cat_id}.size[1] - 1), 0.0, 1.0)",
-                f"{out_var} = _sample_image(_img_{cat_id}, (_progress_{cat_id}, _v_{cat_id})) if _active_{cat_id} > 0 else (0.0, 0.0, 0.0, 1.0)",
+                f"    _im_{cat_id} = _get_image_cached(_img_{cat_id})",
+                f"    _x_{cat_id} = int(_progress_{cat_id} * (_im_{cat_id}.size[0] - 1))",
+                f"    _y_{cat_id} = int({idx_expr})",
+                f"{out_var} = _sample_image_index(_im_{cat_id}, _x_{cat_id}, _y_{cat_id}) if _active_{cat_id} > 0 else (0.0, 0.0, 0.0, 1.0)",
             ]
         )

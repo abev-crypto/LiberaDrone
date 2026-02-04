@@ -167,6 +167,38 @@ def _order_positions_by_pair_id(
     return ordered_positions, ordered_pair_ids
 
 
+def _order_positions_cache_by_pair_ids(
+    positions,
+    pair_ids,
+):
+    ordered = [None] * len(positions)
+    inv_map = [None] * len(positions)
+    for dst_idx, pid in enumerate(pair_ids):
+        src_idx = int(pid)
+        inv_map[src_idx] = dst_idx
+        ordered[dst_idx] = positions[src_idx]
+    return ordered, inv_map
+
+
+def _eval_effect_colors_by_map(
+    positions,
+    pair_ids,
+    dst_indices,
+    effect_fn,
+    frame: float,
+):
+    colors = np.zeros((len(positions), 4), dtype=np.float32)
+    for src_idx, pos in enumerate(positions):
+        runtime_idx = int(pair_ids[src_idx])
+        dst_idx = int(dst_indices[src_idx])
+        color = effect_fn(runtime_idx, pos, frame)
+        if not color:
+            continue
+        for chan in range(min(4, len(color))):
+            colors[dst_idx, chan] = float(color[chan])
+    return colors
+
+
 @persistent
 def update_led_effects(scene):
     if _is_undo_running():
@@ -194,22 +226,7 @@ def update_led_effects(scene):
     positions, pair_ids, formation_ids = _collect_formation_positions(scene)
     if positions is None or len(positions) == 0:
         return
-    positions_cache = positions
-    if len(pair_ids) != len(positions):
-        raise ValueError("pair_ids length mismatch for positions")
-    ordered = [None] * len(positions)
-    inv_map = [None] * len(positions)
-    for dst_idx, pid in enumerate(pair_ids):
-        src_idx = int(pid)
-        if src_idx < 0 or src_idx >= len(positions):
-            raise ValueError("pair_id out of range for positions")
-        if inv_map[src_idx] is not None:
-            raise ValueError("duplicate pair_id in positions")
-        inv_map[src_idx] = dst_idx
-        ordered[dst_idx] = positions[src_idx]
-    if any(idx is None for idx in inv_map):
-        raise ValueError("pair_ids must cover all positions")
-    positions_cache = ordered
+    positions_cache, inv_map = _order_positions_cache_by_pair_ids(positions, pair_ids)
 
     le_codegen.begin_led_frame_cache(
         frame,
@@ -217,15 +234,13 @@ def update_led_effects(scene):
         formation_ids=formation_ids,
         pair_ids=pair_ids,
     )
-    colors = np.zeros((len(positions), 4), dtype=np.float32)
-    for idx, pos in enumerate(positions):
-        runtime_idx = int(pair_ids[idx])
-        dst_idx = inv_map[idx]
-        color = effect_fn(runtime_idx, pos, frame)
-        if not color:
-            continue
-        for chan in range(min(4, len(color))):
-            colors[dst_idx, chan] = float(color[chan])
+    colors = _eval_effect_colors_by_map(
+        positions,
+        pair_ids,
+        inv_map,
+        effect_fn,
+        frame,
+    )
     le_codegen.end_led_frame_cache()
 
     _write_led_color_attribute(colors)

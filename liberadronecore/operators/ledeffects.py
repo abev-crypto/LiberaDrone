@@ -298,45 +298,25 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
 
         for col_idx, frame in enumerate(range(start_frame, end_frame)):
             positions, pair_ids, formation_ids = le_catcache._resolve_positions(scene, frame)
-            if positions is None or len(positions) == 0:
-                continue
-            if len(positions) != height:
-                continue
-            positions_cache = [tuple(float(v) for v in pos) for pos in positions]
-            if pair_ids is not None and len(pair_ids) == len(positions_cache):
-                ordered = [None] * len(positions_cache)
-                for src_idx, pid in enumerate(pair_ids):
-                    key = int(pid)
-                    if key < 0 or key >= len(positions_cache) or ordered[key] is not None:
-                        raise ValueError("Invalid pair_id mapping in CAT cache bake")
-                    ordered[key] = positions_cache[src_idx]
-                positions_cache = [item for item in ordered if item is not None]
+            positions_cache, _inv_map = ledeffects_task._order_positions_cache_by_pair_ids(
+                positions,
+                pair_ids,
+            )
             le_catcache.led_codegen_runtime.begin_led_frame_cache(
                 frame,
                 positions_cache,
                 formation_ids=formation_ids,
                 pair_ids=pair_ids,
             )
-            frame_logs: list[str] = []
-            for idx, pos in enumerate(positions):
-                runtime_idx = idx
-                if pair_ids is not None:
-                    runtime_idx = int(pair_ids[idx])
-                if runtime_idx < 0 or runtime_idx >= height:
-                    continue
-                color = color_fn(runtime_idx, pos, frame)
-                if not color:
-                    continue
-                rgba = [0.0, 0.0, 0.0, 1.0]
-                for chan in range(min(4, len(color))):
-                    rgba[chan] = float(color[chan])
-                pixels[runtime_idx, col_idx] = rgba
-                frame_logs.append(
-                    f"[CATCache] frame={frame} idx={idx} runtime_idx={runtime_idx} color={rgba}"
-                )
+            colors = ledeffects_task._eval_effect_colors_by_map(
+                positions,
+                pair_ids,
+                formation_ids,
+                color_fn,
+                frame,
+            )
+            pixels[:, col_idx] = colors
             le_catcache.led_codegen_runtime.end_led_frame_cache()
-            if frame_logs:
-                print("\n".join(frame_logs))
         min_val = float(pixels.min())
         max_val = float(pixels.max())
         nonzero = int(le_catcache.np.count_nonzero(pixels))

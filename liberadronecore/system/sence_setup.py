@@ -1,5 +1,6 @@
 ﻿import bpy
 import bmesh
+import os
 from typing import Optional
 from mathutils import Vector
 
@@ -121,6 +122,30 @@ def _fill_preview_image(img: bpy.types.Image, ring: bool) -> None:
 
 
 def _pack_preview_image(img: bpy.types.Image) -> None:
+    if getattr(bpy.app, "version", (0, 0, 0)) >= (4, 0, 0):
+        filepath = bpy.path.abspath(getattr(img, "filepath", "") or "")
+        if not filepath:
+            filepath = bpy.path.abspath(getattr(img, "filepath_raw", "") or "")
+        if not filepath:
+            temp_dir = getattr(bpy.app, "tempdir", "") or ""
+            if not temp_dir:
+                raise RuntimeError(f"Preview image tempdir missing: {img.name}")
+            filepath = os.path.join(temp_dir, f"{img.name}")
+            if not filepath.lower().endswith(".png"):
+                filepath += ".png"
+            img.filepath_raw = filepath
+            img.file_format = 'PNG'
+            img.save()
+            filepath = bpy.path.abspath(getattr(img, "filepath_raw", "") or "")
+        if not filepath or not os.path.isfile(filepath):
+            raise RuntimeError(f"Preview image path not found: {img.name}")
+        with open(filepath, "rb") as handle:
+            data = handle.read()
+        if not data:
+            raise RuntimeError(f"Preview image empty for pack: {img.name}")
+        img.pack(data=data, data_len=len(data))
+        return
+
     img.pack(as_png=True)
     filepath = getattr(img, "filepath", "") or ""
     if not filepath and getattr(bpy.data, "is_saved", False):
@@ -147,7 +172,8 @@ def get_or_create_emission_attr_material(mat_name=MAT_NAME, attr_name=ATTR_NAME,
         mat = bpy.data.materials.new(mat_name)
     mat.use_nodes = True
     mat.blend_method = 'HASHED'
-    mat.shadow_method = 'HASHED'
+    if hasattr(mat, "shadow_method"):
+        mat.shadow_method = 'HASHED'
     nt = mat.node_tree
     nodes = nt.nodes
     links = nt.links
