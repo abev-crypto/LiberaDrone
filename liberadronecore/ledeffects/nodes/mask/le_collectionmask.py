@@ -98,7 +98,7 @@ class LDLEDCollectionMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
             else:
                 fid_expr = "_cat_ref_fid(idx)"
         else:
-            fid_expr = "idx"
+            fid_expr = "_formation_id(idx)"
         base_expr = f"{ids_var}[{fid_var}] if {fid_var} < len({ids_var}) else 0.0"
         if self.invert:
             base_expr = f"(1.0 - ({base_expr}))"

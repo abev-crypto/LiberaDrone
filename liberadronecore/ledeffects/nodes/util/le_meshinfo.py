@@ -343,16 +343,11 @@ def _build_mesh_cache(obj: bpy.types.Object) -> Optional[Dict[str, Any]]:
                         continue
                     color_by_vertex[v_idx] = (float(color[0]), float(color[1]), float(color[2]), float(color[3]))
 
-    available_uv = list(range(len(mesh.vertices)))
-
     return {
         "positions": positions,
         "uvs": uv_by_vertex,
         "colors": color_by_vertex,
-        "available_uv_indices": available_uv,
         "assigned_uv": {},
-        "assigned_uv_dist": {},
-        "assigned_color": {},
     }
 
 
@@ -422,10 +417,6 @@ def _nearest_vertex_color(
         return 0.0, 0.0, 0.0, 1.0
     cache = _get_mesh_cache(obj)
     if cache is not None:
-        idx_val = int(idx)
-        assigned = cache["assigned_color"].get(idx_val)
-        if assigned is not None:
-            return assigned
         positions = cache["positions"]
         colors = cache["colors"]
         best_idx = None
@@ -443,7 +434,6 @@ def _nearest_vertex_color(
         color = colors[best_idx]
         if color is None:
             return 0.0, 0.0, 0.0, 1.0
-        cache["assigned_color"][idx_val] = color
         return color
     mw = obj.matrix_world
     best_idx = None
@@ -496,13 +486,9 @@ def _nearest_vertex_uv(
             return assigned
         positions = cache["positions"]
         uvs = cache["uvs"]
-        available = cache["available_uv_indices"]
-        best_list_idx = None
         best_idx = None
         best_dist = 1e30
-        indices = available
-        for list_idx, v_idx in enumerate(indices):
-            world = positions[v_idx]
+        for v_idx, world in enumerate(positions):
             dx = world[0] - pos[0]
             dy = world[1] - pos[1]
             dz = world[2] - pos[2]
@@ -510,16 +496,12 @@ def _nearest_vertex_uv(
             if dist < best_dist:
                 best_dist = dist
                 best_idx = v_idx
-                best_list_idx = list_idx
         if best_idx is None:
             return 0.0, 0.0
         uv = uvs[best_idx]
         if uv is None:
             return 0.0, 0.0
-        if best_list_idx is not None:
-            available[best_list_idx] = available[-1]
-            available.pop()
-            cache["assigned_uv"][idx_val] = uv
+        cache["assigned_uv"][idx_val] = uv
         return uv
     uv_layer = mesh.uv_layers.active or mesh.uv_layers[0]
     mw = obj.matrix_world
@@ -547,7 +529,6 @@ def _nearest_vertex_uv_with_dist(
     obj: bpy.types.Object,
     pos: Tuple[float, float, float],
     idx: int,
-    consume: bool = True,
 ) -> Tuple[Tuple[float, float], float]:
     if obj is None or obj.type != 'MESH':
         return (0.0, 0.0), 1e30
@@ -556,19 +537,11 @@ def _nearest_vertex_uv_with_dist(
         return (0.0, 0.0), 1e30
     cache = _get_mesh_cache(obj)
     if cache is not None:
-        idx_val = int(idx)
-        assigned = cache["assigned_uv_dist"].get(idx_val)
-        if assigned is not None:
-            return assigned
         positions = cache["positions"]
         uvs = cache["uvs"]
-        available = cache["available_uv_indices"]
-        best_list_idx = None
         best_idx = None
         best_dist = 1e30
-        indices = available if consume else range(len(positions))
-        for list_idx, v_idx in enumerate(indices):
-            world = positions[v_idx]
+        for v_idx, world in enumerate(positions):
             dx = world[0] - pos[0]
             dy = world[1] - pos[1]
             dz = world[2] - pos[2]
@@ -576,17 +549,11 @@ def _nearest_vertex_uv_with_dist(
             if dist < best_dist:
                 best_dist = dist
                 best_idx = v_idx
-                best_list_idx = list_idx
         if best_idx is None:
             return (0.0, 0.0), 1e30
         uv = uvs[best_idx]
         if uv is None:
             return (0.0, 0.0), 1e30
-        if consume and best_list_idx is not None:
-            available[best_list_idx] = available[-1]
-            available.pop()
-            cache["assigned_uv"][idx_val] = uv
-            cache["assigned_uv_dist"][idx_val] = (uv, best_dist)
         return uv, best_dist
     uv_layer = mesh.uv_layers.active or mesh.uv_layers[0]
     mw = obj.matrix_world
@@ -637,15 +604,11 @@ def _collection_nearest_uv(
                 stack.extend(list(current.children))
     best_uv = (0.0, 0.0)
     best_dist = 1e30
-    best_obj: Optional[bpy.types.Object] = None
     for obj in candidates:
-        uv, dist = _nearest_vertex_uv_with_dist(obj, pos, idx, consume=False)
+        uv, dist = _nearest_vertex_uv_with_dist(obj, pos, idx)
         if dist < best_dist:
             best_dist = dist
             best_uv = uv
-            best_obj = obj
-    if best_obj is not None:
-        best_uv, best_dist = _nearest_vertex_uv_with_dist(best_obj, pos, idx, consume=True)
     return best_uv
 
 
