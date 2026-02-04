@@ -96,12 +96,8 @@ def _write_column_to_cache(column: int, colors) -> None:
     _color_column_cache[column] = [list(color) for color in colors]
 
 
-def _write_led_color_attribute(colors, pair_ids=None) -> None:
-    system_obj = bpy.data.objects["ColorVerts"]
-    if system_obj.type != 'MESH':
-        raise TypeError("ColorVerts must be a mesh object")
-
-    mesh = system_obj.data
+def _write_led_color_attribute(colors) -> None:
+    mesh = bpy.data.objects["ColorVerts"].data
     attr = mesh.color_attributes.get("color")
     if attr is None or attr.domain != 'POINT' or attr.data_type != 'BYTE_COLOR':
         if attr is not None:
@@ -111,10 +107,6 @@ def _write_led_color_attribute(colors, pair_ids=None) -> None:
         )
 
     expected = len(attr.data)
-    if expected <= 0:
-        raise ValueError("ColorVerts has no vertex colors")
-    if colors is None:
-        raise ValueError("LED colors are missing")
 
     arr = np.asarray(colors, dtype=np.float32)
     if arr.ndim == 1:
@@ -127,29 +119,13 @@ def _write_led_color_attribute(colors, pair_ids=None) -> None:
     elif arr.shape[1] > 4:
         arr = arr[:, :4]
 
-    if pair_ids is not None:
-        if len(pair_ids) != arr.shape[0]:
-            raise ValueError("pair_ids length mismatch for colors")
-        if expected != arr.shape[0]:
-            raise ValueError("ColorVerts length mismatch for colors")
-        mapped = np.zeros((expected, 4), dtype=arr.dtype)
-        src_count = arr.shape[0]
-        for dst_idx, pid in enumerate(pair_ids):
-            src_idx = int(pid)
-            if src_idx < 0 or src_idx >= src_count:
-                raise ValueError("pair_id out of range for colors")
-            mapped[dst_idx] = arr[src_idx]
-        arr = mapped
-    else:
-        arr = arr[:expected]
-        if arr.shape[0] < expected:
-            pad = np.zeros((expected - arr.shape[0], 4), dtype=arr.dtype)
-            arr = np.concatenate([arr, pad], axis=0)
+    arr = arr[:expected]
+    if arr.shape[0] < expected:
+        pad = np.zeros((expected - arr.shape[0], 4), dtype=arr.dtype)
+        arr = np.concatenate([arr, pad], axis=0)
 
     arr = np.clip(arr, 0.0, 1.0)
     attr.data.foreach_set("color", arr.reshape(-1).tolist())
-
-    #mesh.update()
 
 
 def _collect_formation_positions(scene):
@@ -214,24 +190,26 @@ def update_led_effects(scene):
         return
 
     frame = scene.frame_current
-    frame_start = scene.frame_start
 
     positions, pair_ids, formation_ids = _collect_formation_positions(scene)
     if positions is None or len(positions) == 0:
         return
-    positions_cache = [tuple(float(v) for v in pos) for pos in positions]
-    if pair_ids is not None:
-        if len(pair_ids) != len(positions_cache):
-            raise ValueError("pair_ids length mismatch for positions")
-        ordered: list[tuple[float, float, float] | None] = [None] * len(positions_cache)
-        for src_idx, pid in enumerate(pair_ids):
-            key = int(pid)
-            if key < 0 or key >= len(positions_cache):
-                raise ValueError("pair_id out of range for positions")
-            if ordered[key] is not None:
-                raise ValueError("duplicate pair_id in positions")
-            ordered[key] = positions_cache[src_idx]
-        positions_cache = [item for item in ordered]
+    positions_cache = positions
+    if len(pair_ids) != len(positions):
+        raise ValueError("pair_ids length mismatch for positions")
+    ordered = [None] * len(positions)
+    inv_map = [None] * len(positions)
+    for dst_idx, pid in enumerate(pair_ids):
+        src_idx = int(pid)
+        if src_idx < 0 or src_idx >= len(positions):
+            raise ValueError("pair_id out of range for positions")
+        if inv_map[src_idx] is not None:
+            raise ValueError("duplicate pair_id in positions")
+        inv_map[src_idx] = dst_idx
+        ordered[dst_idx] = positions[src_idx]
+    if any(idx is None for idx in inv_map):
+        raise ValueError("pair_ids must cover all positions")
+    positions_cache = ordered
 
     le_codegen.begin_led_frame_cache(
         frame,
@@ -241,22 +219,16 @@ def update_led_effects(scene):
     )
     colors = np.zeros((len(positions), 4), dtype=np.float32)
     for idx, pos in enumerate(positions):
-        runtime_idx = idx
-        if pair_ids is not None:
-            runtime_idx = int(pair_ids[idx])
-        le_codegen.set_led_source_index(idx)
-        le_codegen.set_led_runtime_index(runtime_idx)
+        runtime_idx = int(pair_ids[idx])
+        dst_idx = inv_map[idx]
         color = effect_fn(runtime_idx, pos, frame)
         if not color:
             continue
         for chan in range(min(4, len(color))):
-            colors[idx, chan] = float(color[chan])
-    le_codegen.set_led_runtime_index(None)
-    le_codegen.set_led_source_index(None)
+            colors[dst_idx, chan] = float(color[chan])
     le_codegen.end_led_frame_cache()
 
-    #_write_column_to_cache(frame - frame_start, colors)
-    _write_led_color_attribute(colors, pair_ids)
+    _write_led_color_attribute(colors)
 
 
 def register():

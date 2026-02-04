@@ -25,9 +25,8 @@ _LED_FRAME_CACHE: Dict[str, Any] = {
     "pair_ids": None,
     "formation_id_map": None,
     "formation_id_inv_map": None,
+    "pair_id_inv_map": None,
 }
-_LED_CURRENT_INDEX: Optional[int] = None
-_LED_SOURCE_INDEX: Optional[int] = None
 _FORMATION_BBOX_CACHE: Dict[str, Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = {}
 _COLLECTION_IDS_CACHE: Dict[Tuple[str, bool], list[int]] = {}
 
@@ -51,6 +50,7 @@ def begin_led_frame_cache(
     _LED_FRAME_CACHE["pair_ids"] = pair_ids
     _LED_FRAME_CACHE["formation_id_map"] = None
     _LED_FRAME_CACHE["formation_id_inv_map"] = None
+    _LED_FRAME_CACHE["pair_id_inv_map"] = None
 
 
 def end_led_frame_cache() -> None:
@@ -67,29 +67,30 @@ def end_led_frame_cache() -> None:
     _LED_FRAME_CACHE["pair_ids"] = None
     _LED_FRAME_CACHE["formation_id_map"] = None
     _LED_FRAME_CACHE["formation_id_inv_map"] = None
-
-
-def set_led_runtime_index(idx: Optional[int]) -> None:
-    global _LED_CURRENT_INDEX
-    _LED_CURRENT_INDEX = None if idx is None else int(idx)
-
-
-def set_led_source_index(idx: Optional[int]) -> None:
-    global _LED_SOURCE_INDEX
-    _LED_SOURCE_INDEX = None if idx is None else int(idx)
+    _LED_FRAME_CACHE["pair_id_inv_map"] = None
 
 
 @register_runtime_function
-def _formation_id() -> int:
+def _formation_id(idx: int) -> int:
+    idx_val = int(idx)
     ids = _LED_FRAME_CACHE.get("formation_ids")
-    if ids and _LED_SOURCE_INDEX is not None and 0 <= _LED_SOURCE_INDEX < len(ids):
-        try:
-            return int(ids[_LED_SOURCE_INDEX])
-        except Exception:
-            pass
-    if _LED_CURRENT_INDEX is not None:
-        return int(_LED_CURRENT_INDEX)
-    return 0
+    if ids:
+        src_idx = idx_val
+        pair_ids = _LED_FRAME_CACHE.get("pair_ids")
+        if pair_ids and len(pair_ids) == len(ids):
+            inv = _LED_FRAME_CACHE.get("pair_id_inv_map")
+            if inv is None:
+                inv = {}
+                for src_idx_local, pid in enumerate(pair_ids):
+                    key = int(pid)
+                    if key in inv:
+                        raise ValueError("duplicate pair_id in formation mapping")
+                    inv[key] = src_idx_local
+                _LED_FRAME_CACHE["pair_id_inv_map"] = inv
+            src_idx = inv.get(idx_val, idx_val)
+        if 0 <= src_idx < len(ids):
+            return int(ids[src_idx])
+    return int(idx_val)
 
 
 @register_runtime_function
@@ -408,7 +409,11 @@ def _get_collection_cache(
 
 
 @register_runtime_function
-def _nearest_vertex_color(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[float, float, float, float]:
+def _nearest_vertex_color(
+    obj_name: str,
+    pos: Tuple[float, float, float],
+    idx: int,
+) -> Tuple[float, float, float, float]:
     obj = _get_object(obj_name)
     if obj is None or obj.type != 'MESH':
         return 0.0, 0.0, 0.0, 1.0
@@ -417,7 +422,8 @@ def _nearest_vertex_color(obj_name: str, pos: Tuple[float, float, float]) -> Tup
         return 0.0, 0.0, 0.0, 1.0
     cache = _get_mesh_cache(obj)
     if cache is not None:
-        assigned = cache["assigned_color"].get(_LED_CURRENT_INDEX)
+        idx_val = int(idx)
+        assigned = cache["assigned_color"].get(idx_val)
         if assigned is not None:
             return assigned
         positions = cache["positions"]
@@ -437,8 +443,7 @@ def _nearest_vertex_color(obj_name: str, pos: Tuple[float, float, float]) -> Tup
         color = colors[best_idx]
         if color is None:
             return 0.0, 0.0, 0.0, 1.0
-        if _LED_CURRENT_INDEX is not None:
-            cache["assigned_color"][_LED_CURRENT_INDEX] = color
+        cache["assigned_color"][idx_val] = color
         return color
     mw = obj.matrix_world
     best_idx = None
@@ -472,7 +477,11 @@ def _nearest_vertex_color(obj_name: str, pos: Tuple[float, float, float]) -> Tup
 
 
 @register_runtime_function
-def _nearest_vertex_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[float, float]:
+def _nearest_vertex_uv(
+    obj_name: str,
+    pos: Tuple[float, float, float],
+    idx: int,
+) -> Tuple[float, float]:
     obj = _get_object(obj_name)
     if obj is None or obj.type != 'MESH':
         return 0.0, 0.0
@@ -481,7 +490,8 @@ def _nearest_vertex_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[
         return 0.0, 0.0
     cache = _get_mesh_cache(obj)
     if cache is not None:
-        assigned = cache["assigned_uv"].get(_LED_CURRENT_INDEX)
+        idx_val = int(idx)
+        assigned = cache["assigned_uv"].get(idx_val)
         if assigned is not None:
             return assigned
         positions = cache["positions"]
@@ -490,10 +500,7 @@ def _nearest_vertex_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[
         best_list_idx = None
         best_idx = None
         best_dist = 1e30
-        if _LED_CURRENT_INDEX is not None:
-            indices = available
-        else:
-            indices = range(len(positions))
+        indices = available
         for list_idx, v_idx in enumerate(indices):
             world = positions[v_idx]
             dx = world[0] - pos[0]
@@ -509,10 +516,10 @@ def _nearest_vertex_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[
         uv = uvs[best_idx]
         if uv is None:
             return 0.0, 0.0
-        if _LED_CURRENT_INDEX is not None and best_list_idx is not None:
+        if best_list_idx is not None:
             available[best_list_idx] = available[-1]
             available.pop()
-            cache["assigned_uv"][_LED_CURRENT_INDEX] = uv
+            cache["assigned_uv"][idx_val] = uv
         return uv
     uv_layer = mesh.uv_layers.active or mesh.uv_layers[0]
     mw = obj.matrix_world
@@ -537,7 +544,10 @@ def _nearest_vertex_uv(obj_name: str, pos: Tuple[float, float, float]) -> Tuple[
 
 
 def _nearest_vertex_uv_with_dist(
-    obj: bpy.types.Object, pos: Tuple[float, float, float], consume: bool = True
+    obj: bpy.types.Object,
+    pos: Tuple[float, float, float],
+    idx: int,
+    consume: bool = True,
 ) -> Tuple[Tuple[float, float], float]:
     if obj is None or obj.type != 'MESH':
         return (0.0, 0.0), 1e30
@@ -546,7 +556,8 @@ def _nearest_vertex_uv_with_dist(
         return (0.0, 0.0), 1e30
     cache = _get_mesh_cache(obj)
     if cache is not None:
-        assigned = cache["assigned_uv_dist"].get(_LED_CURRENT_INDEX)
+        idx_val = int(idx)
+        assigned = cache["assigned_uv_dist"].get(idx_val)
         if assigned is not None:
             return assigned
         positions = cache["positions"]
@@ -555,10 +566,7 @@ def _nearest_vertex_uv_with_dist(
         best_list_idx = None
         best_idx = None
         best_dist = 1e30
-        if _LED_CURRENT_INDEX is not None and consume:
-            indices = available
-        else:
-            indices = range(len(positions))
+        indices = available if consume else range(len(positions))
         for list_idx, v_idx in enumerate(indices):
             world = positions[v_idx]
             dx = world[0] - pos[0]
@@ -574,11 +582,11 @@ def _nearest_vertex_uv_with_dist(
         uv = uvs[best_idx]
         if uv is None:
             return (0.0, 0.0), 1e30
-        if _LED_CURRENT_INDEX is not None and consume and best_list_idx is not None:
+        if consume and best_list_idx is not None:
             available[best_list_idx] = available[-1]
             available.pop()
-            cache["assigned_uv"][_LED_CURRENT_INDEX] = uv
-            cache["assigned_uv_dist"][_LED_CURRENT_INDEX] = (uv, best_dist)
+            cache["assigned_uv"][idx_val] = uv
+            cache["assigned_uv_dist"][idx_val] = (uv, best_dist)
         return uv, best_dist
     uv_layer = mesh.uv_layers.active or mesh.uv_layers[0]
     mw = obj.matrix_world
@@ -607,6 +615,7 @@ def _collection_nearest_uv(
     collection_name: str,
     pos: Tuple[float, float, float],
     use_children: bool,
+    idx: int,
 ) -> Tuple[float, float]:
     collection_name = _collection_name(collection_name)
     candidates: List[bpy.types.Object] = []
@@ -630,13 +639,13 @@ def _collection_nearest_uv(
     best_dist = 1e30
     best_obj: Optional[bpy.types.Object] = None
     for obj in candidates:
-        uv, dist = _nearest_vertex_uv_with_dist(obj, pos, consume=False)
+        uv, dist = _nearest_vertex_uv_with_dist(obj, pos, idx, consume=False)
         if dist < best_dist:
             best_dist = dist
             best_uv = uv
             best_obj = obj
     if best_obj is not None:
-        best_uv, best_dist = _nearest_vertex_uv_with_dist(best_obj, pos, consume=True)
+        best_uv, best_dist = _nearest_vertex_uv_with_dist(best_obj, pos, idx, consume=True)
     return best_uv
 
 

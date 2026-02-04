@@ -29,16 +29,12 @@ def evaluate_led_colors(effect_fn, positions, pair_ids, formation_ids, frame):
                         runtime_idx = int(pid)
                     except (TypeError, ValueError):
                         runtime_idx = idx
-            le_codegen.set_led_source_index(idx)
-            le_codegen.set_led_runtime_index(runtime_idx)
             color = effect_fn(runtime_idx, pos, frame)
             if not color:
                 continue
             for chan in range(min(4, len(color))):
                 colors[idx, chan] = float(color[chan])
     finally:
-        le_codegen.set_led_runtime_index(None)
-        le_codegen.set_led_source_index(None)
         le_codegen.end_led_frame_cache()
     np.clip(colors, 0.0, 1.0, out=colors)
 

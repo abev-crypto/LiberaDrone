@@ -32,4 +32,4 @@ class LDLEDVertexColorNode(bpy.types.Node, LDLED_CodeNodeBase):
         obj_expr = inputs.get("Mesh", "None")
         if obj_expr in {"None", "''"} and self.target_object:
             obj_expr = repr(self.target_object.name)
-        return f"{out_var} = _nearest_vertex_color({obj_expr}, (pos[0], pos[1], pos[2]))"
+        return f"{out_var} = _nearest_vertex_color({obj_expr}, (pos[0], pos[1], pos[2]), idx)"

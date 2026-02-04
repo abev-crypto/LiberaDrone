@@ -196,7 +196,7 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
             else:
                 fid_expr = "_cat_ref_fid(idx)"
         else:
-            fid_expr = "_formation_id()"
+            fid_expr = "_formation_id(idx)"
         ids_expr = repr(ids)
         if not ids:
             base_expr = "0.0"

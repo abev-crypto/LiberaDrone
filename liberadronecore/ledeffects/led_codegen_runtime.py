@@ -77,14 +77,6 @@ def end_led_frame_cache() -> None:
     le_meshinfo.end_led_frame_cache()
 
 
-def set_led_runtime_index(idx: Optional[int]) -> None:
-    le_meshinfo.set_led_runtime_index(idx)
-
-
-def set_led_source_index(idx: Optional[int]) -> None:
-    le_meshinfo.set_led_source_index(idx)
-
-
 def _prewarm_tree_images(tree: Optional[bpy.types.NodeTree]) -> None:
     le_image._prewarm_tree_images(tree)
 

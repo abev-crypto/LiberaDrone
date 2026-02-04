@@ -324,8 +324,6 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
                     runtime_idx = int(pair_ids[idx])
                 if runtime_idx < 0 or runtime_idx >= height:
                     continue
-                le_catcache.led_codegen_runtime.set_led_source_index(idx)
-                le_catcache.led_codegen_runtime.set_led_runtime_index(runtime_idx)
                 color = color_fn(runtime_idx, pos, frame)
                 if not color:
                     continue
@@ -336,8 +334,6 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
                 frame_logs.append(
                     f"[CATCache] frame={frame} idx={idx} runtime_idx={runtime_idx} color={rgba}"
                 )
-            le_catcache.led_codegen_runtime.set_led_runtime_index(None)
-            le_catcache.led_codegen_runtime.set_led_source_index(None)
             le_catcache.led_codegen_runtime.end_led_frame_cache()
             if frame_logs:
                 print("\n".join(frame_logs))

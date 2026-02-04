@@ -42,7 +42,7 @@ class LDLEDMeshUVNode(bpy.types.Node, LDLED_CodeNodeBase):
             col_name = repr(self.collection.name)
         return "\n".join(
             [
-                f"_uv = _collection_nearest_uv({col_name}, (pos[0], pos[1], pos[2]), {bool(self.use_children)!r})",
+                f"_uv = _collection_nearest_uv({col_name}, (pos[0], pos[1], pos[2]), {bool(self.use_children)!r}, idx)",
                 f"{out_u} = _uv[0]",
                 f"{out_v} = _uv[1]",
             ]

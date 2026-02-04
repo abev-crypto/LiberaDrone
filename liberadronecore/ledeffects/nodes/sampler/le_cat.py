@@ -16,7 +16,7 @@ def _cat_row_index_mode(idx: int, height: int, mode: str = "PAIR_TO_FORM") -> in
     height_val = int(height)
     idx_val = int(idx)
     if str(mode) == "REF_TO_REF":
-        fid_val = int(le_meshinfo._formation_id())
+        fid_val = int(le_meshinfo._formation_id(idx_val))
         mapping = le_particlebase._formation_id_map()
         row_val = int(mapping.get(fid_val, fid_val))
     else:
@@ -146,7 +146,7 @@ def _cat_row_index_locked(idx: int, frame: int, ref_frame: int, height: int) -> 
 def _cat_ref_fid(idx: int, mode: str = "PAIR_TO_FORM") -> int:
     idx_val = int(idx)
     if str(mode) == "REF_TO_REF":
-        return int(le_meshinfo._formation_id())
+        return int(le_meshinfo._formation_id(idx_val))
     cache = le_meshinfo._LED_FRAME_CACHE
     inv = cache.get("formation_id_inv_map")
     if not isinstance(inv, dict):
@@ -166,7 +166,7 @@ def _cat_ref_fid(idx: int, mode: str = "PAIR_TO_FORM") -> int:
 def _cat_ref_fid_at_frame(idx: int, frame: int, mode: str = "PAIR_TO_FORM") -> int:
     idx_val = int(idx)
     if str(mode) == "REF_TO_REF":
-        return int(le_meshinfo._formation_id())
+        return int(le_meshinfo._formation_id(idx_val))
     pair_to_form, _form_to_pair = _build_reference_maps(frame)
     return int(pair_to_form.get(idx_val, idx_val))
 
@@ -184,7 +184,7 @@ def _cat_row_index_at_frame(
 
     pair_to_form, form_to_pair = _build_reference_maps(frame_val)
     if str(mode) == "REF_TO_REF":
-        fid_val = int(le_meshinfo._formation_id())
+        fid_val = int(le_meshinfo._formation_id(idx_val))
         row_val = int(form_to_pair.get(fid_val, fid_val))
     else:
         row_val = int(pair_to_form.get(idx_val, idx_val))
@@ -254,7 +254,7 @@ class LDLEDCatSamplerNode(bpy.types.Node, LDLED_CodeNodeBase):
         image_name = self.image.name if self.image else ""
         cat_id = f"{self.codegen_id()}_{int(self.as_pointer())}"
         use_remap = bool(self.remap_rows) and not self.use_formation_id
-        idx_expr = "_formation_id()" if self.use_formation_id else "idx"
+        idx_expr = "_formation_id(idx)" if self.use_formation_id else "idx"
         if use_remap:
             if int(self.remap_frame) >= 0:
                 idx_expr = (
