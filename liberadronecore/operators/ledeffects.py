@@ -52,10 +52,7 @@ class LDLED_OT_export_template(bpy.types.Operator):
             self.report({'ERROR'}, "Select an LED Output node")
             return {'CANCELLED'}
         base = led_panel._template_dir()
-        try:
-            os.makedirs(base, exist_ok=True)
-        except Exception:
-            pass
+        os.makedirs(base, exist_ok=True)
         filename = led_panel._sanitize_filename(node.name) + ".json"
         self.filepath = os.path.join(base, filename)
         context.window_manager.fileselect_add(self)
@@ -71,13 +68,9 @@ class LDLED_OT_export_template(bpy.types.Operator):
         if not self.filepath:
             self.report({'ERROR'}, "Missing export path")
             return {'CANCELLED'}
-        try:
-            os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
-            with open(self.filepath, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=True, indent=2)
-        except Exception as exc:
-            self.report({'ERROR'}, f"Export failed: {exc}")
-            return {'CANCELLED'}
+        os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
+        with open(self.filepath, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=True, indent=2)
         self.report({'INFO'}, f"Exported: {os.path.basename(self.filepath)}")
         return {'FINISHED'}
 
@@ -291,16 +284,9 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
             f"spans={len(span_items)} preview={span_preview}"
         )
 
-        suspend = None
-        try:
-            from liberadronecore.tasks import ledeffects_task
+        from liberadronecore.tasks import ledeffects_task
 
-            suspend = getattr(ledeffects_task, "suspend_led_effects", None)
-        except Exception:
-            suspend = None
-
-        if suspend is not None:
-            suspend(True)
+        ledeffects_task.suspend_led_effects(True)
 
         positions, pair_ids, formation_ids = le_catcache._resolve_positions(scene, start_frame)
         height = len(positions)
@@ -319,19 +305,12 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
             positions_cache = [tuple(float(v) for v in pos) for pos in positions]
             if pair_ids is not None and len(pair_ids) == len(positions_cache):
                 ordered = [None] * len(positions_cache)
-                valid = True
                 for src_idx, pid in enumerate(pair_ids):
-                    try:
-                        key = int(pid)
-                    except (TypeError, ValueError):
-                        valid = False
-                        break
+                    key = int(pid)
                     if key < 0 or key >= len(positions_cache) or ordered[key] is not None:
-                        valid = False
-                        break
+                        raise ValueError("Invalid pair_id mapping in CAT cache bake")
                     ordered[key] = positions_cache[src_idx]
-                if valid and all(item is not None for item in ordered):
-                    positions_cache = [item for item in ordered if item is not None]
+                positions_cache = [item for item in ordered if item is not None]
             le_catcache.led_codegen_runtime.begin_led_frame_cache(
                 frame,
                 positions_cache,
@@ -339,43 +318,33 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
                 pair_ids=pair_ids,
             )
             frame_logs: list[str] = []
-            try:
-                for idx, pos in enumerate(positions):
-                    runtime_idx = idx
-                    if pair_ids is not None:
-                        pid = pair_ids[idx]
-                        if pid is not None:
-                            try:
-                                runtime_idx = int(pid)
-                            except (TypeError, ValueError):
-                                runtime_idx = idx
-                    if runtime_idx < 0 or runtime_idx >= height:
-                        continue
-                    le_catcache.led_codegen_runtime.set_led_source_index(idx)
-                    le_catcache.led_codegen_runtime.set_led_runtime_index(runtime_idx)
-                    color = color_fn(runtime_idx, pos, frame)
-                    if not color:
-                        continue
-                    rgba = [0.0, 0.0, 0.0, 1.0]
-                    for chan in range(min(4, len(color))):
-                        rgba[chan] = float(color[chan])
-                    pixels[runtime_idx, col_idx] = rgba
-                    frame_logs.append(
-                        f"[CATCache] frame={frame} idx={idx} runtime_idx={runtime_idx} color={rgba}"
-                    )
-            finally:
-                le_catcache.led_codegen_runtime.set_led_runtime_index(None)
-                le_catcache.led_codegen_runtime.set_led_source_index(None)
-                le_catcache.led_codegen_runtime.end_led_frame_cache()
+            for idx, pos in enumerate(positions):
+                runtime_idx = idx
+                if pair_ids is not None:
+                    runtime_idx = int(pair_ids[idx])
+                if runtime_idx < 0 or runtime_idx >= height:
+                    continue
+                le_catcache.led_codegen_runtime.set_led_source_index(idx)
+                le_catcache.led_codegen_runtime.set_led_runtime_index(runtime_idx)
+                color = color_fn(runtime_idx, pos, frame)
+                if not color:
+                    continue
+                rgba = [0.0, 0.0, 0.0, 1.0]
+                for chan in range(min(4, len(color))):
+                    rgba[chan] = float(color[chan])
+                pixels[runtime_idx, col_idx] = rgba
+                frame_logs.append(
+                    f"[CATCache] frame={frame} idx={idx} runtime_idx={runtime_idx} color={rgba}"
+                )
+            le_catcache.led_codegen_runtime.set_led_runtime_index(None)
+            le_catcache.led_codegen_runtime.set_led_source_index(None)
+            le_catcache.led_codegen_runtime.end_led_frame_cache()
             if frame_logs:
                 print("\n".join(frame_logs))
-        try:
-            min_val = float(pixels.min())
-            max_val = float(pixels.max())
-            nonzero = int(le_catcache.np.count_nonzero(pixels))
-            print(f"[CATCache] pixels stats min={min_val} max={max_val} nonzero={nonzero}")
-        except Exception:
-            pass
+        min_val = float(pixels.min())
+        max_val = float(pixels.max())
+        nonzero = int(le_catcache.np.count_nonzero(pixels))
+        print(f"[CATCache] pixels stats min={min_val} max={max_val} nonzero={nonzero}")
         img = None
         png_path = le_catcache.image_util.scene_cache_path(
             f"{node.label}_CAT",
@@ -400,27 +369,14 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
                 img = bpy.data.images.load(abs_path, check_existing=True)
 
         if img is not None:
-            try:
-                img.reload()
-            except Exception:
-                pass
-            try:
-                le_image._IMAGE_CACHE.pop(int(img.as_pointer()), None)
-            except Exception:
-                pass
-        try:
-            img.colorspace_settings.name = "Non-Color"
-        except Exception:
-            pass
-        try:
-            img.use_fake_user = True
-        except Exception:
-            pass
+            img.reload()
+            le_image._IMAGE_CACHE.pop(int(img.as_pointer()), None)
+        img.colorspace_settings.name = "Non-Color"
+        img.use_fake_user = True
         le_catcache._pack_cat_image(img)
         node.image = img
         scene.frame_set(original_frame)
-        if suspend is not None:
-            suspend(False)
+        ledeffects_task.suspend_led_effects(False)
 
         return {'FINISHED'}
 
@@ -467,10 +423,7 @@ class LDLED_OT_frameentry_fill_current(bpy.types.Operator):
         duration_sock = node.inputs.get("Duration")
         if duration_sock is not None and hasattr(duration_sock, "default_value"):
             duration_sock.default_value = max(0, int(active.end - active.start))
-        try:
-            node.end_frame = int(active.end)
-        except Exception:
-            pass
+        node.end_frame = int(active.end)
 
         return {'FINISHED'}
 
@@ -511,11 +464,7 @@ class LDLED_OT_remapframe_fill_current(bpy.types.Operator):
             self.report({'ERROR'}, "No active formation at current frame")
             return {'CANCELLED'}
 
-        try:
-            node.remap_frame = max(int(active.start), int(active.end) - 1)
-        except Exception:
-            self.report({'ERROR'}, "Failed to set Remap Frame")
-            return {'CANCELLED'}
+        node.remap_frame = max(int(active.start), int(active.end) - 1)
 
         return {'FINISHED'}
 
@@ -649,27 +598,14 @@ class LDLED_OT_collectionmask_create_collection(bpy.types.Operator):
 
         name = le_collectionmask._unique_collection_name(f"{node.name}_Mask")
         col = bpy.data.collections.new(name)
-        try:
-            scene.collection.children.link(col)
-        except Exception:
-            pass
+        scene.collection.children.link(col)
 
         for obj in meshes:
             if obj.name not in col.objects:
                 col.objects.link(obj)
 
-        if hasattr(node, "collection"):
-            try:
-                node.collection = col
-            except Exception:
-                pass
-
-        col_socket = node.inputs.get("Collection") if hasattr(node, "inputs") else None
-        if col_socket is not None and hasattr(col_socket, "default_value"):
-            try:
-                col_socket.default_value = col
-            except Exception:
-                pass
+        node.collection = col
+        node.inputs["Collection"].default_value = col
 
         return {'FINISHED'}
 

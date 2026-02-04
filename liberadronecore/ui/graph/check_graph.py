@@ -68,10 +68,7 @@ def _collect_positions(scene, depsgraph):
 
 
 def _get_current_formation_range(scene):
-    try:
-        from liberadronecore.formation import fn_parse
-    except Exception:
-        return None
+    from liberadronecore.formation import fn_parse
     schedule = fn_parse.get_cached_schedule(scene)
     entries = [entry for entry in schedule if entry.collection]
     if not entries:
@@ -121,19 +118,14 @@ def _sample_metric_series(scene, frame_start: int | None = None, frame_end: int 
     view_layer = bpy.context.view_layer
 
     suspend = None
-    try:
-        from liberadronecore.tasks import ledeffects_task
-        suspend = getattr(ledeffects_task, "suspend_led_effects", None)
-    except Exception:
-        suspend = None
-
+    from liberadronecore.tasks import ledeffects_task
+    suspend = getattr(ledeffects_task, "suspend_led_effects", None)
     if suspend is not None:
         suspend(True)
-    try:
-        for f in frames:
-            scene.frame_set(f)
-            if view_layer is not None:
-                view_layer.update()
+    for f in frames:
+        scene.frame_set(f)
+        if view_layer is not None:
+            view_layer.update()
 
             depsgraph = bpy.context.evaluated_depsgraph_get()
             positions, pair_ids, form_ids, signature, col_sig = _collect_positions(scene, depsgraph)
@@ -220,9 +212,8 @@ def _sample_metric_series(scene, frame_start: int | None = None, frame_end: int 
             prev_signature = signature
             prev_form_order = form_ok
             prev_col_sig = col_sig
-    finally:
-        if suspend is not None:
-            suspend(False)
+    if suspend is not None:
+        suspend(False)
 
     return frames, series
 
@@ -417,11 +408,7 @@ class VelocityCandleWindow(QtWidgets.QMainWindow):
         _ensure_qapp()
 
         if VelocityCandleWindow._instance is not None:
-            try:
-                VelocityCandleWindow._instance.close()
-            except Exception:
-                pass
-
+            VelocityCandleWindow._instance.close()
         VelocityCandleWindow._instance = VelocityCandleWindow(use_current_range=use_current_range)
         VelocityCandleWindow._instance.resize(1100, 800)
         VelocityCandleWindow._instance.show()

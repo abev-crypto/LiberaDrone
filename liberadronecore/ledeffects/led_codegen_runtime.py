@@ -7,6 +7,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Any
 import bpy
 
 from liberadronecore.ledeffects.le_codegen_base import LDLED_CodeNodeBase
+from liberadronecore.ledeffects import le_codegen_base
 from liberadronecore.ledeffects.runtime_registry import runtime_functions
 from liberadronecore.ledeffects.nodes.sampler import le_image
 from liberadronecore.ledeffects.nodes.util import le_meshinfo
@@ -58,10 +59,7 @@ def _default_for_input(socket: bpy.types.NodeSocket) -> str:
         if isinstance(value, (list, tuple, mathutils.Vector)) or (
             hasattr(value, "__iter__") and not isinstance(value, (str, bytes))
         ):
-            try:
-                return repr(tuple(float(v) for v in value))
-            except Exception:
-                pass
+            return repr(tuple(float(v) for v in value))
     return _default_for_socket(socket)
 
 
@@ -92,6 +90,9 @@ def _prewarm_tree_images(tree: Optional[bpy.types.NodeTree]) -> None:
 
 
 def _get_output_var(node: bpy.types.Node, socket: bpy.types.NodeSocket) -> str:
+    override = le_codegen_base.get_codegen_output_vars_override(node)
+    if override and socket.name in override:
+        return override[socket.name]
     mapping = getattr(node, "_codegen_output_vars", {})
     if socket.name in mapping:
         return mapping[socket.name]
@@ -139,11 +140,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
             return
 
         inputs: Dict[str, str] = {}
-        allowed_inputs = None
-        try:
-            allowed_inputs = set(node.code_inputs())
-        except Exception:
-            allowed_inputs = None
+        allowed_inputs = set(node.code_inputs())
         for sock in getattr(node, "inputs", []):
             if allowed_inputs is not None and sock.name not in allowed_inputs:
                 continue
@@ -274,10 +271,7 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
         group_size = output_counts[priority]
         output_indices[priority] = group_index + 1
         blend_mode = getattr(output, "blend_mode", "MIX") or "MIX"
-        try:
-            random_weight = float(getattr(output, "random", 0.0))
-        except Exception:
-            random_weight = 0.0
+        random_weight = float(getattr(output, "random", 0.0))
         random_weight = max(0.0, min(1.0, random_weight))
         seed = _output_seed(output.name)
         lines.append(
@@ -391,10 +385,7 @@ def compile_led_socket(
         inputs: Dict[str, str] = {}
         allowed_inputs = None
         if not force_inputs:
-            try:
-                allowed_inputs = set(dep_node.code_inputs())
-            except Exception:
-                allowed_inputs = None
+            allowed_inputs = set(dep_node.code_inputs())
         for sock in getattr(dep_node, "inputs", []):
             if allowed_inputs is not None and sock.name not in allowed_inputs:
                 continue
@@ -481,11 +472,7 @@ def get_output_activity(tree: bpy.types.NodeTree, frame: float) -> Dict[str, boo
             return
 
         inputs: Dict[str, str] = {}
-        allowed_inputs = None
-        try:
-            allowed_inputs = set(node.code_inputs())
-        except Exception:
-            allowed_inputs = None
+        allowed_inputs = set(node.code_inputs())
         for sock in getattr(node, "inputs", []):
             if allowed_inputs is not None and sock.name not in allowed_inputs:
                 continue
@@ -495,7 +482,7 @@ def get_output_activity(tree: bpy.types.NodeTree, frame: float) -> Dict[str, boo
             sock.name: f"{node.codegen_id()}_{_sanitize_identifier(sock.name)}"
             for sock in getattr(node, "outputs", [])
         }
-        node._set_codegen_output_vars(output_vars)
+        le_codegen_base.set_codegen_output_vars_override(node, output_vars)
 
         snippet = node.build_code(inputs) or ""
         for line in snippet.splitlines():
@@ -571,10 +558,7 @@ def _to_hashable(value):
     if isinstance(value, (list, tuple, mathutils.Vector, mathutils.Color)):
         return tuple(_to_hashable(v) for v in value)
     if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
-        try:
-            return tuple(_to_hashable(v) for v in value)
-        except Exception:
-            return repr(value)
+        return tuple(_to_hashable(v) for v in value)
     return repr(value)
 
 
@@ -584,17 +568,11 @@ def _node_signature(node: bpy.types.Node):
         ident = prop.identifier
         if ident == "rna_type":
             continue
-        try:
-            val = getattr(node, ident)
-        except Exception:
-            continue
+        val = getattr(node, ident)
         props.append((ident, _to_hashable(val)))
     inputs = []
     for sock in getattr(node, "inputs", []):
-        try:
-            val = sock.default_value if hasattr(sock, "default_value") else None
-        except Exception:
-            val = None
+        val = sock.default_value if hasattr(sock, "default_value") else None
         inputs.append((sock.name, getattr(sock, "bl_idname", ""), _to_hashable(val)))
     return (node.bl_idname, node.name, node.label, tuple(props), tuple(inputs))
 

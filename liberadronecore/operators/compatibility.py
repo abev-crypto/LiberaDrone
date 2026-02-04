@@ -20,10 +20,7 @@ DEFAULT_FOLDER_DURATION = 480
 
 def _storyboard_name(base_name: str, meta: dict | None = None) -> str:
     meta = meta or {}
-    try:
-        meta_id = meta.get("id")
-    except Exception:
-        meta_id = None
+    meta_id = meta.get("id")
     if meta_id is not None:
         return f"{meta_id}_{base_name}"
     return base_name
@@ -55,29 +52,18 @@ def _load_prefix_map(directory: str, report) -> tuple[dict[str, dict], dict[str,
     mapping_path = os.path.join(directory, PREFIX_MAP_FILENAME)
     if not os.path.isfile(mapping_path):
         return {}, {"start_frame": None}
-    try:
-        with open(mapping_path, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except Exception as exc:
-        report({"WARNING"}, f"Could not read {PREFIX_MAP_FILENAME}: {exc}")
-        return {}, {"start_frame": None}
+    with open(mapping_path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
     if not isinstance(data, dict):
-        report({"WARNING"}, f"{PREFIX_MAP_FILENAME} must contain a JSON object")
-        return {}, {"start_frame": None}
+        raise ValueError(f"{PREFIX_MAP_FILENAME} must contain a JSON object")
 
     default_start = None
     if "startframe" in data and not isinstance(data["startframe"], dict):
-        try:
-            default_start = int(data["startframe"])
-        except Exception:
-            report({"WARNING"}, "Invalid top-level startframe in prefix_map.json")
+        default_start = int(data["startframe"])
 
     default_duration = DEFAULT_FOLDER_DURATION
     if "duration" in data and not isinstance(data["duration"], dict):
-        try:
-            default_duration = int(data["duration"])
-        except Exception:
-            report({"WARNING"}, "Invalid top-level duration in prefix_map.json")
+        default_duration = int(data["duration"])
 
     metadata: dict[str, dict] = {}
     for key, value in data.items():
@@ -85,22 +71,12 @@ def _load_prefix_map(directory: str, report) -> tuple[dict[str, dict], dict[str,
             continue
         if not isinstance(value, dict):
             continue
-        try:
-            entry_id = int(value.get("id"))
-        except Exception:
-            report({"WARNING"}, f"Missing or invalid id for '{key}' in {PREFIX_MAP_FILENAME}")
-            continue
+        entry_id = int(value.get("id"))
         start_frame = value.get("startframe", default_start)
         if start_frame is not None:
-            try:
-                start_frame = int(start_frame)
-            except Exception:
-                start_frame = default_start
+            start_frame = int(start_frame)
         duration = value.get("duration", default_duration)
-        try:
-            duration = int(duration)
-        except Exception:
-            duration = default_duration
+        duration = int(duration)
         metadata[str(key)] = {
             "id": entry_id,
             "start_frame": start_frame,
@@ -144,16 +120,10 @@ def _ordered_candidate_names(base_dir: str, metadata_map: dict[str, dict]) -> li
 
 def _transition_duration_from_meta(meta: dict | None, default: int | None) -> int:
     meta = meta or {}
-    try:
-        duration = meta.get("transition_duration", meta.get("duration", default))
-    except Exception:
-        duration = default
+    duration = meta.get("transition_duration", meta.get("duration", default))
     if duration is None:
         return int(default or 0)
-    try:
-        return int(duration)
-    except Exception:
-        return int(default or 0)
+    return int(duration)
 
 
 def _is_transition_marker(name: str) -> bool:
@@ -368,10 +338,7 @@ def _hide_collection(col: bpy.types.Collection) -> None:
         return
     for attr in ("hide_viewport", "hide_render", "hide_select"):
         if hasattr(col, attr):
-            try:
-                setattr(col, attr, True)
-            except Exception:
-                pass
+            setattr(col, attr, True)
 
 
 def _format_bounds_suffix(pos_min, pos_max) -> str:
@@ -460,10 +427,7 @@ class LD_OT_compat_preview_vatcat(bpy.types.Operator):
             item.checked = True
             item.has_assets = bool(entry.get("has_assets", True))
             if item.kind == "TRANSITION" and not item.has_assets:
-                try:
-                    item.duration = max(0, int(entry.get("transition_duration", 0)))
-                except Exception:
-                    item.duration = 0
+                item.duration = max(0, int(entry.get("transition_duration", 0)))
 
         scene.ld_compat_preview_index = 0
         self.report({"INFO"}, "Preview generated")
@@ -482,10 +446,7 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
             self.report({"ERROR"}, "Invalid VAT/CAT folder")
             return {"CANCELLED"}
 
-        try:
-            sheetutils._set_world_surface_black(scene)
-        except Exception:
-            pass
+        sheetutils._set_world_surface_black(scene)
 
         tree = sheetutils._ensure_formation_tree(context)
         if tree is None:
@@ -521,10 +482,7 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
                     continue
                 if bool(getattr(item, "has_assets", True)):
                     continue
-                try:
-                    dur = int(getattr(item, "duration", 0))
-                except Exception:
-                    dur = 0
+                dur = int(getattr(item, "duration", 0))
                 if dur > 0:
                     duration_overrides[str(getattr(item, "source_name", ""))] = dur
 
@@ -581,10 +539,7 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
                     vat_count = int(pos_img.size[1]) if getattr(pos_img, "size", None) else 1
                     vat_heights.add(vat_count)
                     obj = sheetutils._create_point_object(f"{display_name}_VAT", vat_count, col)
-                    try:
-                        pos_img.colorspace_settings.name = "Non-Color"
-                    except Exception:
-                        pass
+                    pos_img.colorspace_settings.name = "Non-Color"
                     start_frame_vat = int(start_frame) - 1
                     frame_count_vat = max(1, int(frame_count))
                     sheetutils._apply_vat_to_object(
@@ -646,18 +601,12 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
                     if not existed:
                         _hide_collection(col)
                     if hasattr(trans_node, "collection"):
-                        try:
-                            trans_node.collection = col
-                        except Exception:
-                            pass
+                        trans_node.collection = col
                     pos_img = entry.get("pos_img")
                     if pos_img is not None:
                         vat_count = int(pos_img.size[1]) if getattr(pos_img, "size", None) else 1
                         obj = sheetutils._create_point_object(f"{display_name}_VAT", vat_count, col)
-                        try:
-                            pos_img.colorspace_settings.name = "Non-Color"
-                        except Exception:
-                            pass
+                        pos_img.colorspace_settings.name = "Non-Color"
                         start_frame_vat = int(next_start) - 1
                         frame_count_vat = max(1, int(entry.get("frame_count", 0)))
                         pos_min = entry.get("pos_min")
@@ -677,30 +626,15 @@ class LD_OT_compat_import_vatcat(bpy.types.Operator):
                 next_start = int(next_start) + int(transition_total)
 
         if vat_heights:
-            try:
-                start_node.drone_count = int(next(iter(vat_heights)))
-            except Exception:
-                pass
+            start_node.drone_count = int(next(iter(vat_heights)))
 
-        try:
-            bpy.ops.liberadrone.setup_all()
-        except Exception:
-            pass
+        bpy.ops.liberadrone.setup_all()
 
-        try:
-            sheetutils._link_tree_to_workspace("Formation", tree, "FN_FormationTree")
-        except Exception:
-            pass
+        sheetutils._link_tree_to_workspace("Formation", tree, "FN_FormationTree")
         led_tree = sheetutils.led_panel._get_led_tree(context)
         if led_tree is not None:
-            try:
-                sheetutils._link_tree_to_workspace("LED", led_tree, "LD_LedEffectsTree")
-            except Exception:
-                pass
-        try:
-            bpy.ops.fn.calculate_schedule()
-        except Exception:
-            pass
+            sheetutils._link_tree_to_workspace("LED", led_tree, "LD_LedEffectsTree")
+        bpy.ops.fn.calculate_schedule()
 
         if created_shows:
             self.report({"INFO"}, f"Imported {created_shows} folder(s)")
@@ -720,11 +654,7 @@ class LD_OT_export_vatcat_renderrange(bpy.types.Operator):
         if not export_dir:
             self.report({"ERROR"}, "Set VAT/CAT folder")
             return {"CANCELLED"}
-        try:
-            os.makedirs(export_dir, exist_ok=True)
-        except Exception as exc:
-            self.report({"ERROR"}, f"Export folder error: {exc}")
-            return {"CANCELLED"}
+        os.makedirs(export_dir, exist_ok=True)
 
         frame_start = int(scene.frame_start)
         frame_end = int(scene.frame_end)
@@ -851,11 +781,7 @@ class LD_OT_export_vatcat_transitions(bpy.types.Operator):
         if not export_dir:
             self.report({"ERROR"}, "Set VAT/CAT folder")
             return {"CANCELLED"}
-        try:
-            os.makedirs(export_dir, exist_ok=True)
-        except Exception as exc:
-            self.report({"ERROR"}, f"Export folder error: {exc}")
-            return {"CANCELLED"}
+        os.makedirs(export_dir, exist_ok=True)
 
         schedule = fn_parse.compute_schedule(context, assign_pairs=False)
         tree_map = {

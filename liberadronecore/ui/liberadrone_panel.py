@@ -72,15 +72,9 @@ def _set_gn_input_value(obj_name: str, mod_name: str, socket_name: str, value) -
         return
     identifier = _find_input_identifier(mod, socket_name)
     if identifier:
-        try:
-            mod[identifier] = value
-            return
-        except Exception:
-            pass
-    try:
-        mod[socket_name] = value
-    except Exception:
-        pass
+        mod[identifier] = value
+        return
+    mod[socket_name] = value
     obj = bpy.data.objects.get(obj_name)
     if obj is not None:
         data = getattr(obj, "data", None)

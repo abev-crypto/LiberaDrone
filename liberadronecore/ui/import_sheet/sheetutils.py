@@ -50,10 +50,7 @@ def _install_qt_message_handler() -> None:
         if _QT_PREV_HANDLER is not None:
             _QT_PREV_HANDLER(mode, context, message)
             return
-        try:
-            sys.stderr.write(message + "\n")
-        except Exception:
-            pass
+        sys.stderr.write(message + "\n")
 
     _QT_PREV_HANDLER = QtCore.qInstallMessageHandler(_handler)
     _QT_HANDLER_INSTALLED = True
@@ -258,10 +255,7 @@ def _set_world_surface_black(scene: bpy.types.Scene) -> None:
     if world is None:
         world = bpy.data.worlds.new("World")
         scene.world = world
-    try:
-        world.use_nodes = True
-    except Exception:
-        pass
+    world.use_nodes = True
 
     nt = getattr(world, "node_tree", None)
     if nt is None:
@@ -287,17 +281,11 @@ def _set_world_surface_black(scene: bpy.types.Scene) -> None:
         bg_node.location = (0, 0)
 
     if output and not output.inputs["Surface"].is_linked:
-        try:
-            links.new(bg_node.outputs["Background"], output.inputs["Surface"])
-        except Exception:
-            pass
+        links.new(bg_node.outputs["Background"], output.inputs["Surface"])
 
-    try:
-        color_input = bg_node.inputs.get("Color")
-        if color_input is not None:
-            color_input.default_value = (0.0, 0.0, 0.0, 1.0)
-    except Exception:
-        pass
+    color_input = bg_node.inputs.get("Color")
+    if color_input is not None:
+        color_input.default_value = (0.0, 0.0, 0.0, 1.0)
 
 
 def _link_camera_blend_assets(
@@ -312,14 +300,11 @@ def _link_camera_blend_assets(
 
     before_names = {s.name for s in bpy.data.scenes}
     scene_name = None
-    try:
-        with bpy.data.libraries.load(blend_path, link=True) as (data_from, data_to):
-            if not data_from.scenes:
-                return [], None
-            scene_name = "Scene" if "Scene" in data_from.scenes else data_from.scenes[0]
-            data_to.scenes = [scene_name]
-    except Exception:
-        return [], None
+    with bpy.data.libraries.load(blend_path, link=True) as (data_from, data_to):
+        if not data_from.scenes:
+            return [], None
+        scene_name = "Scene" if "Scene" in data_from.scenes else data_from.scenes[0]
+        data_to.scenes = [scene_name]
 
     after_names = {s.name for s in bpy.data.scenes}
     new_names = [name for name in after_names if name not in before_names]
@@ -630,25 +615,13 @@ def _load_image(path: str, *, colorspace: str | None = None) -> bpy.types.Image 
         return None
     abs_path = os.path.abspath(path)
     for img in bpy.data.images:
-        try:
-            if os.path.abspath(bpy.path.abspath(img.filepath)) == abs_path:
-                if colorspace:
-                    try:
-                        img.colorspace_settings.name = colorspace
-                    except Exception:
-                        pass
-                return img
-        except Exception:
-            continue
-    try:
-        img = bpy.data.images.load(abs_path)
-    except Exception:
-        return None
+        if os.path.abspath(bpy.path.abspath(img.filepath)) == abs_path:
+            if colorspace:
+                img.colorspace_settings.name = colorspace
+            return img
+    img = bpy.data.images.load(abs_path)
     if colorspace and img is not None:
-        try:
-            img.colorspace_settings.name = colorspace
-        except Exception:
-            pass
+        img.colorspace_settings.name = colorspace
     return img
 
 
@@ -782,11 +755,8 @@ def _ensure_formation_tree(context) -> bpy.types.NodeTree | None:
     if tree is None:
         tree = bpy.data.node_groups.new("FormationTree", "FN_FormationTree")
         if space and getattr(space, "type", "") == "NODE_EDITOR":
-            try:
-                space.tree_type = "FN_FormationTree"
-                space.node_tree = tree
-            except Exception:
-                pass
+            space.tree_type = "FN_FormationTree"
+            space.node_tree = tree
     return tree
 
 
@@ -806,11 +776,8 @@ def _link_tree_to_workspace(workspace_name: str, tree: bpy.types.NodeTree, tree_
             for space in getattr(area, "spaces", []):
                 if getattr(space, "type", "") != "NODE_EDITOR":
                     continue
-                try:
-                    space.tree_type = tree_type
-                    space.node_tree = tree
-                except Exception:
-                    pass
+                space.tree_type = tree_type
+                space.node_tree = tree
 
 
 def _cat_template_path() -> str:
@@ -837,17 +804,11 @@ def _build_cat_led_graph(
     root = led_panel._build_led_graph(tree, payload)
     if root is None:
         return None
-    try:
-        root.name = cut_name
-        root.label = cut_name
-    except Exception:
-        pass
+    root.name = cut_name
+    root.label = cut_name
     frame = getattr(root, "parent", None)
     if frame is not None:
-        try:
-            frame.label = cut_name
-        except Exception:
-            pass
+        frame.label = cut_name
         frame_nodes = [n for n in tree.nodes if getattr(n, "parent", None) == frame]
     else:
         frame_nodes = [root]
@@ -863,10 +824,7 @@ def _build_cat_led_graph(
         elif getattr(node, "bl_idname", "") == "LDLEDCatSamplerNode":
             node.image = cat_image
             if hasattr(node, "use_formation_id"):
-                try:
-                    node.use_formation_id = True
-                except Exception:
-                    pass
+                node.use_formation_id = True
     if new_nodes:
         for node in new_nodes:
             if getattr(node, "bl_idname", "") != "LDLEDFrameEntryNode":
@@ -899,10 +857,7 @@ def _link_flow(tree, from_node, to_node):
     out_sock = _first_flow_out(from_node)
     in_sock = _first_flow_in(to_node)
     if out_sock and in_sock and not in_sock.is_linked:
-        try:
-            tree.links.new(out_sock, in_sock)
-        except Exception:
-            pass
+        tree.links.new(out_sock, in_sock)
 
 
 def _set_socket_value(node, name: str, value) -> None:
@@ -910,10 +865,7 @@ def _set_socket_value(node, name: str, value) -> None:
     if sock is None:
         return
     if hasattr(sock, "value"):
-        try:
-            sock.value = value
-        except Exception:
-            pass
+        sock.value = value
 
 
 def _set_socket_collection(node, name: str, collection: bpy.types.Collection) -> None:
@@ -921,10 +873,7 @@ def _set_socket_collection(node, name: str, collection: bpy.types.Collection) ->
     if sock is None:
         return
     if hasattr(sock, "collection"):
-        try:
-            sock.collection = collection
-        except Exception:
-            pass
+        sock.collection = collection
 
 
 def _parse_number(value: str | None) -> float | None:
@@ -938,10 +887,7 @@ def _parse_number(value: str | None) -> float | None:
     match = re.search(r"[-+]?(?:\d+\.?\d*|\.\d+)", text)
     if not match:
         return None
-    try:
-        return float(match.group(0))
-    except Exception:
-        return None
+    return float(match.group(0))
 
 
 def _to_int(value: str | None) -> int | None:

@@ -64,13 +64,8 @@ class SheetExportWindow(QtWidgets.QMainWindow):
         if not url:
             self.status_label.setText("Missing URL.")
             return
-        try:
-            text = _fetch_csv(url)
-            rows = _parse_rows(text)
-        except Exception as exc:
-            self.status_label.setText(f"Failed to load: {exc}")
-            QtWidgets.QMessageBox.warning(self, "Export Error", str(exc))
-            return
+        text = _fetch_csv(url)
+        rows = _parse_rows(text)
 
         cuts = _collect_cut_map(bpy.context, assign_pairs=False)
         if not cuts:
@@ -162,10 +157,7 @@ class SheetExportWindow(QtWidgets.QMainWindow):
     def show_window(sheet_url: str, export_dir: str = ""):
         _ensure_qapp()
         if SheetExportWindow._instance is not None:
-            try:
-                SheetExportWindow._instance.close()
-            except Exception:
-                pass
+            SheetExportWindow._instance.close()
         SheetExportWindow._instance = SheetExportWindow(sheet_url, export_dir)
         SheetExportWindow._instance.resize(900, 500)
         SheetExportWindow._instance.show()

@@ -1,3 +1,5 @@
 replace.bat
 replace_folder.log
 /*.zip
+*.pyc
+AGENTS.md

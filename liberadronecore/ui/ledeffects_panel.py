@@ -32,15 +32,12 @@ def _list_template_files() -> list[tuple[str, str]]:
     if not os.path.isdir(folder):
         return []
     results = []
-    try:
-        for entry in os.listdir(folder):
-            if not entry.lower().endswith(_LED_TEMPLATE_GLOB):
-                continue
-            path = os.path.join(folder, entry)
-            if os.path.isfile(path):
-                results.append((os.path.splitext(entry)[0], path))
-    except Exception:
-        return []
+    for entry in os.listdir(folder):
+        if not entry.lower().endswith(_LED_TEMPLATE_GLOB):
+            continue
+        path = os.path.join(folder, entry)
+        if os.path.isfile(path):
+            results.append((os.path.splitext(entry)[0], path))
     results.sort(key=lambda item: item[0].lower())
     return results
 
@@ -53,10 +50,7 @@ def _encode_value(value):
     if isinstance(value, bpy.types.ID):
         return {"__id__": value.__class__.__name__, "name": value.name}
     if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
-        try:
-            return [float(v) for v in value]
-        except Exception:
-            return _UNSUPPORTED
+        return [float(v) for v in value]
     return _UNSUPPORTED
 
 
@@ -101,10 +95,7 @@ def _encode_node_properties(node: bpy.types.Node) -> dict:
             continue
         if getattr(prop, "is_readonly", False):
             continue
-        try:
-            value = getattr(node, ident)
-        except Exception:
-            continue
+        value = getattr(node, ident)
         encoded = _encode_value(value)
         if encoded is _UNSUPPORTED:
             continue
@@ -117,10 +108,7 @@ def _encode_socket_defaults(node: bpy.types.Node) -> list[dict[str, object]]:
     for sock in getattr(node, "inputs", []):
         if not hasattr(sock, "default_value"):
             continue
-        try:
-            encoded = _encode_value(sock.default_value)
-        except Exception:
-            continue
+        encoded = _encode_value(sock.default_value)
         if encoded is _UNSUPPORTED:
             continue
         defaults.append({"name": sock.name, "default": encoded})
@@ -129,12 +117,7 @@ def _encode_socket_defaults(node: bpy.types.Node) -> list[dict[str, object]]:
 
 def _apply_node_properties(node: bpy.types.Node, props: dict) -> None:
     for ident, raw in (props or {}).items():
-        try:
-            setattr(node, ident, _decode_value(raw))
-        except Exception:
-            continue
-
-
+        setattr(node, ident, _decode_value(raw))
 def _apply_socket_defaults(node: bpy.types.Node, defaults: list[dict]) -> None:
     for entry in defaults or []:
         name = entry.get("name")
@@ -143,12 +126,7 @@ def _apply_socket_defaults(node: bpy.types.Node, defaults: list[dict]) -> None:
         sock = node.inputs.get(name) if hasattr(node, "inputs") else None
         if sock is None or not hasattr(sock, "default_value"):
             continue
-        try:
-            sock.default_value = _decode_value(entry.get("default"))
-        except Exception:
-            continue
-
-
+        sock.default_value = _decode_value(entry.get("default"))
 def _apply_color_ramp(node: bpy.types.Node, data: dict | None) -> None:
     if not data:
         return
@@ -157,15 +135,9 @@ def _apply_color_ramp(node: bpy.types.Node, data: dict | None) -> None:
     if tex is None:
         tex = bpy.data.textures.get(tex_name)
     if tex is None:
-        try:
-            tex = bpy.data.textures.new(name=tex_name, type='BLEND')
-        except Exception:
-            return
+        tex = bpy.data.textures.new(name=tex_name, type='BLEND')
     tex.use_color_ramp = True
-    try:
-        node.color_ramp_tex = tex
-    except Exception:
-        pass
+    node.color_ramp_tex = tex
     ramp = getattr(tex, "color_ramp", None)
     if ramp is None:
         return
@@ -179,30 +151,16 @@ def _apply_color_ramp(node: bpy.types.Node, data: dict | None) -> None:
             if idx >= len(ramp.elements):
                 break
             elem = ramp.elements[idx]
-            try:
-                elem.position = float(elem_data.get("position", elem.position))
-            except Exception:
-                pass
+            elem.position = float(elem_data.get("position", elem.position))
             color = elem_data.get("color")
             if isinstance(color, (list, tuple)) and len(color) >= 4:
-                try:
-                    elem.color = [float(c) for c in color[:4]]
-                except Exception:
-                    pass
+                elem.color = [float(c) for c in color[:4]]
     interp = data.get("interpolation")
     if interp:
-        try:
-            ramp.interpolation = interp
-        except Exception:
-            pass
+        ramp.interpolation = interp
     mode = data.get("color_mode")
     if mode:
-        try:
-            ramp.color_mode = mode
-        except Exception:
-            pass
-
-
+        ramp.color_mode = mode
 def _collect_subgraph_nodes(output_node: bpy.types.Node) -> list[bpy.types.Node]:
     visited: set[bpy.types.Node] = set()
     stack = [output_node]
@@ -294,28 +252,16 @@ def _build_led_graph(tree: bpy.types.NodeTree, payload: dict) -> bpy.types.Node 
         bl_idname = data.get("bl_idname", "")
         if not bl_idname:
             continue
-        try:
-            node = tree.nodes.new(bl_idname)
-        except Exception:
-            continue
+        node = tree.nodes.new(bl_idname)
         name = data.get("name", "")
         if name:
-            try:
-                node.name = name
-            except Exception:
-                pass
+            node.name = name
         label = data.get("label", "")
         if label:
-            try:
-                node.label = label
-            except Exception:
-                pass
+            node.label = label
         loc = data.get("location")
         if isinstance(loc, (list, tuple)) and len(loc) >= 2:
-            try:
-                node.location = (float(loc[0]), float(loc[1]))
-            except Exception:
-                pass
+            node.location = (float(loc[0]), float(loc[1]))
         _apply_node_properties(node, data.get("properties", {}))
         _apply_socket_defaults(node, data.get("inputs", []))
         _apply_color_ramp(node, data.get("color_ramp"))
@@ -336,11 +282,7 @@ def _build_led_graph(tree: bpy.types.NodeTree, payload: dict) -> bpy.types.Node 
         to_socket = to_node.inputs.get(to_socket_name) if hasattr(to_node, "inputs") else None
         if from_socket is None or to_socket is None:
             continue
-        try:
-            tree.links.new(from_socket, to_socket)
-        except Exception:
-            continue
-
+        tree.links.new(from_socket, to_socket)
     root_name = payload.get("root", "")
     imported_nodes = list(node_map.values())
     if existing_nodes and imported_nodes:
@@ -350,11 +292,7 @@ def _build_led_graph(tree: bpy.types.NodeTree, payload: dict) -> bpy.types.Node 
         new_min_x = min(new_x) if new_x else 0.0
         offset_x = (existing_max_x - new_min_x) + 300.0
         for node in imported_nodes:
-            try:
-                node.location.x += offset_x
-            except Exception:
-                pass
-
+            node.location.x += offset_x
     if imported_nodes:
         frame = tree.nodes.new("NodeFrame")
         frame.label = payload.get("root", "Imported")
@@ -362,18 +300,11 @@ def _build_led_graph(tree: bpy.types.NodeTree, payload: dict) -> bpy.types.Node 
         xs = [float(n.location.x) for n in imported_nodes if hasattr(n, "location")]
         ys = [float(n.location.y) for n in imported_nodes if hasattr(n, "location")]
         if xs and ys:
-            try:
-                frame.location = (min(xs) - 60.0, max(ys) + 60.0)
-            except Exception:
-                pass
+            frame.location = (min(xs) - 60.0, max(ys) + 60.0)
         for node in imported_nodes:
             if node == frame:
                 continue
-            try:
-                node.parent = frame
-            except Exception:
-                pass
-
+            node.parent = frame
     return node_map.get(root_name)
 
 
@@ -394,11 +325,8 @@ def _ensure_led_tree(context) -> bpy.types.NodeTree | None:
     tree = bpy.data.node_groups.new("LEDEffectsTree", "LD_LedEffectsTree")
     space = getattr(context, "space_data", None)
     if space and getattr(space, "type", "") == "NODE_EDITOR":
-        try:
-            space.tree_type = "LD_LedEffectsTree"
-            space.node_tree = tree
-        except Exception:
-            pass
+        space.tree_type = "LD_LedEffectsTree"
+        space.node_tree = tree
     return tree
 
 
@@ -424,10 +352,7 @@ def _schedule_output_sync(scene: bpy.types.Scene, tree: bpy.types.NodeTree) -> N
 
 
 def _output_sort_key(node: bpy.types.Node) -> tuple[int, str]:
-    try:
-        priority = int(getattr(node, "priority", 0))
-    except Exception:
-        priority = 0
+    priority = int(getattr(node, "priority", 0))
     return priority, node.name
 
 
@@ -483,12 +408,7 @@ def _sync_output_items(
     else:
         target_index = min(scene.ld_led_output_index, max(len(items) - 1, 0))
 
-    try:
-        scene.ld_led_output_index = target_index
-    except Exception:
-        pass
-
-
+    scene.ld_led_output_index = target_index
 def _set_active_output(context, node: bpy.types.Node) -> None:
     tree = getattr(node, "id_data", None)
     if tree is None:
@@ -498,12 +418,7 @@ def _set_active_output(context, node: bpy.types.Node) -> None:
     node.select = True
     tree.nodes.active = node
     if context and getattr(context, "space_data", None):
-        try:
-            context.space_data.node_tree = tree
-        except Exception:
-            pass
-
-
+        context.space_data.node_tree = tree
 def _update_output_index(self, context):
     tree = _get_led_tree(context)
     if tree is None:
@@ -522,12 +437,7 @@ def _node_editor_cursor(context) -> tuple[float, float]:
     cursor = getattr(space, "cursor_location", None) if space else None
     if cursor is None:
         return (0.0, 0.0)
-    try:
-        return (float(cursor.x), float(cursor.y))
-    except Exception:
-        return (0.0, 0.0)
-
-
+    return (float(cursor.x), float(cursor.y))
 def _node_editor_override(context) -> dict | None:
     window = getattr(context, "window", None)
     area = getattr(context, "area", None)
@@ -679,13 +589,8 @@ def _sanitize_filename(name: str) -> str:
 def _load_template_file(path: str) -> dict | None:
     if not path or not os.path.isfile(path):
         return None
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except Exception:
-        return None
-
-
+    with open(path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
 class LDLED_PT_panel(bpy.types.Panel):
     bl_label = "LED Effects"
     bl_space_type = 'NODE_EDITOR'
@@ -732,11 +637,7 @@ class LDLED_PT_panel(bpy.types.Panel):
 
         _sync_output_items(scene, tree, allow_index_update=False, allow_write=False)
         global _LED_OUTPUT_ACTIVITY
-        try:
-            _LED_OUTPUT_ACTIVITY = led_codegen_runtime.get_output_activity(tree, scene.frame_current)
-        except Exception:
-            _LED_OUTPUT_ACTIVITY = {}
-
+        _LED_OUTPUT_ACTIVITY = led_codegen_runtime.get_output_activity(tree, scene.frame_current)
         layout.template_list(
             "LDLED_UL_OutputList",
             "",

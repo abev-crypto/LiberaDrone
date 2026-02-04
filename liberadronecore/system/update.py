@@ -65,21 +65,14 @@ def _parse_bl_info_version_from_init_py(py_text: str) -> Optional[Tuple[int, int
     """
     __init__.py の bl_info = {... "version": (x,y,z) ... } を安全に読む（ast で解析）
     """
-    try:
-        tree = ast.parse(py_text)
-    except SyntaxError:
-        return None
-
+    tree = ast.parse(py_text)
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == "bl_info":
                     # bl_info の dict literal を期待
                     if isinstance(node.value, (ast.Dict,)):
-                        try:
-                            d = ast.literal_eval(node.value)
-                        except Exception:
-                            return None
+                        d = ast.literal_eval(node.value)
                         v = d.get("version")
                         if (
                             isinstance(v, tuple)
@@ -121,17 +114,8 @@ def _copytree_overwrite(src: str, dst: str) -> None:
         _safe_rmtree(tmp_old)
         os.rename(dst, tmp_old)
 
-    try:
-        shutil.copytree(src, dst)
-        _safe_rmtree(tmp_old)
-    except Exception:
-        # 失敗したら元に戻す
-        _safe_rmtree(dst)
-        if os.path.exists(tmp_old):
-            os.rename(tmp_old, dst)
-        raise
-
-
+    shutil.copytree(src, dst)
+    _safe_rmtree(tmp_old)
 # -----------------------------
 # メイン処理
 # -----------------------------
@@ -205,12 +189,7 @@ def _addon_key() -> str:
 
 
 def _get_prefs() -> Optional[bpy.types.AddonPreferences]:
-    try:
-        return bpy.context.preferences.addons[_addon_key()].preferences
-    except Exception:
-        return None
-
-
+    return bpy.context.preferences.addons[_addon_key()].preferences
 def _check_update_for_prefs(prefs: bpy.types.AddonPreferences) -> Tuple[bool, str]:
     repo = GithubRepo(
         owner=prefs.gh_owner,
@@ -219,12 +198,8 @@ def _check_update_for_prefs(prefs: bpy.types.AddonPreferences) -> Tuple[bool, st
         addon_subdir=prefs.gh_addon_subdir,
     )
 
-    try:
-        local_v = get_local_version(_addon_key())
-        remote_v = get_remote_version(repo)
-    except Exception as e:
-        return False, str(e)
-
+    local_v = get_local_version(_addon_key())
+    remote_v = get_remote_version(repo)
     prefs.last_local_version = str(local_v) if local_v else "None"
     prefs.last_remote_version = str(remote_v) if remote_v else "None"
 
@@ -245,12 +220,7 @@ def _notify_update_available(message: str) -> None:
     def _draw(self, _context):
         self.layout.label(text=message)
 
-    try:
-        wm.popup_menu(_draw, title="LiberaDrone", icon='INFO')
-    except Exception:
-        print(message)
-
-
+    wm.popup_menu(_draw, title="LiberaDrone", icon='INFO')
 @persistent
 def _auto_check_on_load(_scene) -> None:
     global _AUTO_CHECK_DONE

@@ -87,15 +87,10 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             self.status_label.setText("Missing URL.")
             return
         base_dir = self.folder_edit.text().strip()
-        try:
-            text = _fetch_csv(url)
-            rows = _parse_rows(text)
-            self._rows_all = rows
-            display_rows = _filter_transition_rows(rows, base_dir)
-        except Exception as exc:
-            self.status_label.setText(f"Failed to load: {exc}")
-            QtWidgets.QMessageBox.warning(self, "Import Error", str(exc))
-            return
+        text = _fetch_csv(url)
+        rows = _parse_rows(text)
+        self._rows_all = rows
+        display_rows = _filter_transition_rows(rows, base_dir)
 
         self._rows = display_rows
         self.table.setRowCount(len(display_rows))
@@ -146,16 +141,9 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             self.status_label.setText("Missing VAT/CAT folder.")
             return
 
-        linked_area_obj = None
-        try:
-            _linked_cameras, linked_area_obj = _link_camera_blend_assets(scene, base_dir)
-        except Exception:
-            linked_area_obj = None
+        _linked_cameras, linked_area_obj = _link_camera_blend_assets(scene, base_dir)
         if linked_area_obj is not None:
-            try:
-                scene.ld_checker_range_object = linked_area_obj
-            except Exception:
-                pass
+            scene.ld_checker_range_object = linked_area_obj
 
         tree = _ensure_formation_tree(bpy.context)
         if tree is None:
@@ -276,10 +264,7 @@ class SheetImportWindow(QtWidgets.QMainWindow):
         if settings:
             _apply_import_settings(scene, settings, start_node=start_node)
         if linked_area_obj is None and getattr(scene, "ld_checker_range_object", None) is None:
-            try:
-                bpy.ops.liberadrone.create_range_object()
-            except Exception:
-                pass
+            bpy.ops.liberadrone.create_range_object()
         settings_note = ""
         if settings:
             parts = []
@@ -330,10 +315,7 @@ class SheetImportWindow(QtWidgets.QMainWindow):
                 _set_socket_collection(node, "Collection", col)
             else:
                 if hasattr(node, "collection"):
-                    try:
-                        node.collection = col
-                    except Exception:
-                        pass
+                    node.collection = col
 
             if duration is not None:
                 _set_socket_value(node, "Duration", duration)
@@ -342,10 +324,7 @@ class SheetImportWindow(QtWidgets.QMainWindow):
                 vat_count = drone_num_setting or (pos_img.size[1] if pos_img else 1)
                 obj = _create_point_object(f"{name}_VAT", vat_count, col)
                 if pos_img is not None:
-                    try:
-                        pos_img.colorspace_settings.name = "Non-Color"
-                    except Exception:
-                        pass
+                    pos_img.colorspace_settings.name = "Non-Color"
                     _apply_vat_to_object(
                         obj,
                         pos_img,
@@ -378,10 +357,7 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             self.status_label.setText(f"Imported: {created} nodes{settings_note}")
         else:
             self.status_label.setText(f"No nodes created.{settings_note}")
-        try:
-            bpy.ops.liberadrone.setup_all()
-        except Exception:
-            pass
+        bpy.ops.liberadrone.setup_all()
         _link_tree_to_workspace("Formation", tree, "FN_FormationTree")
         led_tree = led_panel._get_led_tree(bpy.context)
         if led_tree is not None:
@@ -391,29 +367,17 @@ class SheetImportWindow(QtWidgets.QMainWindow):
             for row in rows_to_import
             if row.get("name")
         ):
-            try:
-                bpy.ops.fn.calculate_schedule()
-            except Exception:
-                pass
-        try:
-            from liberadronecore.util import view_setup
-            view_setup.setup_glare_compositor(scene, glare_threshold=glare_threshold)
-        except Exception:
-            pass
-        try:
-            SheetImportWindow._instance = None
-            self.close()
-        except Exception:
-            pass
+            bpy.ops.fn.calculate_schedule()
+        from liberadronecore.util import view_setup
+        view_setup.setup_glare_compositor(scene, glare_threshold=glare_threshold)
+        SheetImportWindow._instance = None
+        self.close()
 
     @staticmethod
     def show_window(sheet_url: str, vat_dir: str = ""):
         _ensure_qapp()
         if SheetImportWindow._instance is not None:
-            try:
-                SheetImportWindow._instance.close()
-            except Exception:
-                pass
+            SheetImportWindow._instance.close()
         SheetImportWindow._instance = SheetImportWindow(sheet_url, vat_dir)
         SheetImportWindow._instance.resize(900, 500)
         SheetImportWindow._instance.show()

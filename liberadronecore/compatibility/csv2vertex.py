@@ -22,28 +22,17 @@ def _storyboard_name(base_name: str, meta: dict | None = None) -> str:
     """Return a storyboard entry name composed of ID and ``base_name`` if present."""
 
     meta = meta or {}
-    try:
-        meta_id = meta.get("id")
-    except Exception:
-        meta_id = None
-
+    meta_id = meta.get("id")
     if meta_id is not None:
         return f"{meta_id}_{base_name}"
     return base_name
 
 def detect_delimiter(sample_path):
     # Try to sniff; fall back to tab if header matches the sample
-    try:
-        with open(sample_path, "r", newline="") as f:
-            head = f.read(2048)
-        dialect = csv.Sniffer().sniff(head, delimiters=",\t; ")
-        return dialect.delimiter
-    except Exception:
-        # Heuristic: if header contains tabs or 'Time [msec]\tx [m]' pattern, use '\t'
-        if "\t" in head or re.search(r"Time\s*\[msec\]\s*\tx\s*\[m\]", head):
-            return "\t"
-        return ","  # default
-
+    with open(sample_path, "r", newline="") as f:
+        head = f.read(2048)
+    dialect = csv.Sniffer().sniff(head, delimiters=",\t; ")
+    return dialect.delimiter
 def load_csv(path, delimiter="auto"):
     if delimiter == "auto":
         delimiter = detect_delimiter(path)
@@ -125,13 +114,8 @@ def load_import_metadata(directory, report):
     if not os.path.isfile(mapping_path):
         return {}, {"start_frame": None}
 
-    try:
-        with open(mapping_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as exc:
-        report({"WARNING"}, f"Could not read {PREFIX_MAP_FILENAME}: {exc}")
-        return {}, {"start_frame": None}
-
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
     if not isinstance(data, dict):
         report(
             {"WARNING"},
@@ -142,52 +126,29 @@ def load_import_metadata(directory, report):
     # Global defaults that can be overridden by top-level keys
     default_start_frame = None
     if "startframe" in data and not isinstance(data["startframe"], dict):
-        try:
-            default_start_frame = int(data["startframe"])
-        except Exception:
-            report({"WARNING"}, "Invalid top-level startframe in prefix_map.json, using default")
-
+        default_start_frame = int(data["startframe"])
     default_duration = DEFAULT_FOLDER_DURATION
     if "duration" in data and not isinstance(data["duration"], dict):
-        try:
-            default_duration = int(data["duration"])
-        except Exception:
-            report({"WARNING"}, "Invalid top-level duration in prefix_map.json, using default")
-
+        default_duration = int(data["duration"])
     default_midlayer = 1
     if "midlayer" in data and not isinstance(data["midlayer"], dict):
-        try:
-            default_midlayer = max(1, int(data["midlayer"]))
-        except Exception:
-            report({"WARNING"}, "Invalid top-level midlayer in prefix_map.json, using default")
+        default_midlayer = max(1, int(data["midlayer"]))
     default_middur = 1
     if "middur" in data and not isinstance(data["middur"], dict):
-        try:
-            default_middur = max(1, int(data["middur"]))
-        except Exception:
-            report({"WARNING"}, "Invalid top-level middur in prefix_map.json, using default")
+        default_middur = max(1, int(data["middur"]))
     default_midpose = True
     if "midpose" in data and not isinstance(data["midpose"], dict):
         default_midpose = bool(data["midpose"])
     default_ydepth = None
     if "ydepth" in data and not isinstance(data["ydepth"], dict):
-        try:
-            val = float(data["ydepth"])
-            default_ydepth = max(0.0, val)
-        except Exception:
-            report({"WARNING"}, "Invalid top-level ydepth in prefix_map.json, using default")
+        val = float(data["ydepth"])
+        default_ydepth = max(0.0, val)
     default_fhandle = 5.0
     if "fhandle" in data and not isinstance(data["fhandle"], dict):
-        try:
-            default_fhandle = float(data["fhandle"])
-        except Exception:
-            report({"WARNING"}, "Invalid top-level fhandle in prefix_map.json, using default")
+        default_fhandle = float(data["fhandle"])
     default_mhandle = 5.0
     if "mhandle" in data and not isinstance(data["mhandle"], dict):
-        try:
-            default_mhandle = float(data["mhandle"])
-        except Exception:
-            report({"WARNING"}, "Invalid top-level mhandle in prefix_map.json, using default")
+        default_mhandle = float(data["mhandle"])
     default_midposeslice = False
     if "midposeslice" in data and not isinstance(data["midposeslice"], dict):
         default_midposeslice = bool(data["midposeslice"])
@@ -222,12 +183,7 @@ def load_import_metadata(directory, report):
             report({"WARNING"}, f"Ignoring malformed entry for '{key}' in {PREFIX_MAP_FILENAME}")
             continue
 
-        try:
-            entry_id = int(value.get("id"))
-        except Exception:
-            report({"WARNING"}, f"Missing or invalid id for '{key}' in {PREFIX_MAP_FILENAME}")
-            continue
-
+        entry_id = int(value.get("id"))
         duration = value.get("duration", default_duration)
         midlayer = value.get("midlayer", default_midlayer)
         middur = value.get("middur", default_middur)
@@ -245,42 +201,17 @@ def load_import_metadata(directory, report):
         ledrandom = value.get("ledrandom", default_ledrandom)
         start_frame = value.get("startframe", default_start_frame)
 
-        try:
-            duration = int(duration)
-        except Exception:
-            report({"WARNING"}, f"Invalid duration for '{key}', using {default_duration}")
-            duration = default_duration
-
-        try:
-            midlayer = max(1, int(midlayer))
-        except Exception:
-            midlayer = default_midlayer
-        try:
-            middur = max(1, int(middur))
-        except Exception:
-            middur = default_middur
+        duration = int(duration)
+        midlayer = max(1, int(midlayer))
+        middur = max(1, int(middur))
         midpose = bool(midpose)
         midposeslice = bool(midposeslice)
-        try:
-            fhandle = float(fhandle)
-        except Exception:
-            fhandle = default_fhandle
-        try:
-            mhandle = float(mhandle)
-        except Exception:
-            mhandle = default_mhandle
-
-        try:
-            ydepth = max(0.0, float(ydepth)) if ydepth is not None else None
-        except Exception:
-            ydepth = default_ydepth
+        fhandle = float(fhandle)
+        mhandle = float(mhandle)
+        ydepth = max(0.0, float(ydepth)) if ydepth is not None else None
         traled = bool(traled)
         tracolor = str(tracolor) if tracolor is not None else None
-        try:
-            start_frame = int(start_frame) if start_frame is not None else None
-        except Exception:
-            start_frame = default_start_frame
-
+        start_frame = int(start_frame) if start_frame is not None else None
         metadata[str(key)] = {
             "id": entry_id,
             "transition_duration": duration,
@@ -309,11 +240,7 @@ def _metadata_transition_duration(meta, default=None):
     """Return transition duration value from ``meta`` if present."""
 
     meta = meta or {}
-    try:
-        duration = meta.get("transition_duration", meta.get("duration", default))
-    except Exception:
-        duration = default
-
+    duration = meta.get("transition_duration", meta.get("duration", default))
     if duration is None:
         return default
 
@@ -324,20 +251,11 @@ def _metadata_handle(meta, key, default=None):
     """Return CopyLoc handle value from ``meta`` if present."""
 
     meta = meta or {}
-    try:
-        val = meta.get(key, default)
-    except Exception:
-        val = default
-
+    val = meta.get(key, default)
     if val is None:
         return default
 
-    try:
-        return float(val)
-    except Exception:
-        return default
-
-
+    return float(val)
 def _entries_meta_from_metadata_map(metadata_map):
     """Expand metadata_map into a list aligned with storyboard entries."""
 
@@ -359,15 +277,10 @@ def _hex_to_rgba(hex_str):
     s = hex_str.strip().lstrip("#")
     if len(s) != 6:
         return None
-    try:
-        r = int(s[0:2], 16) / 255.0
-        g = int(s[2:4], 16) / 255.0
-        b = int(s[4:6], 16) / 255.0
-        return (r, g, b, 1.0)
-    except Exception:
-        return None
-
-
+    r = int(s[0:2], 16) / 255.0
+    g = int(s[2:4], 16) / 255.0
+    b = int(s[4:6], 16) / 255.0
+    return (r, g, b, 1.0)
 _SAMPLED_TRACOLOR_PATTERN = re.compile(r"(pre)?sampled_(\d+)", re.IGNORECASE)
 
 
@@ -383,12 +296,7 @@ def _sample_info_from_tracolor(tracolor: str | None) -> tuple[str | None, int | 
 
     mode = "presampled" if match.group(1) else "sampled"
 
-    try:
-        return mode, max(1, int(match.group(2)))
-    except Exception:
-        return mode, None
-
-
+    return mode, max(1, int(match.group(2)))
 def _colors_with_black_endpoints(colors):
     black = (0.0, 0.0, 0.0, 1.0)
     normalized = []
@@ -419,19 +327,11 @@ def _apply_colors_to_color_ramp(
 
     tex = getattr(light_effect_entry, "texture", None)
     if tex is None:
-        try:
-            tex = bpy.data.textures.new(
-                name=f"{getattr(light_effect_entry, 'name', 'LE')}_ColorTex", type="IMAGE"
-            )
-            light_effect_entry.texture = tex
-        except Exception:
-            return False
-
-    try:
-        ramp = tex.color_ramp
-    except Exception:
-        ramp = None
-
+        tex = bpy.data.textures.new(
+            name=f"{getattr(light_effect_entry, 'name', 'LE')}_ColorTex", type="IMAGE"
+        )
+        light_effect_entry.texture = tex
+    ramp = tex.color_ramp
     if ramp is None:
         return False
 
@@ -787,11 +687,7 @@ def _modifier_input_value(mod, socket_name):
     if socket_name in mod:
         return mod.get(socket_name)
 
-    try:
-        return getattr(mod, socket_name)
-    except Exception:
-        pass
-
+    return getattr(mod, socket_name)
     group = getattr(mod, "node_group", None)
     sockets = []
     if group is not None:
@@ -826,29 +722,26 @@ def _geometry_node_bounds(obj):
             return min_v, max_v
 
     # Fallback to the object's bounding box if no GN bounds are present
-    try:
-        bb = getattr(obj, "bound_box", None)
-        if bb:
-            corners = [Vector(c) for c in bb]
-            if hasattr(obj, "matrix_world"):
-                corners = [obj.matrix_world @ c for c in corners]
-            min_v = Vector(
-                (
-                    min(c.x for c in corners),
-                    min(c.y for c in corners),
-                    min(c.z for c in corners),
-                )
+    bb = getattr(obj, "bound_box", None)
+    if bb:
+        corners = [Vector(c) for c in bb]
+        if hasattr(obj, "matrix_world"):
+            corners = [obj.matrix_world @ c for c in corners]
+        min_v = Vector(
+            (
+                min(c.x for c in corners),
+                min(c.y for c in corners),
+                min(c.z for c in corners),
             )
-            max_v = Vector(
-                (
-                    max(c.x for c in corners),
-                    max(c.y for c in corners),
-                    max(c.z for c in corners),
-                )
+        )
+        max_v = Vector(
+            (
+                max(c.x for c in corners),
+                max(c.y for c in corners),
+                max(c.z for c in corners),
             )
-            return min_v, max_v
-    except Exception:
-        pass
+        )
+        return min_v, max_v
     return None
 
 
@@ -961,29 +854,18 @@ def create_grid_mid_pose(
     obj.select_set(True)
     context.view_layer.objects.active = obj
 
-    try:
-        bpy.ops.skybrush.create_formation(name=obj.name, contents="SELECTED_OBJECTS")
-        bpy.ops.skybrush.append_formation_to_storyboard()
-        storyboard = context.scene.skybrush.storyboard
-        entry = storyboard.entries[-1]
-        entry.name = base_name
-        entry.frame_start = frame_start
-        entry.duration = max(1, int(duration))
-        if meta is not None:
-            try:
-                entry["metadata"] = json.dumps(meta)
-            except Exception:
-                pass
-        if transition_le_meta:
-            try:
-                entry["transition_le"] = json.dumps(transition_le_meta)
-            except Exception:
-                pass
-        return entry
-    except Exception:
-        return None
-
-
+    bpy.ops.skybrush.create_formation(name=obj.name, contents="SELECTED_OBJECTS")
+    bpy.ops.skybrush.append_formation_to_storyboard()
+    storyboard = context.scene.skybrush.storyboard
+    entry = storyboard.entries[-1]
+    entry.name = base_name
+    entry.frame_start = frame_start
+    entry.duration = max(1, int(duration))
+    if meta is not None:
+        entry["metadata"] = json.dumps(meta)
+    if transition_le_meta:
+        entry["transition_le"] = json.dumps(transition_le_meta)
+    return entry
 def _create_slice_mid_pose(context, frame_start, base_name, *, mid_handle=None):
     """Create a mid-pose mesh from the current drone positions."""
 
@@ -993,24 +875,14 @@ def _create_slice_mid_pose(context, frame_start, base_name, *, mid_handle=None):
 
     scene = context.scene
     current_frame = scene.frame_current
-    try:
-        scene.frame_set(int(frame_start))
-    except Exception:
-        pass
-
+    scene.frame_set(int(frame_start))
     positions = []
     for obj in drones.objects:
-        try:
-            pos = obj.matrix_world.translation.copy()
-        except Exception:
-            continue
+        pos = obj.matrix_world.translation.copy()
         positions.append(Vector(pos))
 
     if not positions:
-        try:
-            scene.frame_set(current_frame)
-        except Exception:
-            pass
+        scene.frame_set(current_frame)
         return None
 
     mesh = bpy.data.meshes.new(f"{base_name}_mesh")
@@ -1036,29 +908,17 @@ def _create_slice_mid_pose(context, frame_start, base_name, *, mid_handle=None):
     if mid_handle is not None:
         meta = {"copyloc_handle": mid_handle}
 
-    try:
-        bpy.ops.skybrush.create_formation(name=obj.name, contents="SELECTED_OBJECTS")
-        bpy.ops.skybrush.append_formation_to_storyboard()
-        storyboard = context.scene.skybrush.storyboard
-        entry = storyboard.entries[-1]
-        entry.name = base_name
-        entry.frame_start = int(frame_start)
-        entry.duration = 1
-        if meta is not None:
-            try:
-                entry["metadata"] = json.dumps(meta)
-            except Exception:
-                pass
-        return entry
-    except Exception:
-        return None
-    finally:
-        try:
-            scene.frame_set(current_frame)
-        except Exception:
-            pass
-
-
+    bpy.ops.skybrush.create_formation(name=obj.name, contents="SELECTED_OBJECTS")
+    bpy.ops.skybrush.append_formation_to_storyboard()
+    storyboard = context.scene.skybrush.storyboard
+    entry = storyboard.entries[-1]
+    entry.name = base_name
+    entry.frame_start = int(frame_start)
+    entry.duration = 1
+    if meta is not None:
+        entry["metadata"] = json.dumps(meta)
+    return entry
+    scene.frame_set(current_frame)
 def _create_midpose_slices_for_transitions(context, plans, entries_meta):
     """Create mid-pose slices along transitions based on ``plans``."""
 
@@ -1068,12 +928,8 @@ def _create_midpose_slices_for_transitions(context, plans, entries_meta):
         if start is None or duration is None:
             continue
 
-        try:
-            duration = int(duration)
-            start = int(start)
-        except Exception:
-            continue
-
+        duration = int(duration)
+        start = int(start)
         midlayer = max(1, int(plan.get("midlayer", 1) or 1))
         if duration <= 0 or midlayer <= 0:
             continue
@@ -1127,11 +983,8 @@ def _update_frame_range_from_storyboard(context):
 
     max_end = 0
     for entry in entries:
-        try:
-            start = int(getattr(entry, "frame_start", 0))
-            duration = int(getattr(entry, "duration", 0))
-        except (TypeError, ValueError):
-            continue
+        start = int(getattr(entry, "frame_start", 0))
+        duration = int(getattr(entry, "duration", 0))
         max_end = max(max_end, start + max(duration, 0))
 
     if max_end > 0:
@@ -1150,20 +1003,11 @@ def _shift_subsequent_storyboard_entries(storyboard, start_index: int, delta: in
     if entries:
         for idx in range(start_index + 1, len(entries)):
             entry = entries[idx]
-            try:
-                entry.frame_start = int(getattr(entry, "frame_start", 0)) + delta
-            except Exception:
-                continue
-
+            entry.frame_start = int(getattr(entry, "frame_start", 0)) + delta
     if transitions:
         for idx in range(max(start_index, 0), len(transitions)):
             transition = transitions[idx]
-            try:
-                transition.frame_start = int(getattr(transition, "frame_start", 0)) + delta
-            except Exception:
-                continue
-
-
+            transition.frame_start = int(getattr(transition, "frame_start", 0)) + delta
 def _shift_storyboard_after_transition(storyboard, start_index: int, delta: int):
     """Shift storyboard entries and transitions after ``start_index`` by ``delta`` frames."""
 
@@ -1176,20 +1020,11 @@ def _shift_storyboard_after_transition(storyboard, start_index: int, delta: int)
     if entries:
         for idx in range(start_index + 1, len(entries)):
             entry = entries[idx]
-            try:
-                entry.frame_start = int(getattr(entry, "frame_start", 0)) + delta
-            except Exception:
-                continue
-
+            entry.frame_start = int(getattr(entry, "frame_start", 0)) + delta
     if transitions:
         for idx in range(start_index + 1, len(transitions)):
             transition = transitions[idx]
-            try:
-                transition.frame_start = int(getattr(transition, "frame_start", 0)) + delta
-            except Exception:
-                continue
-
-
+            transition.frame_start = int(getattr(transition, "frame_start", 0)) + delta
 def _apply_transition_durations(storyboard, entries_meta):
     """Assign transition durations from metadata to storyboard transitions."""
 
@@ -1204,16 +1039,11 @@ def _apply_transition_durations(storyboard, entries_meta):
         duration = _metadata_transition_duration(target_meta)
         if duration is None:
             continue
-        try:
-            current_duration = getattr(transitions[idx], "duration", 0)
-            transitions[idx].duration = duration
-            delta = duration - current_duration
-            if delta:
-                _shift_storyboard_after_transition(storyboard, idx, delta)
-        except Exception:
-            continue
-
-
+        current_duration = getattr(transitions[idx], "duration", 0)
+        transitions[idx].duration = duration
+        delta = duration - current_duration
+        if delta:
+            _shift_storyboard_after_transition(storyboard, idx, delta)
 def _apply_copyloc_handles_from_metadata(context, storyboard, entries_meta):
     """Shape CopyLoc influence curves per-entry using metadata handles."""
 
@@ -1240,24 +1070,14 @@ def _apply_copyloc_handles_from_metadata(context, storyboard, entries_meta):
             else:
                 handle = meta.get("fhandle")
 
-        try:
-            handle_frames = float(handle if handle is not None else handle_default)
-        except Exception:
-            handle_frames = handle_default
-
-        try:
-            start = int(getattr(entry, "frame_start", 0))
-            duration = int(getattr(entry, "duration", 0))
-        except Exception:
-            continue
+        handle_frames = float(handle if handle is not None else handle_default)
+        start = int(getattr(entry, "frame_start", 0))
+        duration = int(getattr(entry, "duration", 0))
         frame_min = start - 1
         frame_max = start + max(duration, 0) + 1
 
         def _key_in_range(key):
-            try:
-                frame = float(getattr(key.co, "x", None))
-            except Exception:
-                return False
+            frame = float(getattr(key.co, "x", None))
             return frame_min <= frame <= frame_max
 
         for obj in targets:
@@ -1301,47 +1121,26 @@ def _create_light_effect_for_storyboard(
     le_entry = None
     append_entry = getattr(light_effects, "append_new_entry", None)
     if callable(append_entry):
-        try:
-            le_entry = append_entry(
-                storyboard_entry.name,
-                storyboard_entry.frame_start,
-                storyboard_entry.duration,
-                select=False,
-                context=context,
-            )
-        except Exception:
-            le_entry = None
-
+        le_entry = append_entry(
+            storyboard_entry.name,
+            storyboard_entry.frame_start,
+            storyboard_entry.duration,
+            select=False,
+            context=context,
+        )
     if le_entry is None:
-        try:
-            le_entry = entries.add()
-            le_entry.name = storyboard_entry.name
-            le_entry.frame_start = storyboard_entry.frame_start
-            le_entry.duration = storyboard_entry.duration
-        except Exception:
-            return None
-
+        le_entry = entries.add()
+        le_entry.name = storyboard_entry.name
+        le_entry.frame_start = storyboard_entry.frame_start
+        le_entry.duration = storyboard_entry.duration
     if hasattr(le_entry, "type"):
-        try:
-            le_entry.type = effect_type
-        except Exception:
-            pass
+        le_entry.type = effect_type
     if effect_type == "VERTEX_COLOR" and hasattr(le_entry, "output"):
-        try:
-            le_entry.output = OUTPUT_VERTEX_COLOR
-        except Exception:
-            pass
+        le_entry.output = OUTPUT_VERTEX_COLOR
     if assign_mesh and hasattr(le_entry, "mesh"):
-        try:
-            le_entry.mesh = mesh_obj
-        except Exception:
-            pass
+        le_entry.mesh = mesh_obj
     if hasattr(le_entry, "convert_srgb"):
-        try:
-            le_entry.convert_srgb = False
-        except Exception:
-            pass
-
+        le_entry.convert_srgb = False
     if color_image is not None and hasattr(le_entry, "texture"):
         tex = getattr(le_entry, "texture", None)
         if tex is None:
@@ -1481,25 +1280,13 @@ def _replace_light_effect_texture(light_effect, color_image):
 
     tex = getattr(light_effect, "texture", None)
     if tex is None:
-        try:
-            tex = bpy.data.textures.new(name=f"{light_effect.name}_ColorTex", type="IMAGE")
-            light_effect.texture = tex
-        except Exception:
-            tex = None
-
+        tex = bpy.data.textures.new(name=f"{light_effect.name}_ColorTex", type="IMAGE")
+        light_effect.texture = tex
     if tex is not None:
-        try:
-            old_img = getattr(tex, "image", None)
-            if old_img is not None:
-                bpy.data.images.remove(old_img)
-        except Exception:
-            pass
-        try:
-            tex.image = color_image
-        except Exception:
-            pass
-
-
+        old_img = getattr(tex, "image", None)
+        if old_img is not None:
+            bpy.data.images.remove(old_img)
+        tex.image = color_image
 def _remove_light_effect_entries(scene, name: str):
     light_effects = getattr(getattr(scene, "skybrush", None), "light_effects", None)
     entries = getattr(light_effects, "entries", None)
@@ -1514,26 +1301,12 @@ def _remove_light_effect_entries(scene, name: str):
         tex = getattr(entry, "texture", None)
         if tex is not None:
             img = getattr(tex, "image", None)
-            try:
-                entries.remove(idx)
-            except Exception:
-                pass
+            entries.remove(idx)
             if img is not None:
-                try:
-                    bpy.data.images.remove(img)
-                except Exception:
-                    pass
-            try:
-                bpy.data.textures.remove(tex)
-            except Exception:
-                pass
+                bpy.data.images.remove(img)
+            bpy.data.textures.remove(tex)
         else:
-            try:
-                entries.remove(idx)
-            except Exception:
-                pass
-
-
+            entries.remove(idx)
 def _remove_vat_images_for_storyboard(name: str):
     image_names = (
         f"{name}_VAT_Pos",
@@ -1545,12 +1318,7 @@ def _remove_vat_images_for_storyboard(name: str):
     for img_name in image_names:
         img = bpy.data.images.get(img_name)
         if img is not None:
-            try:
-                bpy.data.images.remove(img)
-            except Exception:
-                pass
-
-
+            bpy.data.images.remove(img)
 def _remove_objects_for_storyboard(name: str):
     for candidate_name in (name, f"{name}_CSV"):
         obj = bpy.data.objects.get(candidate_name)
@@ -1558,17 +1326,9 @@ def _remove_objects_for_storyboard(name: str):
             continue
 
         mesh = getattr(obj, "data", None)
-        try:
-            bpy.data.objects.remove(obj, do_unlink=True)
-        except Exception:
-            pass
-
+        bpy.data.objects.remove(obj, do_unlink=True)
         if mesh and mesh.users == 0:
-            try:
-                bpy.data.meshes.remove(mesh)
-            except Exception:
-                pass
-
+            bpy.data.meshes.remove(mesh)
 # ---------- Import Helper ----------
 
 
@@ -1576,15 +1336,7 @@ def _hide_csv_mesh(obj):
     if obj is None:
         return
 
-    try:
-        obj.hide_set(True)
-    except Exception:
-        try:
-            obj.hide_viewport = True
-        except Exception:
-            pass
-
-
+    obj.hide_set(True)
 def import_csv_folder(
     context,
     folder,
@@ -1694,16 +1446,12 @@ def import_csv_folder(
     context.view_layer.objects.active = obj
     bpy.ops.skybrush.create_formation(name=obj.name, contents='SELECTED_OBJECTS')
     entry = None
-    try:
-        bpy.ops.skybrush.append_formation_to_storyboard()
-        storyboard = context.scene.skybrush.storyboard
-        entry = storyboard.entries[-1]
-        entry.name = folder_name
-        entry.frame_start = start_frame
-        entry.duration = duration
-    except Exception:
-        entry = None
-
+    bpy.ops.skybrush.append_formation_to_storyboard()
+    storyboard = context.scene.skybrush.storyboard
+    entry = storyboard.entries[-1]
+    entry.name = folder_name
+    entry.frame_start = start_frame
+    entry.duration = duration
     if use_vat and entry is not None:
         _create_light_effect_for_storyboard(
             context,
@@ -1801,28 +1549,11 @@ class CSVVA_OT_PrepareFolders(Operator):
             target_dir = os.path.join(folder, base_name)
 
             if os.path.isdir(target_dir):
-                try:
-                    shutil.rmtree(target_dir)
-                except Exception as exc:
-                    self.report(
-                        {"ERROR"},
-                        f"Failed to remove existing folder {base_name}: {exc}",
-                    )
-                    continue
-
-            try:
-                os.makedirs(target_dir, exist_ok=True)
-                with zipfile.ZipFile(zip_path, "r") as archive:
-                    archive.extractall(target_dir)
-            except Exception as exc:
-                self.report({"ERROR"}, f"Failed to extract {zip_name}: {exc}")
-                continue
-
-            try:
-                os.remove(zip_path)
-            except Exception:
-                self.report({"WARNING"}, f"Could not remove {zip_name} after extraction")
-
+                shutil.rmtree(target_dir)
+            os.makedirs(target_dir, exist_ok=True)
+            with zipfile.ZipFile(zip_path, "r") as archive:
+                archive.extractall(target_dir)
+            os.remove(zip_path)
             prepared.append(os.path.basename(target_dir))
 
         if prepared:
@@ -1935,19 +1666,15 @@ class CSVVA_OT_Import(Operator):
                     effective_duration = dur or DEFAULT_FOLDER_DURATION
 
                     formation_index = None
-                    try:
-                        entry = storyboard.entries[-1]
-                        entry.name = (
-                            f"{meta.get('id', '')}_{display_name}"
-                            if meta and meta.get("id") is not None
-                            else display_name
-                        )
-                        entry.duration = effective_duration
-                        entries_meta.append(meta)
-                        formation_index = len(entries_meta) - 1
-                    except Exception:
-                        pass
-
+                    entry = storyboard.entries[-1]
+                    entry.name = (
+                        f"{meta.get('id', '')}_{display_name}"
+                        if meta and meta.get("id") is not None
+                        else display_name
+                    )
+                    entry.duration = effective_duration
+                    entries_meta.append(meta)
+                    formation_index = len(entries_meta) - 1
                     gap_for_next = gap_frames if gap_frames is not None else 0
                     if (
                         formation_index is not None
@@ -2053,10 +1780,7 @@ class CSVVA_OT_Import(Operator):
             if not created:
                 self.report({"ERROR"}, "No CSV/TSV files found in subfolders")
                 return {"CANCELLED"}
-            try:
-                bpy.ops.skybrush.recalculate_transitions(scope="ALL")
-            except Exception:
-                pass
+            bpy.ops.skybrush.recalculate_transitions(scope="ALL")
             _apply_transition_durations(storyboard, entries_meta)
             _apply_copyloc_handles_from_metadata(context, storyboard, entries_meta)
             if midpose_slice_plans:
@@ -2104,24 +1828,18 @@ class CSVVA_OT_Import(Operator):
         if not obj:
             self.report({"ERROR"}, "No CSV/TSV files found in folder")
             return {"CANCELLED"}
-        try:
-            bpy.ops.skybrush.recalculate_transitions(scope="ALL")
-        except Exception:
-            pass
+        bpy.ops.skybrush.recalculate_transitions(scope="ALL")
         entries_meta = [None] * existing_entry_count + [meta]
         _apply_transition_durations(
             storyboard, entries_meta
         )
         _apply_copyloc_handles_from_metadata(context, storyboard, entries_meta)
-        try:
-            entry = storyboard.entries[-1]
-            entry.name = (
-                f"{meta.get('id', '')}_{display_name}"
-                if meta and meta.get("id") is not None
-                else display_name
-            )
-        except Exception:
-            pass
+        entry = storyboard.entries[-1]
+        entry.name = (
+            f"{meta.get('id', '')}_{display_name}"
+            if meta and meta.get("id") is not None
+            else display_name
+        )
         if bool(meta.get("traled", False)):
             duration = max(1, int(meta.get("middur", 1) or 1))
             trans_start = int(getattr(entry, "frame_start", start_frame)) + max(
@@ -2182,16 +1900,8 @@ def _link_image_to_file(image, filepath, file_format):
 
     _save_image(image, filepath, file_format)
     image.filepath = filepath
-    try:
-        image.source = 'FILE'
-    except Exception:
-        pass
-    try:
-        image.reload()
-    except Exception:
-        pass
-
-
+    image.source = 'FILE'
+    image.reload()
 def _ensure_export_directory(report_fn, export_dir):
     if not export_dir:
         return None
@@ -2270,16 +1980,11 @@ class CSVVA_OT_GenerateImages(Operator):
                 self.report({"WARNING"}, f"No tracks found in {item.folder}")
                 continue
 
-            try:
-                pos_img, vat_col_img, pos_min, pos_max, _duration, _drone_count = (
-                    csv_vat_gn.build_vat_images_from_tracks(
-                        tracks, fps, image_name_prefix=f"{item.name}_VAT"
-                    )
+            pos_img, vat_col_img, pos_min, pos_max, _duration, _drone_count = (
+                csv_vat_gn.build_vat_images_from_tracks(
+                    tracks, fps, image_name_prefix=f"{item.name}_VAT"
                 )
-            except Exception as exc:
-                self.report({"ERROR"}, f"VAT generation failed for {item.name}: {exc}")
-                continue
-
+            )
             bounds_suffix = _format_bounds_suffix(pos_min, pos_max)
             vat_base = f"{item.name}_VAT_{bounds_suffix}"
 
@@ -2315,12 +2020,8 @@ class CSVVA_OT_PackImages(Operator):
     def execute(self, context):
         packed = 0
         for img in _iter_cat_vat_images():
-            try:
-                img.pack()
-                packed += 1
-            except Exception:
-                continue
-
+            img.pack()
+            packed += 1
         if not packed:
             self.report({"ERROR"}, "No CAT/VAT images found to pack")
             return {"CANCELLED"}
@@ -2348,10 +2049,7 @@ class CSVVA_OT_UnpackImages(Operator):
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
             file_format = "OPEN_EXR" if ext == ".exr" else "PNG"
             _link_image_to_file(img, target_path, file_format)
-            try:
-                img.unpack(method='USE_ORIGINAL')
-            except Exception:
-                pass
+            img.unpack(method='USE_ORIGINAL')
             saved += 1
 
         if not saved:
@@ -2468,10 +2166,7 @@ class CSVVA_OT_Preview(Operator):
             if m_handle is not None:
                 item["mhandle"] = m_handle
             if ydepth is not None:
-                try:
-                    item["ydepth"] = float(ydepth)
-                except Exception:
-                    pass
+                item["ydepth"] = float(ydepth)
             item["traled"] = traled
             if tracolor:
                 item["tracolor"] = meta.get("tracolor")

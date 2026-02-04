@@ -43,12 +43,7 @@ def _hide_collection(col: bpy.types.Collection) -> None:
         return
     for attr in ("hide_viewport", "hide_render", "hide_select"):
         if hasattr(col, attr):
-            try:
-                setattr(col, attr, True)
-            except Exception:
-                pass
-
-
+            setattr(col, attr, True)
 def _link_object_to_collection(obj: bpy.types.Object, collection: bpy.types.Collection) -> None:
     for col in list(obj.users_collection):
         col.objects.unlink(obj)
@@ -59,18 +54,8 @@ def _remove_collection_recursive(col: bpy.types.Collection) -> None:
     for child in list(col.children):
         _remove_collection_recursive(child)
     for obj in list(col.objects):
-        try:
-            bpy.data.objects.remove(obj, do_unlink=True)
-        except TypeError:
-            for c in list(obj.users_collection):
-                c.objects.unlink(obj)
-            bpy.data.objects.remove(obj)
-    try:
-        bpy.data.collections.remove(col, do_unlink=True)
-    except TypeError:
-        bpy.data.collections.remove(col)
-
-
+        bpy.data.objects.remove(obj, do_unlink=True)
+    bpy.data.collections.remove(col, do_unlink=True)
 def _transition_base_name(node: bpy.types.Node) -> str:
     label = (getattr(node, "label", "") or "").strip()
     return label if label else node.name
@@ -96,31 +81,18 @@ def purge_transition_nodes(nodes: Sequence[bpy.types.Node]) -> None:
         _purge_transition_collections(node)
         col = getattr(node, "collection", None)
         if col:
-            try:
-                col_name = col.name
-            except ReferenceError:
-                col_name = None
+            col_name = col.name
             if col_name and col_name not in removed:
                 _remove_collection_recursive(col)
                 removed.add(col_name)
         if hasattr(node, "collection"):
-            try:
-                node.collection = None
-            except Exception:
-                pass
-
-
+            node.collection = None
 def _set_transition_collection(node: bpy.types.Node, scene: bpy.types.Scene) -> None:
     if not hasattr(node, "collection"):
         return
     col = _ensure_collection(scene, _transition_collection_name(node))
     _hide_collection(col)
-    try:
-        node.collection = col
-    except Exception:
-        pass
-
-
+    node.collection = col
 def _create_point_mesh(name: str, positions: Sequence[Vector]) -> bpy.types.Mesh:
     mesh = bpy.data.meshes.new(f"{name}_Mesh")
     verts = [(float(p.x), float(p.y), float(p.z)) for p in positions]
@@ -332,12 +304,9 @@ def _update_transition_move_stats(
     if not hasattr(node, "max_move_up"):
         return
     if not prev_positions or not next_positions:
-        try:
-            node.max_move_up = -1.0
-            node.max_move_down = -1.0
-            node.max_move_horiz = -1.0
-        except Exception:
-            pass
+        node.max_move_up = -1.0
+        node.max_move_down = -1.0
+        node.max_move_horiz = -1.0
         return
     max_up = 0.0
     max_down = 0.0
@@ -353,14 +322,9 @@ def _update_transition_move_stats(
         horiz = math.hypot(dx, dy)
         if horiz > max_horiz:
             max_horiz = horiz
-    try:
-        node.max_move_up = max_up
-        node.max_move_down = max_down
-        node.max_move_horiz = max_horiz
-    except Exception:
-        pass
-
-
+    node.max_move_up = max_up
+    node.max_move_down = max_down
+    node.max_move_horiz = max_horiz
 def _node_tree_from_context(context, node_name: str) -> Tuple[Optional[bpy.types.NodeTree], Optional[bpy.types.Node]]:
     tree = None
     node = None
@@ -815,20 +779,12 @@ def apply_transition_by_node_name(node_name: str, context=None) -> Tuple[bool, s
     tree, node = _node_tree_from_context(context, node_name)
     if node is None:
         return False, "Node not found"
-    try:
-        return apply_transition(node, context)
-    except Exception as exc:
-        return False, str(exc)
-
-
+    return apply_transition(node, context)
 def apply_transition(node: bpy.types.Node, context=None, *, assign_pairs_after: bool = True) -> Tuple[bool, str]:
     ctx = _build_transition_context(node, context)
     _purge_transition_collections(node)
     if hasattr(node, "collection"):
-        try:
-            node.collection = None
-        except Exception:
-            pass
+        node.collection = None
     mode = getattr(node, "mode", "AUTO")
     if mode == "AUTO":
         message = _apply_auto(ctx)
@@ -838,10 +794,7 @@ def apply_transition(node: bpy.types.Node, context=None, *, assign_pairs_after: 
         return True, message
     if mode == "CONSTRUCTION":
         start_per_frame = getattr(node, "construction_start_count", 1)
-        try:
-            start_per_frame = int(start_per_frame)
-        except Exception:
-            start_per_frame = 1
+        start_per_frame = int(start_per_frame)
         message = _apply_construction(ctx, start_per_frame=max(1, start_per_frame))
         _set_transition_collection(node, ctx.scene)
         fn_parse.compute_schedule(context, assign_pairs=assign_pairs_after)

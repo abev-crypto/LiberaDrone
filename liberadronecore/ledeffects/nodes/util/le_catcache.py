@@ -82,36 +82,23 @@ class LDLEDCatCacheNode(bpy.types.Node, LDLED_CodeNodeBase):
 
 def _pack_cat_image(img: bpy.types.Image) -> None:
     if img is None:
-        return
+        raise ValueError("CAT image is missing")
     if getattr(img, "packed_file", None) is not None:
         return
 
-    packed = False
-    try:
-        img.pack(as_png=True)
-        packed = getattr(img, "packed_file", None) is not None
-    except Exception:
-        pass
-    if not packed:
-        try:
-            img.pack()
-            packed = getattr(img, "packed_file", None) is not None
-        except Exception:
-            pass
-
-    if not packed:
-        try:
-            if getattr(bpy.data, "is_saved", False):
-                img.filepath_raw = f"//{img.name}"
-                img.file_format = 'PNG'
-                img.save()
-                img.pack()
-                packed = getattr(img, "packed_file", None) is not None
-        except Exception:
-            pass
-
-    if not packed:
-        print(f"[CATCache] Warning: failed to pack image {img.name}")
+    img.pack(as_png=True)
+    if getattr(img, "packed_file", None) is not None:
+        return
+    img.pack()
+    if getattr(img, "packed_file", None) is not None:
+        return
+    if getattr(bpy.data, "is_saved", False):
+        img.filepath_raw = f"//{img.name}"
+        img.file_format = 'PNG'
+        img.save()
+        img.pack()
+    if getattr(img, "packed_file", None) is None:
+        raise RuntimeError(f"[CATCache] Failed to pack image {img.name}")
 
 
 def _first_entry_span(entry) -> tuple[float, float] | None:
@@ -128,14 +115,10 @@ def _first_entry_span(entry) -> tuple[float, float] | None:
 
 
 def _resolve_positions(scene, frame: int):
-    try:
-        from liberadronecore.tasks import ledeffects_task
-    except Exception:
-        return [], None, None
+    from liberadronecore.tasks import ledeffects_task
     scene.frame_set(frame)
     view_layer = bpy.context.view_layer
-    if view_layer is not None:
-        view_layer.update()
+    view_layer.update()
     positions, pair_ids, formation_ids = ledeffects_task._collect_formation_positions(scene)
     return positions, pair_ids, formation_ids
 

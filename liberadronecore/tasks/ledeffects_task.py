@@ -44,15 +44,7 @@ def _on_redo_post(*_args, **_kwargs) -> None:
 
 
 def _is_undo_running() -> bool:
-    if _UNDO_DEPTH > 0:
-        return True
-    checker = getattr(bpy.app, "is_job_running", None)
-    if checker is None:
-        return False
-    try:
-        return checker("UNDO") or checker("REDO")
-    except Exception:
-        return False
+    return _UNDO_DEPTH > 0
 
 
 def suspend_led_effects(active: bool) -> None:
@@ -71,18 +63,14 @@ def schedule_led_effects_update(scene: bpy.types.Scene) -> None:
     global _LED_UPDATE_PENDING
     if _LED_UPDATE_PENDING:
         return
-    scene_name = scene.name if scene else ""
+    scene_name = scene.name
 
     def _do_update():
         global _LED_UPDATE_PENDING
         if _is_undo_running():
             return 0.1
         _LED_UPDATE_PENDING = False
-        if not scene_name:
-            return None
-        scn = bpy.data.scenes.get(scene_name)
-        if scn is None:
-            return None
+        scn = bpy.data.scenes[scene_name]
         update_led_effects(scn)
         return None
 
@@ -90,22 +78,17 @@ def schedule_led_effects_update(scene: bpy.types.Scene) -> None:
     bpy.app.timers.register(_do_update, first_interval=0.0)
 
 def _is_any_viewport_wireframe() -> bool:
-    wm = getattr(bpy.context, "window_manager", None)
-    if wm is None:
-        return False
-
+    wm = bpy.context.window_manager
     for window in wm.windows:
         screen = window.screen
-        if screen is None:
-            continue
         for area in screen.areas:
             if area.type != 'VIEW_3D':
                 continue
             for space in area.spaces:
                 if space.type != 'VIEW_3D':
                     continue
-                shading = getattr(space, "shading", None)
-                if shading and getattr(shading, "type", None) == 'WIREFRAME':
+                shading = space.shading
+                if shading.type == 'WIREFRAME':
                     return True
     return False
 
@@ -114,9 +97,9 @@ def _write_column_to_cache(column: int, colors) -> None:
 
 
 def _write_led_color_attribute(colors, pair_ids=None) -> None:
-    system_obj = bpy.data.objects.get("ColorVerts")
-    if system_obj is None or system_obj.type != 'MESH':
-        return
+    system_obj = bpy.data.objects["ColorVerts"]
+    if system_obj.type != 'MESH':
+        raise TypeError("ColorVerts must be a mesh object")
 
     mesh = system_obj.data
     attr = mesh.color_attributes.get("color")
@@ -129,10 +112,9 @@ def _write_led_color_attribute(colors, pair_ids=None) -> None:
 
     expected = len(attr.data)
     if expected <= 0:
-        return
-
+        raise ValueError("ColorVerts has no vertex colors")
     if colors is None:
-        return
+        raise ValueError("LED colors are missing")
 
     arr = np.asarray(colors, dtype=np.float32)
     if arr.ndim == 1:
@@ -145,18 +127,18 @@ def _write_led_color_attribute(colors, pair_ids=None) -> None:
     elif arr.shape[1] > 4:
         arr = arr[:, :4]
 
-    if pair_ids is not None and len(pair_ids) == arr.shape[0]:
+    if pair_ids is not None:
+        if len(pair_ids) != arr.shape[0]:
+            raise ValueError("pair_ids length mismatch for colors")
+        if expected != arr.shape[0]:
+            raise ValueError("ColorVerts length mismatch for colors")
         mapped = np.zeros((expected, 4), dtype=arr.dtype)
         src_count = arr.shape[0]
         for dst_idx, pid in enumerate(pair_ids):
-            if pid is None:
-                continue
-            try:
-                src_idx = int(pid)
-            except (TypeError, ValueError):
-                continue
-            if 0 <= src_idx < src_count and 0 <= dst_idx < expected:
-                mapped[dst_idx] = arr[src_idx]
+            src_idx = int(pid)
+            if src_idx < 0 or src_idx >= src_count:
+                raise ValueError("pair_id out of range for colors")
+            mapped[dst_idx] = arr[src_idx]
         arr = mapped
     else:
         arr = arr[:expected]
@@ -198,24 +180,14 @@ def _order_positions_by_pair_id(
     if not pair_ids or len(pair_ids) != len(positions):
         return positions, pair_ids
     indexed: list[tuple[int, int, tuple[float, float, float]]] = []
-    fallback: list[tuple[int, tuple[float, float, float], int | None]] = []
     for idx, pid in enumerate(pair_ids):
-        try:
-            key = int(pid)
-        except (TypeError, ValueError):
-            key = None
-        if key is None:
-            fallback.append((idx, positions[idx], pid))
-        else:
-            indexed.append((key, idx, positions[idx]))
+        key = int(pid)
+        indexed.append((key, idx, positions[idx]))
     if not indexed:
         return positions, pair_ids
     indexed.sort(key=lambda item: (item[0], item[1]))
     ordered_positions = [pos for _key, _idx, pos in indexed]
     ordered_pair_ids = [pair_ids[idx] for _key, idx, _pos in indexed]
-    if fallback:
-        ordered_positions.extend([pos for _idx, pos, _pid in fallback])
-        ordered_pair_ids.extend([pid for _idx, _pos, pid in fallback])
     return ordered_positions, ordered_pair_ids
 
 
@@ -248,21 +220,18 @@ def update_led_effects(scene):
     if positions is None or len(positions) == 0:
         return
     positions_cache = [tuple(float(v) for v in pos) for pos in positions]
-    if pair_ids is not None and len(pair_ids) == len(positions_cache):
+    if pair_ids is not None:
+        if len(pair_ids) != len(positions_cache):
+            raise ValueError("pair_ids length mismatch for positions")
         ordered: list[tuple[float, float, float] | None] = [None] * len(positions_cache)
-        valid = True
         for src_idx, pid in enumerate(pair_ids):
-            try:
-                key = int(pid)
-            except (TypeError, ValueError):
-                valid = False
-                break
-            if key < 0 or key >= len(positions_cache) or ordered[key] is not None:
-                valid = False
-                break
+            key = int(pid)
+            if key < 0 or key >= len(positions_cache):
+                raise ValueError("pair_id out of range for positions")
+            if ordered[key] is not None:
+                raise ValueError("duplicate pair_id in positions")
             ordered[key] = positions_cache[src_idx]
-        if valid and all(item is not None for item in ordered):
-            positions_cache = [item for item in ordered if item is not None]
+        positions_cache = [item for item in ordered]
 
     le_codegen.begin_led_frame_cache(
         frame,
@@ -271,27 +240,20 @@ def update_led_effects(scene):
         pair_ids=pair_ids,
     )
     colors = np.zeros((len(positions), 4), dtype=np.float32)
-    try:
-        for idx, pos in enumerate(positions):
-            runtime_idx = idx
-            if pair_ids is not None:
-                pid = pair_ids[idx]
-                if pid is not None:
-                    try:
-                        runtime_idx = int(pid)
-                    except (TypeError, ValueError):
-                        runtime_idx = idx
-            le_codegen.set_led_source_index(idx)
-            le_codegen.set_led_runtime_index(runtime_idx)
-            color = effect_fn(runtime_idx, pos, frame)
-            if not color:
-                continue
-            for chan in range(min(4, len(color))):
-                colors[idx, chan] = float(color[chan])
-    finally:
-        le_codegen.set_led_runtime_index(None)
-        le_codegen.set_led_source_index(None)
-        le_codegen.end_led_frame_cache()
+    for idx, pos in enumerate(positions):
+        runtime_idx = idx
+        if pair_ids is not None:
+            runtime_idx = int(pair_ids[idx])
+        le_codegen.set_led_source_index(idx)
+        le_codegen.set_led_runtime_index(runtime_idx)
+        color = effect_fn(runtime_idx, pos, frame)
+        if not color:
+            continue
+        for chan in range(min(4, len(color))):
+            colors[idx, chan] = float(color[chan])
+    le_codegen.set_led_runtime_index(None)
+    le_codegen.set_led_source_index(None)
+    le_codegen.end_led_frame_cache()
 
     #_write_column_to_cache(frame - frame_start, colors)
     _write_led_color_attribute(colors, pair_ids)

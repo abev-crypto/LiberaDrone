@@ -39,6 +39,9 @@ class LDLED_CodeNodeBase(LDLED_Node):
         self._codegen_output_vars = mapping
 
     def output_var(self, name: str) -> str:
+        override = _CODEGEN_OUTPUT_VARS_OVERRIDES.get(int(self.as_pointer()))
+        if override and name in override:
+            return override[name]
         mapping = getattr(self, "_codegen_output_vars", {})
         if name in mapping:
             return mapping[name]
@@ -74,3 +77,14 @@ class LDLED_CodeNodeBase(LDLED_Node):
             "outputs": self.code_outputs(),
             "meta": {"hint": self.codegen_hint} if self.codegen_hint else {},
         }
+
+
+_CODEGEN_OUTPUT_VARS_OVERRIDES: Dict[int, Dict[str, str]] = {}
+
+
+def set_codegen_output_vars_override(node: bpy.types.Node, mapping: Dict[str, str]) -> None:
+    _CODEGEN_OUTPUT_VARS_OVERRIDES[int(node.as_pointer())] = mapping
+
+
+def get_codegen_output_vars_override(node: bpy.types.Node) -> Dict[str, str] | None:
+    return _CODEGEN_OUTPUT_VARS_OVERRIDES.get(int(node.as_pointer()))

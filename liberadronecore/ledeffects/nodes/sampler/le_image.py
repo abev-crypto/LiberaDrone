@@ -13,29 +13,26 @@ _IMAGE_CACHE: Dict[int, Tuple[int, int, List[float]]] = {}
 
 def _cache_static_image(image: Optional[bpy.types.Image]) -> None:
     if image is None:
-        return
+        raise ValueError("Image cache requires a valid image")
     source = getattr(image, "source", "")
     if source in {"MOVIE", "SEQUENCE", "VIEWER", "COMPOSITED"}:
         return
     width, height = image.size
     if width <= 0 or height <= 0:
-        return
+        raise ValueError("Image has invalid size")
     key = int(image.as_pointer())
     cached = _IMAGE_CACHE.get(key)
     if cached is not None and cached[0] == width and cached[1] == height:
         return
-    try:
-        pixels = list(image.pixels)
-    except Exception:
-        return
+    pixels = list(image.pixels)
     _IMAGE_CACHE[key] = (width, height, pixels)
 
 
 def _prewarm_tree_images(tree: Optional[bpy.types.NodeTree]) -> None:
-    if tree is None:
-        return
-    for node in getattr(tree, "nodes", []):
-        image = getattr(node, "image", None)
+    for node in tree.nodes:
+        if not hasattr(node, "image"):
+            continue
+        image = node.image
         if isinstance(image, bpy.types.Image):
             _cache_static_image(image)
 
@@ -43,13 +40,11 @@ def _prewarm_tree_images(tree: Optional[bpy.types.NodeTree]) -> None:
 @register_runtime_function
 def _sample_image(image_name, uv: Tuple[float, float]) -> Tuple[float, float, float, float]:
     if not image_name:
-        return 0.0, 0.0, 0.0, 1.0
-    image = image_name if isinstance(image_name, bpy.types.Image) else bpy.data.images.get(image_name)
-    if image is None:
-        return 0.0, 0.0, 0.0, 1.0
+        raise ValueError("Image name is required")
+    image = image_name if isinstance(image_name, bpy.types.Image) else bpy.data.images[image_name]
     width, height = image.size
     if width <= 0 or height <= 0:
-        return 0.0, 0.0, 0.0, 1.0
+        raise ValueError("Image has invalid size")
     u = _clamp(float(uv[0]), 0.0, 1.0)
     v = _clamp(float(uv[1]), 0.0, 1.0)
     x = int(u * (width - 1))
@@ -63,16 +58,13 @@ def _sample_image(image_name, uv: Tuple[float, float]) -> Tuple[float, float, fl
         if cached is not None and cached[0] == width and cached[1] == height:
             pixels = cached[2]
         else:
-            try:
-                pixels = list(image.pixels)
-            except Exception:
-                pixels = None
+            pixels = list(image.pixels)
             if pixels is not None:
                 _IMAGE_CACHE[key] = (width, height, pixels)
     if pixels is None:
         pixels = image.pixels
     if idx + 3 >= len(pixels):
-        return 0.0, 0.0, 0.0, 1.0
+        raise ValueError("Sample index out of range for image pixels")
     return float(pixels[idx]), float(pixels[idx + 1]), float(pixels[idx + 2]), float(pixels[idx + 3])
 
 

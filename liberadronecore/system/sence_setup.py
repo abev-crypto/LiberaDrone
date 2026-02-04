@@ -121,35 +121,20 @@ def _fill_preview_image(img: bpy.types.Image, ring: bool) -> None:
 
 
 def _pack_preview_image(img: bpy.types.Image) -> None:
-    try:
-        img.pack(as_png=True)
-    except Exception:
-        try:
-            img.pack()
-        except Exception:
-            return
-
-    try:
-        filepath = getattr(img, "filepath", "") or ""
-        if not filepath and getattr(bpy.data, "is_saved", False):
-            img.filepath_raw = f"//{img.name}"
-            img.file_format = 'PNG'
-            filepath = img.filepath
-        if filepath:
-            img.save()
-    except Exception:
-        pass
-
-
+    img.pack(as_png=True)
+    filepath = getattr(img, "filepath", "") or ""
+    if not filepath and getattr(bpy.data, "is_saved", False):
+        img.filepath_raw = f"//{img.name}"
+        img.file_format = 'PNG'
+        filepath = img.filepath
+    if filepath:
+        img.save()
 def _ensure_preview_image(name: str, *, ring: bool) -> bpy.types.Image:
     img = bpy.data.images.get(name)
     if img is None:
         img = bpy.data.images.new(name=name, width=IMG_SIZE, height=IMG_SIZE, alpha=True)
     if img.size[0] != IMG_SIZE or img.size[1] != IMG_SIZE:
-        try:
-            img.scale(IMG_SIZE, IMG_SIZE)
-        except Exception:
-            pass
+        img.scale(IMG_SIZE, IMG_SIZE)
     _fill_preview_image(img, ring)
     img.use_fake_user = True
     _pack_preview_image(img)
@@ -161,15 +146,8 @@ def get_or_create_emission_attr_material(mat_name=MAT_NAME, attr_name=ATTR_NAME,
     if mat is None:
         mat = bpy.data.materials.new(mat_name)
     mat.use_nodes = True
-    try:
-        mat.blend_method = 'HASHED'
-    except Exception:
-        pass
-    try:
-        mat.shadow_method = 'HASHED'
-    except Exception:
-        pass
-
+    mat.blend_method = 'HASHED'
+    mat.shadow_method = 'HASHED'
     nt = mat.node_tree
     nodes = nt.nodes
     links = nt.links
@@ -283,10 +261,7 @@ def create_any_mesh_points(name=ANY_MESH_NAME, n_verts=ANY_MESH_VERTS):
 def init_scene_env(n_verts=None, *, create_any_mesh: bool = True):
     global ANY_MESH_VERTS
     if n_verts is not None:
-        try:
-            ANY_MESH_VERTS = int(n_verts)
-        except Exception:
-            pass
+        ANY_MESH_VERTS = int(n_verts)
     # 1) Collections.
     root = None
     cols = {n: get_or_create_collection(n, parent=root) for n in COLLECTION_NAMES}
