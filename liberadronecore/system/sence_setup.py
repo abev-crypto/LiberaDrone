@@ -11,6 +11,8 @@ ATTR_NAME = "color"
 
 MAT_NAME = "MAT_Emission_AttrColor"
 MAT_RING_NAME = "MAT_Emission_AttrColor_Ring"
+MAT_NAME_MASK = "MAT_Emission_AttrColor_Mask"
+MAT_RING_NAME_MASK = "MAT_Emission_AttrColor_Ring_Mask"
 IMG_CIRCLE_NAME = "PreviewDrone_Circle.png"
 IMG_RING_NAME = "PreviewDrone_Ring.png"
 IMG_SIZE = 64
@@ -166,7 +168,14 @@ def _ensure_preview_image(name: str, *, ring: bool) -> bpy.types.Image:
     return img
 
 
-def get_or_create_emission_attr_material(mat_name=MAT_NAME, attr_name=ATTR_NAME, image_name: Optional[str] = None):
+def get_or_create_emission_attr_material(
+    mat_name=MAT_NAME,
+    attr_name=ATTR_NAME,
+    image_name: Optional[str] = None,
+    *,
+    vertex_alpha_mask: bool = False,
+    mask_threshold: float = 0.005,
+):
     mat = bpy.data.materials.get(mat_name)
     if mat is None:
         mat = bpy.data.materials.new(mat_name)
@@ -228,6 +237,27 @@ def get_or_create_emission_attr_material(mat_name=MAT_NAME, attr_name=ATTR_NAME,
     if emission_input is not None:
         links.new(mix.outputs[2], emission_input)
     links.new(image_tex.outputs[0], principled.inputs[4])
+    alpha_input = principled.inputs.get("Alpha")
+    if alpha_input is None and len(principled.inputs) > 19:
+        alpha_input = principled.inputs[19]
+    image_color = image_tex.outputs.get("Color")
+    if image_color is None and len(image_tex.outputs) > 0:
+        image_color = image_tex.outputs[0]
+    if alpha_input is not None and image_color is not None:
+        if vertex_alpha_mask:
+            alpha_thresh = nodes.new("ShaderNodeMath")
+            alpha_thresh.location = (-20, -120)
+            alpha_thresh.operation = 'GREATER_THAN'
+            alpha_thresh.inputs[1].default_value = float(mask_threshold)
+            alpha_mult = nodes.new("ShaderNodeMath")
+            alpha_mult.location = (200, -120)
+            alpha_mult.operation = 'MULTIPLY'
+            links.new(attr.outputs[0], alpha_thresh.inputs[0])
+            links.new(image_color, alpha_mult.inputs[0])
+            links.new(alpha_thresh.outputs[0], alpha_mult.inputs[1])
+            links.new(alpha_mult.outputs[0], alpha_input)
+        else:
+            links.new(image_color, alpha_input)
     links.new(principled.outputs[0], out.inputs[0])
 
     return mat
@@ -295,6 +325,18 @@ def init_scene_env(n_verts=None, *, create_any_mesh: bool = True):
     # 2) Emission + attribute color materials.
     mat = get_or_create_emission_attr_material(MAT_NAME, ATTR_NAME, image_name=IMG_CIRCLE_NAME)
     get_or_create_emission_attr_material(MAT_RING_NAME, ATTR_NAME, image_name=IMG_RING_NAME)
+    get_or_create_emission_attr_material(
+        MAT_NAME_MASK,
+        ATTR_NAME,
+        image_name=IMG_CIRCLE_NAME,
+        vertex_alpha_mask=True,
+    )
+    get_or_create_emission_attr_material(
+        MAT_RING_NAME_MASK,
+        ATTR_NAME,
+        image_name=IMG_RING_NAME,
+        vertex_alpha_mask=True,
+    )
 
     # 3) Preview plane (iso marker).
     iso = create_preview_plane(PREVIEW_NAME, PREVIEW_PLANE_SIZE)

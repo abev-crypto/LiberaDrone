@@ -3,3 +3,5 @@ replace_folder.log
 /*.zip
 *.pyc
 AGENTS.md
+doc/
+docs/

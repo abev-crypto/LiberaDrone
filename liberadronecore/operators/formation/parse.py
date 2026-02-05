@@ -331,15 +331,18 @@ class FN_OT_setup_scene(bpy.types.Operator, FN_Register):
         if preview_obj and preview_group:
             _attach_node_group(preview_obj.name, preview_group, "PreviewDroneGN")
             mod = _get_nodes_modifier(preview_obj, "PreviewDroneGN")
+            use_mask = bool(getattr(context.scene, "ld_preview_vertex_alpha_mask", False))
             mat = sence_setup.get_or_create_emission_attr_material(
-                sence_setup.MAT_NAME,
+                sence_setup.MAT_NAME_MASK if use_mask else sence_setup.MAT_NAME,
                 sence_setup.ATTR_NAME,
                 image_name=sence_setup.IMG_CIRCLE_NAME,
+                vertex_alpha_mask=use_mask,
             )
             ring_mat = sence_setup.get_or_create_emission_attr_material(
-                sence_setup.MAT_RING_NAME,
+                sence_setup.MAT_RING_NAME_MASK if use_mask else sence_setup.MAT_RING_NAME,
                 sence_setup.ATTR_NAME,
                 image_name=sence_setup.IMG_RING_NAME,
+                vertex_alpha_mask=use_mask,
             )
             _set_gn_input(mod, "Material", mat)
             _set_gn_input(mod, "CircleMat", ring_mat)

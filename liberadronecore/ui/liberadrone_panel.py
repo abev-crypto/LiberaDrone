@@ -1,5 +1,6 @@
 import bpy
 from liberadronecore.overlay import checker
+from liberadronecore.system import sence_setup
 
 
 PREVIEW_OBJ_NAME = "PreviewDrone"
@@ -112,6 +113,31 @@ def _set_preview_scale(self, value):
     _touch_preview_object()
 
 
+def _get_preview_vertex_alpha_mask(self):
+    mat = _get_gn_input_value(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME, "Material", None)
+    if isinstance(mat, bpy.types.Material):
+        return mat.name == sence_setup.MAT_NAME_MASK
+    return False
+
+
+def _set_preview_vertex_alpha_mask(self, value):
+    use_mask = bool(value)
+    mat = sence_setup.get_or_create_emission_attr_material(
+        sence_setup.MAT_NAME_MASK if use_mask else sence_setup.MAT_NAME,
+        sence_setup.ATTR_NAME,
+        image_name=sence_setup.IMG_CIRCLE_NAME,
+        vertex_alpha_mask=use_mask,
+    )
+    ring_mat = sence_setup.get_or_create_emission_attr_material(
+        sence_setup.MAT_RING_NAME_MASK if use_mask else sence_setup.MAT_RING_NAME,
+        sence_setup.ATTR_NAME,
+        image_name=sence_setup.IMG_RING_NAME,
+        vertex_alpha_mask=use_mask,
+    )
+    _set_gn_input_value(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME, "Material", mat)
+    _set_gn_input_value(PREVIEW_OBJ_NAME, PREVIEW_MOD_NAME, "CircleMat", ring_mat)
+    _touch_preview_object()
+
 def _update_range_mesh(mesh, width: float, height: float, depth: float) -> None:
     half_w = width * 0.5
     half_d = depth * 0.5
@@ -177,6 +203,7 @@ class LD_PT_libera_panel_preview(LD_PT_libera_panel_base):
             layout.label(text="PreviewDroneGN not found", icon='ERROR')
         col = layout.column(align=True)
         col.prop(scene, "ld_preview_show_ring", text="ShowRing")
+        col.prop(scene, "ld_preview_vertex_alpha_mask", text="Vertex Alpha Mask")
         col.prop(scene, "ld_preview_scale", text="Scale")
 
 
@@ -300,6 +327,11 @@ def register():
         name="ShowRing",
         get=_get_preview_show_ring,
         set=_set_preview_show_ring,
+    )
+    bpy.types.Scene.ld_preview_vertex_alpha_mask = bpy.props.BoolProperty(
+        name="Vertex Alpha Mask",
+        get=_get_preview_vertex_alpha_mask,
+        set=_set_preview_vertex_alpha_mask,
     )
     bpy.types.Scene.ld_limit_profile = bpy.props.EnumProperty(
         name="Limit Profile",
@@ -459,6 +491,8 @@ def unregister():
         del bpy.types.Scene.ld_proxy_max_speed_up
     if hasattr(bpy.types.Scene, "ld_preview_show_ring"):
         del bpy.types.Scene.ld_preview_show_ring
+    if hasattr(bpy.types.Scene, "ld_preview_vertex_alpha_mask"):
+        del bpy.types.Scene.ld_preview_vertex_alpha_mask
     if hasattr(bpy.types.Scene, "ld_preview_scale"):
         del bpy.types.Scene.ld_preview_scale
 

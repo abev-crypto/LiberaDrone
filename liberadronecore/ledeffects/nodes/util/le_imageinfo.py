@@ -23,7 +23,7 @@ class LDLEDImageInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
         self.outputs.new("NodeSocketImage", "Image")
 
     def draw_buttons(self, context, layout):
-        layout.prop(self, "image")
+        layout.template_ID(self, "image", open="image.open")
 
     def build_code(self, inputs):
         out_var = self.output_var("Image")

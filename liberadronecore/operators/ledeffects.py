@@ -561,6 +561,51 @@ class LDLED_OT_projectionuv_create_mesh(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class LDLED_OT_projectionuv_toggle_preview_material(bpy.types.Operator):
+    bl_idname = "ldled.projectionuv_toggle_preview_material"
+    bl_label = "Toggle Preview Material"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        tree = bpy.data.node_groups.get(self.node_tree_name)
+        node = tree.nodes.get(self.node_name) if tree else None
+        if node is None or not isinstance(node, le_projectionuv.LDLEDProjectionUVNode):
+            self.report({'ERROR'}, "Projection UV node not found")
+            return {'CANCELLED'}
+
+        mesh_socket = node.inputs.get("Mesh")
+        if mesh_socket is None or mesh_socket.is_linked:
+            self.report({'ERROR'}, "Projection mesh input is not set")
+            return {'CANCELLED'}
+
+        obj = mesh_socket.default_value
+        if obj is None or obj.type != 'MESH':
+            self.report({'ERROR'}, "Projection mesh object not found")
+            return {'CANCELLED'}
+
+        image = getattr(node, "preview_image", None)
+        if image is None:
+            self.report({'ERROR'}, "Preview image not set")
+            return {'CANCELLED'}
+
+        mat_name = projectionuv_util._preview_material_name(image)
+        mats = obj.data.materials
+        if mats and mats[0] and mats[0].name == mat_name:
+            mats.clear()
+            obj.display_type = 'BOUNDS'
+        else:
+            mat = projectionuv_util._get_or_create_preview_material(image)
+            if mats:
+                mats[0] = mat
+            else:
+                mats.append(mat)
+            obj.display_type = 'SOLID'
+        return {'FINISHED'}
+
+
 class LDLED_OT_collectionmask_create_collection(bpy.types.Operator):
     bl_idname = "ldled.collectionmask_create_collection"
     bl_label = "Create Mask Collection"
@@ -723,6 +768,7 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.register_class(LDLED_OT_remapframe_fill_current)
         bpy.utils.register_class(LDLED_OT_insidemesh_create_mesh)
         bpy.utils.register_class(LDLED_OT_projectionuv_create_mesh)
+        bpy.utils.register_class(LDLED_OT_projectionuv_toggle_preview_material)
         bpy.utils.register_class(LDLED_OT_collectionmask_create_collection)
         bpy.utils.register_class(LDLED_OT_idmask_add_selection)
         bpy.utils.register_class(LDLED_OT_idmask_remove_selection)
@@ -737,6 +783,7 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.unregister_class(LDLED_OT_idmask_add_selection)
         bpy.utils.unregister_class(LDLED_OT_collectionmask_create_collection)
         bpy.utils.unregister_class(LDLED_OT_projectionuv_create_mesh)
+        bpy.utils.unregister_class(LDLED_OT_projectionuv_toggle_preview_material)
         bpy.utils.unregister_class(LDLED_OT_insidemesh_create_mesh)
         bpy.utils.unregister_class(LDLED_OT_remapframe_fill_current)
         bpy.utils.unregister_class(LDLED_OT_frameentry_fill_current)

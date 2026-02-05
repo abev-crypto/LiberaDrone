@@ -24,9 +24,6 @@ class LDLEDVertexColorNode(bpy.types.Node, LDLED_CodeNodeBase):
         self.inputs.new("NodeSocketObject", "Mesh")
         self.outputs.new("NodeSocketColor", "Color")
 
-    def draw_buttons(self, context, layout):
-        layout.prop(self, "target_object")
-
     def build_code(self, inputs):
         out_var = self.output_var("Color")
         obj_expr = inputs.get("Mesh", "None")
