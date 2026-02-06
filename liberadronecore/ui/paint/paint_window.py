@@ -68,6 +68,10 @@ class PaintControlWindow(QtWidgets.QMainWindow):
         self.hard_brush_check = QtWidgets.QCheckBox()
         self.hard_brush_check.toggled.connect(self._on_hard_brush_toggled)
         brush_row.addWidget(self.hard_brush_check)
+        brush_row.addWidget(QtWidgets.QLabel("Eraser"))
+        self.eraser_check = QtWidgets.QCheckBox()
+        self.eraser_check.toggled.connect(self._on_eraser_toggled)
+        brush_row.addWidget(self.eraser_check)
         root.addLayout(brush_row)
 
         btn_row = QtWidgets.QHBoxLayout()
@@ -123,6 +127,7 @@ class PaintControlWindow(QtWidgets.QMainWindow):
         self.radius_slider.setEnabled(enabled)
         self.blend_combo.setEnabled(enabled)
         self.hard_brush_check.setEnabled(enabled)
+        self.eraser_check.setEnabled(enabled)
         self.btn_apply.setEnabled(enabled)
         self.btn_vertex.setEnabled(enabled)
         self.btn_screen.setEnabled(enabled)
@@ -161,6 +166,7 @@ class PaintControlWindow(QtWidgets.QMainWindow):
                     self.blend_combo.setCurrentIndex(i)
                     break
             self.hard_brush_check.setChecked(bool(node.paint_hard_brush))
+            self.eraser_check.setChecked(bool(node.paint_erase))
         finally:
             self._updating = False
 
@@ -216,6 +222,14 @@ class PaintControlWindow(QtWidgets.QMainWindow):
         if node is None:
             return
         node.paint_hard_brush = bool(checked)
+
+    def _on_eraser_toggled(self, checked):
+        if self._updating:
+            return
+        node = self._node()
+        if node is None:
+            return
+        node.paint_erase = bool(checked)
 
     def _on_apply(self):
         override = self._view_override()

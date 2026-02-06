@@ -104,7 +104,7 @@ def draw_paint_preview():
         if pos_2d is None:
             continue
         coords.append((pos_2d.x, pos_2d.y))
-        colors.append((color[0], color[1], color[2], 1.0))
+        colors.append((color[0], color[1], color[2], color[3]))
 
     if coords:
         _draw_points_2d(coords, colors, _POINT_SIZE)

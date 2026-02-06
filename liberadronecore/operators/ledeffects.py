@@ -851,6 +851,8 @@ class LDLED_OT_paint_modal(bpy.types.Operator):
     _cursor_eyedropper = False
     _formation_map = None
     _formation_error = None
+    _did_paint = False
+    _stroke_snapshot = False
 
     def invoke(self, context, event):
         if context.area.type != 'VIEW_3D':
@@ -906,6 +908,9 @@ class LDLED_OT_paint_modal(bpy.types.Operator):
         self._vidx_list = None
         paint_util.set_eyedrop_mode(None)
         paint_util.set_paint_modal_active(False)
+        node = paint_util.active_node()
+        if node is not None:
+            paint_util.clear_history(node)
         paint_util.clear_active_node()
 
     def _update_brush_draw(self, context, event):
@@ -1079,6 +1084,18 @@ class LDLED_OT_paint_modal(bpy.types.Operator):
         if event.type == 'ESC':
             self.finish(context)
             return {'CANCELLED'}
+        if event.type == 'Z' and event.value == 'PRESS' and event.ctrl:
+            node = paint_util.active_node()
+            if node is not None:
+                if event.shift:
+                    updated = paint_util.redo_history(node)
+                else:
+                    updated = paint_util.undo_history(node)
+                if updated:
+                    node.id_data.update_tag()
+                    if context.area:
+                        context.area.tag_redraw()
+            return {'RUNNING_MODAL'}
 
         if event.type == 'LEFT_BRACKET' and event.value == 'PRESS':
             node = paint_util.active_node()
@@ -1087,7 +1104,6 @@ class LDLED_OT_paint_modal(bpy.types.Operator):
             self._brush_radius_px = radius
             if context.area:
                 context.area.tag_redraw()
-            print(f"[Paint] radius={radius:.1f}px")
             self._set_header_text(context)
             return {'RUNNING_MODAL'}
         if event.type == 'RIGHT_BRACKET' and event.value == 'PRESS':
@@ -1097,7 +1113,6 @@ class LDLED_OT_paint_modal(bpy.types.Operator):
             self._brush_radius_px = radius
             if context.area:
                 context.area.tag_redraw()
-            print(f"[Paint] radius={radius:.1f}px")
             self._set_header_text(context)
             return {'RUNNING_MODAL'}
 
@@ -1117,21 +1132,39 @@ class LDLED_OT_paint_modal(bpy.types.Operator):
         if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
             self._ensure_cache_valid(context)
             self._painting = True
+            self._did_paint = False
+            self._stroke_snapshot = False
             hits = self._compute_hits(context, event)
             hits = self._map_hits_to_formation(hits)
             if hits:
                 node = paint_util.active_node()
+                if not self._stroke_snapshot:
+                    paint_util.push_history(node)
+                    self._stroke_snapshot = True
                 color = node.paint_color
-                paint_util.apply_paint(node, hits, color, node.paint_alpha, node.blend_mode)
+                paint_util.apply_paint(
+                    node,
+                    hits,
+                    color,
+                    node.paint_alpha,
+                    node.blend_mode,
+                    erase=bool(node.paint_erase),
+                )
                 node.id_data.update_tag()
+                self._did_paint = True
                 primary = hits[0][0]
                 if primary != self._last_primary:
                     self._last_primary = primary
-                    print(f"[Paint] primary_vert={primary} hits={len(hits)}")
             return {'RUNNING_MODAL'}
 
         if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
             self._painting = False
+            if self._did_paint:
+                node = paint_util.active_node()
+                if node is not None:
+                    paint_util.clear_paint_cache(node)
+                self._did_paint = False
+            self._stroke_snapshot = False
             return {'RUNNING_MODAL'}
 
         if event.type == 'MOUSEMOVE' and self._painting:
@@ -1140,13 +1173,23 @@ class LDLED_OT_paint_modal(bpy.types.Operator):
             hits = self._map_hits_to_formation(hits)
             if hits:
                 node = paint_util.active_node()
+                if not self._stroke_snapshot:
+                    paint_util.push_history(node)
+                    self._stroke_snapshot = True
                 color = node.paint_color
-                paint_util.apply_paint(node, hits, color, node.paint_alpha, node.blend_mode)
+                paint_util.apply_paint(
+                    node,
+                    hits,
+                    color,
+                    node.paint_alpha,
+                    node.blend_mode,
+                    erase=bool(node.paint_erase),
+                )
                 node.id_data.update_tag()
+                self._did_paint = True
                 primary = hits[0][0]
                 if primary != self._last_primary:
                     self._last_primary = primary
-                    print(f"[Paint] primary_vert={primary} hits={len(hits)}")
             return {'RUNNING_MODAL'}
 
         return {'RUNNING_MODAL'}
@@ -1185,8 +1228,17 @@ class LDLED_OT_paint_apply_selection(bpy.types.Operator):
         if not hits:
             self.report({'ERROR'}, "No valid formation_id")
             return {'CANCELLED'}
-        paint_util.apply_paint(node, hits, node.paint_color, node.paint_alpha, node.blend_mode)
+        paint_util.apply_paint(
+            node,
+            hits,
+            node.paint_color,
+            node.paint_alpha,
+            node.blend_mode,
+            erase=bool(node.paint_erase),
+        )
         node.id_data.update_tag()
+        paint_util.clear_paint_cache(node)
+        bpy.ops.ed.undo_push(message="LED Paint Apply")
         return {'FINISHED'}
 
 

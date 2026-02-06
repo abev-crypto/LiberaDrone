@@ -30,11 +30,13 @@ PAINT_BLEND_MODES = [
 ]
 
 _PAINT_CACHE: dict[str, dict[int, tuple[float, float, float, float]]] = {}
-_PAINT_ITEMS: dict[str, dict[int, bpy.types.PropertyGroup]] = {}
 _ACTIVE_NODE: tuple[str, str] | None = None
 _LAST_MOUSE: tuple[int, int] | None = None
 _EYEDROP_MODE: str | None = None
 _MODAL_ACTIVE = False
+_PAINT_HISTORY: dict[str, list[dict[int, tuple[float, float, float, float]]]] = {}
+_PAINT_REDO: dict[str, list[dict[int, tuple[float, float, float, float]]]] = {}
+_PAINT_HISTORY_LIMIT = 32
 
 
 def _paint_key(tree_name: str, node_name: str) -> str:
@@ -96,14 +98,11 @@ def get_paint_cache(node: bpy.types.Node | None) -> dict[int, tuple[float, float
 def ensure_paint_cache(node: bpy.types.Node) -> dict[int, tuple[float, float, float, float]]:
     key = _paint_key(node.id_data.name, node.name)
     colors = {}
-    items = {}
     for item in node.paint_items:
         idx = int(item.index)
         color = tuple(float(c) for c in item.color)
         colors[idx] = color
-        items[idx] = item
     _PAINT_CACHE[key] = colors
-    _PAINT_ITEMS[key] = items
     return colors
 
 
@@ -115,27 +114,79 @@ def _get_cache(node: bpy.types.Node) -> dict[int, tuple[float, float, float, flo
     return colors
 
 
-def _get_items(node: bpy.types.Node) -> dict[int, bpy.types.PropertyGroup]:
+def clear_paint_cache(node: bpy.types.Node) -> None:
     key = _paint_key(node.id_data.name, node.name)
-    items = _PAINT_ITEMS.get(key)
-    if items is None:
-        ensure_paint_cache(node)
-        items = _PAINT_ITEMS[key]
-    return items
+    _PAINT_CACHE.pop(key, None)
+
+
+def push_history(node: bpy.types.Node) -> None:
+    key = _paint_key(node.id_data.name, node.name)
+    history = _PAINT_HISTORY.setdefault(key, [])
+    snapshot = {int(item.index): tuple(float(c) for c in item.color) for item in node.paint_items}
+    history.append(snapshot)
+    if len(history) > _PAINT_HISTORY_LIMIT:
+        history.pop(0)
+    _PAINT_REDO.pop(key, None)
+
+
+def undo_history(node: bpy.types.Node) -> bool:
+    key = _paint_key(node.id_data.name, node.name)
+    history = _PAINT_HISTORY.get(key)
+    if not history:
+        return False
+    redo = _PAINT_REDO.setdefault(key, [])
+    current = {int(item.index): tuple(float(c) for c in item.color) for item in node.paint_items}
+    redo.append(current)
+    snapshot = history.pop()
+    _restore_history(node, snapshot)
+    clear_paint_cache(node)
+    return True
+
+
+def redo_history(node: bpy.types.Node) -> bool:
+    key = _paint_key(node.id_data.name, node.name)
+    redo = _PAINT_REDO.get(key)
+    if not redo:
+        return False
+    history = _PAINT_HISTORY.setdefault(key, [])
+    current = {int(item.index): tuple(float(c) for c in item.color) for item in node.paint_items}
+    history.append(current)
+    if len(history) > _PAINT_HISTORY_LIMIT:
+        history.pop(0)
+    snapshot = redo.pop()
+    _restore_history(node, snapshot)
+    clear_paint_cache(node)
+    return True
+
+
+def clear_history(node: bpy.types.Node) -> None:
+    key = _paint_key(node.id_data.name, node.name)
+    _PAINT_HISTORY.pop(key, None)
+    _PAINT_REDO.pop(key, None)
+
+
+def _restore_history(node: bpy.types.Node, snapshot: dict[int, tuple[float, float, float, float]]) -> None:
+    node.paint_items.clear()
+    for idx, color in sorted(snapshot.items(), key=lambda item: item[0]):
+        item = node.paint_items.add()
+        item.index = int(idx)
+        item.color = color
 
 
 def set_paint_color(
     node: bpy.types.Node,
     idx: int,
     color: tuple[float, float, float, float],
+    item_map: dict[int, bpy.types.PropertyGroup] | None = None,
 ) -> None:
     colors = _get_cache(node)
-    items = _get_items(node)
-    item = items.get(int(idx))
+    if item_map is None:
+        item_map = {int(item.index): item for item in node.paint_items}
+    item = item_map.get(int(idx))
     if item is None:
         item = node.paint_items.add()
         item.index = int(idx)
-        items[int(idx)] = item
+        item_map[int(idx)] = item
     item.color = color
     colors[int(idx)] = color
 
@@ -146,10 +197,12 @@ def apply_paint(
     color_rgb: tuple[float, float, float],
     alpha: float,
     blend_mode: str,
+    erase: bool = False,
 ) -> None:
     if not hits:
         return
     colors = _get_cache(node)
+    item_map = {int(item.index): item for item in node.paint_items}
     r, g, b = (float(color_rgb[0]), float(color_rgb[1]), float(color_rgb[2]))
     alpha_val = float(alpha)
     for vidx, weight in hits:
@@ -157,11 +210,28 @@ def apply_paint(
         if strength <= 0.0:
             continue
         current = colors.get(int(vidx), (0.0, 0.0, 0.0, 0.0))
+        if erase:
+            new_alpha = current[3] - strength
+            if new_alpha <= 0.0:
+                set_paint_color(node, int(vidx), (0.0, 0.0, 0.0, 0.0), item_map=item_map)
+            else:
+                set_paint_color(
+                    node,
+                    int(vidx),
+                    (float(current[0]), float(current[1]), float(current[2]), float(new_alpha)),
+                    item_map=item_map,
+                )
+            continue
         dst = [current[0], current[1], current[2], 1.0]
         src = [r, g, b, 1.0]
         blended = _blend_over(dst, src, strength, blend_mode)
         new_alpha = current[3] + (alpha_val - current[3]) * float(weight)
-        set_paint_color(node, int(vidx), (float(blended[0]), float(blended[1]), float(blended[2]), float(new_alpha)))
+        set_paint_color(
+            node,
+            int(vidx),
+            (float(blended[0]), float(blended[1]), float(blended[2]), float(new_alpha)),
+            item_map=item_map,
+        )
 
 
 def selected_vertex_indices(obj: bpy.types.Object) -> list[int]:

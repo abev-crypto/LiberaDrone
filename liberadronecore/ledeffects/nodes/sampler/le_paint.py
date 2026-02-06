@@ -63,6 +63,11 @@ class LDLEDPaintNode(bpy.types.Node, LDLED_CodeNodeBase):
         default=False,
         options={'LIBRARY_EDITABLE'},
     )
+    paint_erase: bpy.props.BoolProperty(
+        name="Eraser",
+        default=False,
+        options={'LIBRARY_EDITABLE'},
+    )
     paint_items: bpy.props.CollectionProperty(type=LDLEDPaintItem, options={'LIBRARY_EDITABLE'})
 
     @classmethod
