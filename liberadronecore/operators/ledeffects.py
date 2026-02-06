@@ -4,6 +4,8 @@ import os
 import bpy
 import bmesh
 import numpy as np
+from mathutils import Vector
+from mathutils.kdtree import KDTree
 
 from liberadronecore.ledeffects.nodes.mask import le_collectionmask
 from liberadronecore.ledeffects.nodes.mask import le_idmask
@@ -13,6 +15,7 @@ from liberadronecore.ledeffects.nodes.position import le_projectionuv
 from liberadronecore.ledeffects.nodes.sampler import le_image
 from liberadronecore.ledeffects.nodes.entry import le_frameentry
 from liberadronecore.ledeffects.nodes.util import le_catcache
+from liberadronecore.ledeffects.nodes.util import le_paintcache
 from liberadronecore.ledeffects.nodes.util import le_meshinfo
 from liberadronecore.formation import fn_parse
 from liberadronecore.reg.base_reg import RegisterBase
@@ -372,6 +375,179 @@ class LDLED_OT_cat_cache_bake(bpy.types.Operator):
         node.image = img
         scene.frame_set(original_frame)
         ledeffects_task.suspend_led_effects(False)
+
+        return {'FINISHED'}
+
+
+class LDLED_OT_paint_cache_bake(bpy.types.Operator):
+    bl_idname = "ldled.paint_cache_bake"
+    bl_label = "Bake Paint Cache"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        tree = bpy.data.node_groups.get(self.node_tree_name)
+        node = tree.nodes.get(self.node_name) if tree else None
+        if node is None or not isinstance(node, le_paintcache.LDLEDPaintCacheNode):
+            self.report({'ERROR'}, "Paint Cache node not found")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        if scene is None:
+            self.report({'ERROR'}, "No active scene")
+            return {'CANCELLED'}
+
+        color_fn = le_catcache.led_codegen_runtime.compile_led_socket(
+            tree,
+            node,
+            "Color",
+            force_inputs=True,
+        )
+        if color_fn is None:
+            self.report({'ERROR'}, "Failed to compile Color input")
+            return {'CANCELLED'}
+
+        allow_fn = le_catcache.led_codegen_runtime.compile_led_socket(
+            tree,
+            node,
+            "AllowIDs",
+            force_inputs=True,
+        )
+        frame = int(scene.frame_current)
+        allow_ids = allow_fn(0, (0.0, 0.0, 0.0), frame) if allow_fn else None
+
+        allow_set = None
+        if allow_ids is None:
+            allow_set = None
+        elif isinstance(allow_ids, (list, tuple, set)):
+            allow_set = {int(v) for v in allow_ids if int(v) >= 0}
+        else:
+            allow_set = {int(allow_ids)}
+
+        positions, pair_ids, formation_ids = ledeffects_task._collect_formation_positions(scene)
+        if positions is None or len(positions) == 0:
+            self.report({'ERROR'}, "No formation vertices")
+            return {'CANCELLED'}
+        if formation_ids is None or len(formation_ids) != len(positions):
+            self.report({'ERROR'}, "formation_id attribute not found")
+            return {'CANCELLED'}
+
+        positions_list = [tuple(float(v) for v in pos) for pos in positions]
+        min_x = min(p[0] for p in positions_list)
+        max_x = max(p[0] for p in positions_list)
+        min_z = min(p[2] for p in positions_list)
+        max_z = max(p[2] for p in positions_list)
+        span_x = max(0.0001, max_x - min_x)
+        span_z = max(0.0001, max_z - min_z)
+
+        mapping = {}
+        for src_idx, fid in enumerate(formation_ids):
+            fid_val = int(fid)
+            if allow_set is not None and fid_val not in allow_set:
+                continue
+            if fid_val in mapping:
+                continue
+            pos = positions_list[src_idx]
+            runtime_idx = int(pair_ids[src_idx]) if pair_ids is not None else int(src_idx)
+            u = (pos[0] - min_x) / span_x
+            v = (pos[2] - min_z) / span_z
+            mapping[fid_val] = (u, v, runtime_idx, pos)
+
+        if not mapping:
+            self.report({'ERROR'}, "No valid formation IDs to cache")
+            return {'CANCELLED'}
+
+        positions_cache, _inv_map = led_eval.order_positions_cache_by_pair_ids(positions_list, pair_ids)
+        le_meshinfo.begin_led_frame_cache(
+            frame,
+            positions_cache,
+            formation_ids=formation_ids,
+            pair_ids=pair_ids,
+        )
+        colors_by_fid = {}
+        try:
+            for fid_val, (u, v, runtime_idx, pos) in mapping.items():
+                color = color_fn(runtime_idx, pos, frame)
+                if not color:
+                    color = (0.0, 0.0, 0.0, 1.0)
+                if len(color) < 4:
+                    color = (float(color[0]), float(color[1]), float(color[2]), 1.0)
+                else:
+                    color = (
+                        float(color[0]),
+                        float(color[1]),
+                        float(color[2]),
+                        float(color[3]),
+                    )
+                colors_by_fid[fid_val] = (u, v, color)
+        finally:
+            le_meshinfo.end_led_frame_cache()
+
+        uv_points = []
+        uv_colors = []
+        for u, v, color in colors_by_fid.values():
+            uv_points.append((float(u), float(v)))
+            uv_colors.append(color)
+
+        if not uv_points:
+            self.report({'ERROR'}, "No colors generated")
+            return {'CANCELLED'}
+
+        if node.image:
+            width, height = node.image.size
+        else:
+            width = 512
+            height = 512
+
+        width = max(1, int(width))
+        height = max(1, int(height))
+
+        kd = KDTree(len(uv_points))
+        for i, (u, v) in enumerate(uv_points):
+            kd.insert(Vector((u, v, 0.0)), i)
+        kd.balance()
+
+        pixels = np.zeros((height, width, 4), dtype=np.float32)
+        x_div = max(1, width - 1)
+        y_div = max(1, height - 1)
+        for y in range(height):
+            v = y / y_div
+            for x in range(width):
+                u = x / x_div
+                _co, idx, _dist = kd.find(Vector((u, v, 0.0)))
+                pixels[y, x] = uv_colors[int(idx)]
+
+        png_path = le_catcache.image_util.scene_cache_path(
+            f"{node.label}_PaintCache",
+            "PNG",
+            scene=scene,
+            create=True,
+        )
+        if not png_path:
+            self.report({'ERROR'}, "Cache path not available (save the blend file)")
+            return {'CANCELLED'}
+
+        if not le_catcache.image_util.write_png_rgba(png_path, pixels, colorspace="Non-Color"):
+            self.report({'ERROR'}, "Failed to write Paint Cache image")
+            return {'CANCELLED'}
+
+        abs_path = bpy.path.abspath(png_path)
+        img = node.image
+        if img is not None:
+            img_path = bpy.path.abspath(img.filepath)
+            if img_path and os.path.normpath(img_path) == os.path.normpath(abs_path):
+                img.reload()
+            else:
+                img = None
+        if img is None:
+            img = bpy.data.images.load(abs_path, check_existing=True)
+
+        img.colorspace_settings.name = "Non-Color"
+        img.use_fake_user = True
+        node.image = img
+        le_image._IMAGE_CACHE.pop(int(img.as_pointer()), None)
 
         return {'FINISHED'}
 
@@ -1251,6 +1427,7 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.register_class(LDLED_OT_add_reroute)
         bpy.utils.register_class(LDLED_OT_group_selected)
         bpy.utils.register_class(LDLED_OT_cat_cache_bake)
+        bpy.utils.register_class(LDLED_OT_paint_cache_bake)
         bpy.utils.register_class(LDLED_OT_frameentry_fill_current)
         bpy.utils.register_class(LDLED_OT_remapframe_fill_current)
         bpy.utils.register_class(LDLED_OT_insidemesh_create_mesh)
@@ -1284,6 +1461,7 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.unregister_class(LDLED_OT_insidemesh_create_mesh)
         bpy.utils.unregister_class(LDLED_OT_remapframe_fill_current)
         bpy.utils.unregister_class(LDLED_OT_frameentry_fill_current)
+        bpy.utils.unregister_class(LDLED_OT_paint_cache_bake)
         bpy.utils.unregister_class(LDLED_OT_cat_cache_bake)
         bpy.utils.unregister_class(LDLED_OT_group_selected)
         bpy.utils.unregister_class(LDLED_OT_add_reroute)
