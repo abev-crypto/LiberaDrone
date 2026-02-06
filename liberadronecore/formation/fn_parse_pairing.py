@@ -178,31 +178,107 @@ def _assign_formation_ids(
     if not meshes:
         return False
 
-    need_assign = False
-    for obj in meshes:
-        attr = obj.data.attributes.get(FORMATION_ATTR_NAME)
-        if not attr or attr.domain != 'POINT' or attr.data_type != 'INT' or len(attr.data) != len(obj.data.vertices):
-            need_assign = True
-            break
-    if not force and not need_assign:
-        return False
-
     count = max(0, int(drone_count)) if drone_count else None
-    next_id = 0
+    if force:
+        next_id = 0
+        for obj in meshes:
+            mesh = obj.data
+            form_attr = _ensure_int_point_attr(mesh, FORMATION_ATTR_NAME)
+            pair_attr = _ensure_int_point_attr(mesh, PAIR_ATTR_NAME)
+            vert_len = len(mesh.vertices)
+            values = []
+            for _i in range(vert_len):
+                if count:
+                    vid = next_id % count
+                else:
+                    vid = next_id
+                values.append(vid)
+                next_id += 1
+            form_attr.data.foreach_set("value", values)
+            pair_attr.data.foreach_set("value", values)
+        return True
+
+    has_valid_attr = False
+    mesh_info = []
     for obj in meshes:
         mesh = obj.data
+        attr = mesh.attributes.get(FORMATION_ATTR_NAME)
+        valid = bool(
+            attr
+            and attr.domain == 'POINT'
+            and attr.data_type == 'INT'
+            and len(attr.data) == len(mesh.vertices)
+        )
+        if valid:
+            has_valid_attr = True
+            values = [0] * len(mesh.vertices)
+            attr.data.foreach_get("value", values)
+        else:
+            values = [None] * len(mesh.vertices)
+        mesh_info.append((mesh, values, valid))
+
+    if not has_valid_attr:
+        next_id = 0
+        for obj in meshes:
+            mesh = obj.data
+            form_attr = _ensure_int_point_attr(mesh, FORMATION_ATTR_NAME)
+            pair_attr = _ensure_int_point_attr(mesh, PAIR_ATTR_NAME)
+            vert_len = len(mesh.vertices)
+            values = []
+            for _i in range(vert_len):
+                if count:
+                    vid = next_id % count
+                else:
+                    vid = next_id
+                values.append(vid)
+                next_id += 1
+            form_attr.data.foreach_set("value", values)
+            pair_attr.data.foreach_set("value", values)
+        return True
+
+    used_ids: set[int] = set()
+    to_assign: list[tuple[bpy.types.Mesh, int]] = []
+    value_map: Dict[bpy.types.Mesh, List[int | None]] = {}
+    for mesh, values, valid in mesh_info:
+        value_map[mesh] = values
+        for idx, fid in enumerate(values):
+            if not valid or fid is None:
+                to_assign.append((mesh, idx))
+                continue
+            fid_val = int(fid)
+            if fid_val < 0:
+                to_assign.append((mesh, idx))
+                continue
+            if count is not None and fid_val >= count:
+                to_assign.append((mesh, idx))
+                continue
+            if fid_val in used_ids:
+                to_assign.append((mesh, idx))
+                continue
+            used_ids.add(fid_val)
+            values[idx] = fid_val
+
+    if not to_assign:
+        return False
+
+    if count is not None:
+        available = [i for i in range(count) if i not in used_ids]
+        if len(to_assign) > len(available):
+            raise ValueError("formation_id range exhausted")
+        for (mesh, idx), new_id in zip(to_assign, available):
+            value_map[mesh][idx] = int(new_id)
+    else:
+        next_id = 0
+        for mesh, idx in to_assign:
+            while next_id in used_ids:
+                next_id += 1
+            value_map[mesh][idx] = int(next_id)
+            used_ids.add(next_id)
+            next_id += 1
+
+    for mesh, values, _valid in mesh_info:
         form_attr = _ensure_int_point_attr(mesh, FORMATION_ATTR_NAME)
         pair_attr = _ensure_int_point_attr(mesh, PAIR_ATTR_NAME)
-        vert_len = len(mesh.vertices)
-        values = []
-        for i in range(vert_len):
-            if count:
-                vid = next_id % count
-            else:
-                vid = next_id
-            values.append(vid)
-            next_id += 1
-        # bulk write
         form_attr.data.foreach_set("value", values)
         pair_attr.data.foreach_set("value", values)
     return True
