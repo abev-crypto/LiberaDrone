@@ -34,6 +34,8 @@ class LDLEDSceneInputNode(bpy.types.Node, LDLED_CodeNodeBase):
     bl_idname = "LDLEDSceneInputNode"
     bl_label = "Scene Input"
     bl_icon = "DRIVER"
+    NODE_CATEGORY_ID = "LD_LED_SOURCE"
+    NODE_CATEGORY_LABEL = "Source"
 
     input_name: bpy.props.StringProperty(
         name="Input",

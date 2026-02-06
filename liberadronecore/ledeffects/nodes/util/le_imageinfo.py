@@ -8,6 +8,8 @@ class LDLEDImageInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
     bl_idname = "LDLEDImageInfoNode"
     bl_label = "Image Info"
     bl_icon = "IMAGE_DATA"
+    NODE_CATEGORY_ID = "LD_LED_SOURCE"
+    NODE_CATEGORY_LABEL = "Source"
 
     image: bpy.props.PointerProperty(
         name="Image",

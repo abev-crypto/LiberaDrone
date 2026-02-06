@@ -665,7 +665,7 @@ def _formation_bbox_relpos(
     return rel_x, rel_y, rel_z
 
 
-def _mesh_formation_ids(mesh: Optional[bpy.types.Mesh]) -> List[int]:
+def _mesh_formation_ids(mesh: Optional[bpy.types.Mesh], require_attr: bool = False) -> List[int]:
     if mesh is None:
         return []
     attr = mesh.attributes.get(fn_parse_pairing.FORMATION_ATTR_NAME)
@@ -682,6 +682,8 @@ def _mesh_formation_ids(mesh: Optional[bpy.types.Mesh]) -> List[int]:
         or attr.data_type != 'INT'
         or len(attr.data) != len(mesh.vertices)
     ):
+        if require_attr:
+            return []
         return list(range(len(mesh.vertices)))
 
     values = [0] * len(mesh.vertices)
@@ -729,7 +731,7 @@ def _collection_formation_ids(
             obj = bpy.data.objects.get(name)
             if obj is None or obj.type != 'MESH':
                 continue
-            _mark_ids(_mesh_formation_ids(obj.data))
+            _mark_ids(_mesh_formation_ids(obj.data, require_attr=True))
     else:
         col = _get_collection(collection_name)
         if col is None:
@@ -742,7 +744,7 @@ def _collection_formation_ids(
             for obj in current.objects:
                 if obj.type != 'MESH':
                     continue
-                _mark_ids(_mesh_formation_ids(obj.data))
+                _mark_ids(_mesh_formation_ids(obj.data, require_attr=True))
             if use_children:
                 stack.extend(list(current.children))
 
@@ -758,6 +760,8 @@ class LDLEDMeshInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
     bl_idname = "LDLEDMeshInfoNode"
     bl_label = "Mesh Info"
     bl_icon = "MESH_DATA"
+    NODE_CATEGORY_ID = "LD_LED_SOURCE"
+    NODE_CATEGORY_LABEL = "Source"
 
     target_object: bpy.props.PointerProperty(
         name="Mesh",

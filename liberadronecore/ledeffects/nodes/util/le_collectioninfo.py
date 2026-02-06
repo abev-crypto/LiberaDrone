@@ -8,6 +8,8 @@ class LDLEDCollectionInfoNode(bpy.types.Node, LDLED_CodeNodeBase):
     bl_idname = "LDLEDCollectionInfoNode"
     bl_label = "Collection Info"
     bl_icon = "OUTLINER_COLLECTION"
+    NODE_CATEGORY_ID = "LD_LED_SOURCE"
+    NODE_CATEGORY_LABEL = "Source"
 
     collection: bpy.props.PointerProperty(
         name="Collection",

@@ -45,6 +45,8 @@ from .util import le_namedattribute
 from .util import le_objectinfo
 from .util import le_paintcache
 from .util import le_sceneinput
+from .util import le_switch
 from .util import le_split
 from .util import le_value
+from .util import le_valuecache
 from .util import le_valuefloat

@@ -20,6 +20,7 @@ from liberadronecore.ledeffects.nodes.util import le_catcache
 from liberadronecore.ledeffects.nodes.util import le_paintcache
 from liberadronecore.ledeffects.nodes.util import le_idjoin
 from liberadronecore.ledeffects.nodes.util import le_meshinfo
+from liberadronecore.ledeffects.nodes.util import le_valuecache
 from liberadronecore.formation import fn_parse
 from liberadronecore.formation import fn_parse_pairing
 from liberadronecore.reg.base_reg import RegisterBase
@@ -31,6 +32,8 @@ from liberadronecore.ledeffects.util import insidemesh as insidemesh_util
 from liberadronecore.ledeffects.util import paint as paint_util
 from liberadronecore.ledeffects.util import projectionuv as projectionuv_util
 from liberadronecore.ledeffects.util import trail as trail_util
+from liberadronecore.ledeffects.util import valuecache as valuecache_util
+from liberadronecore.ledeffects import led_codegen_runtime
 from liberadronecore.ui.paint import paint_window
 from liberadronecore.util import led_eval
 from liberadronecore.util.modeling import delaunay
@@ -742,6 +745,144 @@ class LDLED_OT_projectionuv_create_mesh(bpy.types.Operator):
         mesh_socket = node.inputs.get("Mesh")
         if mesh_socket is not None and hasattr(mesh_socket, "default_value"):
             mesh_socket.default_value = obj
+        return {'FINISHED'}
+
+
+class LDLED_OT_value_cache_bake(bpy.types.Operator):
+    bl_idname = "ldled.value_cache_bake"
+    bl_label = "Bake Value Cache"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        tree = bpy.data.node_groups.get(self.node_tree_name)
+        node = tree.nodes.get(self.node_name) if tree else None
+        if node is None or not isinstance(node, le_valuecache.LDLEDValueCacheNode):
+            self.report({'ERROR'}, "Value Cache node not found")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        if scene is None:
+            self.report({'ERROR'}, "No active scene")
+            return {'CANCELLED'}
+
+        value_fn = led_codegen_runtime.compile_led_socket(
+            tree,
+            node,
+            "Value",
+            force_inputs=True,
+        )
+        if value_fn is None:
+            self.report({'ERROR'}, "Failed to compile Value input")
+            return {'CANCELLED'}
+
+        cache_key = f"{tree.name}::{node.name}"
+        view_layer = context.view_layer
+        original_frame = int(scene.frame_current)
+
+        def _set_frame(frame: int) -> None:
+            scene.frame_set(int(frame))
+            view_layer.update()
+
+        def _eval_frame(frame: int) -> list[float]:
+            _set_frame(frame)
+            positions, pair_ids, formation_ids = ledeffects_task._collect_formation_positions(scene)
+            if positions is None or len(positions) == 0:
+                raise RuntimeError("No formation vertices")
+            if formation_ids is None or len(formation_ids) != len(positions):
+                raise RuntimeError("formation_id attribute not found")
+            positions_list = [tuple(float(v) for v in pos) for pos in positions]
+            max_fid = -1
+            for fid in formation_ids:
+                fid_val = int(fid)
+                if fid_val > max_fid:
+                    max_fid = fid_val
+            if max_fid < 0:
+                raise RuntimeError("formation_id values missing")
+            values = [0.0] * (max_fid + 1)
+            seen = set()
+            positions_cache, _inv_map = led_eval.order_positions_cache_by_pair_ids(
+                positions_list,
+                pair_ids,
+            )
+            le_meshinfo.begin_led_frame_cache(
+                frame,
+                positions_cache,
+                formation_ids=formation_ids,
+                pair_ids=pair_ids,
+            )
+            try:
+                for src_idx, fid in enumerate(formation_ids):
+                    fid_val = int(fid)
+                    if fid_val < 0 or fid_val in seen:
+                        continue
+                    seen.add(fid_val)
+                    runtime_idx = int(pair_ids[src_idx]) if pair_ids is not None else int(src_idx)
+                    val = value_fn(runtime_idx, positions_list[src_idx], frame)
+                    values[fid_val] = float(val)
+            finally:
+                le_meshinfo.end_led_frame_cache()
+            return values
+
+        ledeffects_task.suspend_led_effects(True)
+        try:
+            if node.cache_mode == "ENTRY":
+                entry_fn = led_codegen_runtime.compile_led_socket(
+                    tree,
+                    node,
+                    "Entry",
+                    force_inputs=True,
+                )
+                if entry_fn is None:
+                    self.report({'ERROR'}, "Failed to compile Entry input")
+                    return {'CANCELLED'}
+                entry = entry_fn(0, (0.0, 0.0, 0.0), original_frame)
+                span_items: list[tuple[float, float]] = []
+                if entry:
+                    for items in entry.values():
+                        for start, end in items:
+                            span_items.append((float(start), float(end)))
+                if not span_items:
+                    self.report({'ERROR'}, "Entry span not found")
+                    return {'CANCELLED'}
+                span_items.sort(key=lambda item: (item[0], item[1]))
+                start, end = span_items[0]
+                start_frame = int(start)
+                end_frame = int(end)
+                if end_frame <= start_frame:
+                    self.report({'ERROR'}, "Entry duration is 0")
+                    return {'CANCELLED'}
+                frames: list[list[float]] = []
+                for frame in range(start_frame, end_frame):
+                    frames.append(_eval_frame(int(frame)))
+                valuecache_util.set_value_cache_entry(cache_key, frames, start_frame, end_frame)
+                frame_size = max((len(frame) for frame in frames), default=0)
+                flat_values: list[float] = []
+                for frame in frames:
+                    if len(frame) < frame_size:
+                        frame = list(frame) + [0.0] * (frame_size - len(frame))
+                    flat_values.extend(float(v) for v in frame)
+                node["ld_value_cache"] = {
+                    "mode": "ENTRY",
+                    "values": flat_values,
+                    "frame_size": int(frame_size),
+                    "frame_count": int(len(frames)),
+                    "start": int(start_frame),
+                    "end": int(end_frame),
+                }
+            else:
+                values = _eval_frame(original_frame)
+                valuecache_util.set_value_cache_single(cache_key, values)
+                node["ld_value_cache"] = {
+                    "mode": "SINGLE",
+                    "values": [float(v) for v in values],
+                }
+        finally:
+            scene.frame_set(original_frame)
+            ledeffects_task.suspend_led_effects(False)
+
         return {'FINISHED'}
 
 
@@ -1667,6 +1808,7 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.register_class(LDLED_OT_group_selected)
         bpy.utils.register_class(LDLED_OT_cat_cache_bake)
         bpy.utils.register_class(LDLED_OT_paint_cache_bake)
+        bpy.utils.register_class(LDLED_OT_value_cache_bake)
         bpy.utils.register_class(LDLED_OT_select_formation_ids)
         bpy.utils.register_class(LDLED_OT_frameentry_fill_current)
         bpy.utils.register_class(LDLED_OT_remapframe_fill_current)
@@ -1704,6 +1846,7 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.unregister_class(LDLED_OT_remapframe_fill_current)
         bpy.utils.unregister_class(LDLED_OT_frameentry_fill_current)
         bpy.utils.unregister_class(LDLED_OT_select_formation_ids)
+        bpy.utils.unregister_class(LDLED_OT_value_cache_bake)
         bpy.utils.unregister_class(LDLED_OT_paint_cache_bake)
         bpy.utils.unregister_class(LDLED_OT_cat_cache_bake)
         bpy.utils.unregister_class(LDLED_OT_group_selected)

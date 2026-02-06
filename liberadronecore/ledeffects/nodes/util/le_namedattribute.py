@@ -10,6 +10,8 @@ class LDLEDNamedAttributeNode(bpy.types.Node, LDLED_CodeNodeBase):
     bl_idname = "LDLEDNamedAttributeNode"
     bl_label = "Named Attribute"
     bl_icon = "NODETREE"
+    NODE_CATEGORY_ID = "LD_LED_SOURCE"
+    NODE_CATEGORY_LABEL = "Source"
 
     attribute_name: bpy.props.StringProperty(
         name="Attribute",

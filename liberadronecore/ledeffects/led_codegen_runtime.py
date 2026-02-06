@@ -111,6 +111,27 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
             return
         if not isinstance(node, LDLED_CodeNodeBase):
             return
+        node_idname = getattr(node, "bl_idname", "")
+        if node_idname == "LDLEDSwitchNode":
+            emit_switch_node(
+                node,
+                target_lines,
+                emitted_nodes,
+                fallback_entry=fallback_entry,
+                allow_entry_fallback=allow_entry_fallback,
+            )
+            emitted_nodes.add(node.as_pointer())
+            return
+        if node_idname == "LDLEDValueCacheNode":
+            emit_value_cache_node(
+                node,
+                target_lines,
+                emitted_nodes,
+                fallback_entry=fallback_entry,
+                allow_entry_fallback=allow_entry_fallback,
+            )
+            emitted_nodes.add(node.as_pointer())
+            return
 
         inputs: Dict[str, str] = {}
         allowed_inputs = set(node.code_inputs())
@@ -193,6 +214,277 @@ def compile_led_effect(tree: bpy.types.NodeTree) -> Optional[Callable]:
                 return fallback_entry
             return "_entry_empty()"
         return _default_for_input(socket)
+
+    def emit_node_inline(
+        dep_node: bpy.types.Node,
+        inline_lines: List[str],
+        inline_emitted: set[int],
+        *,
+        fallback_entry: Optional[str] = None,
+        allow_entry_fallback: bool = True,
+    ) -> None:
+        if dep_node.as_pointer() in inline_emitted:
+            return
+        if not isinstance(dep_node, LDLED_CodeNodeBase):
+            return
+
+        inputs: Dict[str, str] = {}
+        allowed_inputs = set(dep_node.code_inputs())
+        for sock in getattr(dep_node, "inputs", []):
+            if allowed_inputs is not None and sock.name not in allowed_inputs:
+                continue
+            inputs[sock.name] = resolve_input_inline(
+                sock,
+                inline_lines,
+                inline_emitted,
+                fallback_entry=fallback_entry,
+                allow_entry_fallback=allow_entry_fallback,
+            )
+
+        output_vars = {
+            sock.name: f"{dep_node.codegen_id()}_{_sanitize_identifier(sock.name)}"
+            for sock in getattr(dep_node, "outputs", [])
+        }
+        dep_node._set_codegen_output_vars(output_vars)
+
+        snippet = dep_node.build_code(inputs) or ""
+        for line in snippet.splitlines():
+            inline_lines.append(line)
+        inline_emitted.add(dep_node.as_pointer())
+
+    def resolve_input_inline(
+        socket: Optional[bpy.types.NodeSocket],
+        inline_lines: List[str],
+        inline_emitted: set[int],
+        *,
+        fallback_entry: Optional[str] = None,
+        allow_entry_fallback: bool = True,
+    ) -> str:
+        if socket is None:
+            return "0.0"
+        is_entry = getattr(socket, "bl_idname", "") == "LDLEDEntrySocket"
+        if is_entry and socket.is_linked and socket.links:
+            entry_vars: List[str] = []
+            for link in socket.links:
+                if not getattr(link, "is_valid", True):
+                    continue
+                from_node = link.from_node
+                from_socket = link.from_socket
+                emit_node_inline(
+                    from_node,
+                    inline_lines,
+                    inline_emitted,
+                    fallback_entry=fallback_entry,
+                    allow_entry_fallback=allow_entry_fallback,
+                )
+                if isinstance(from_node, LDLED_CodeNodeBase):
+                    entry_vars.append(_get_output_var(from_node, from_socket))
+            if not entry_vars:
+                return "_entry_empty()"
+            if len(entry_vars) == 1:
+                return entry_vars[0]
+            merge_var = f"_entry_merge_{len(inline_lines)}"
+            inline_lines.append(f"{merge_var} = _entry_empty()")
+            for entry_var in entry_vars:
+                inline_lines.append(f"{merge_var} = _entry_merge({merge_var}, {entry_var})")
+            return merge_var
+        if socket.is_linked and socket.links:
+            link = socket.links[0]
+            if not getattr(link, "is_valid", True):
+                return _default_for_input(socket)
+            from_node = link.from_node
+            from_socket = link.from_socket
+            emit_node_inline(
+                from_node,
+                inline_lines,
+                inline_emitted,
+                fallback_entry=fallback_entry,
+                allow_entry_fallback=allow_entry_fallback,
+            )
+            if isinstance(from_node, LDLED_CodeNodeBase):
+                return _get_output_var(from_node, from_socket)
+            return _default_for_socket(from_socket)
+        if is_entry:
+            if allow_entry_fallback and fallback_entry is not None:
+                return fallback_entry
+            return "_entry_empty()"
+        return _default_for_input(socket)
+
+    def _emit_value_select(
+        index_var: str,
+        target_var: str,
+        value_sockets: List[Optional[bpy.types.NodeSocket]],
+        target_lines: List[str],
+        *,
+        fallback_entry: Optional[str],
+        allow_entry_fallback: bool,
+        indent: str = "",
+    ) -> None:
+        first = True
+        for idx, sock in enumerate(value_sockets):
+            inline_lines: List[str] = []
+            inline_emitted: set[int] = set()
+            expr = "0.0"
+            if sock is not None:
+                expr = resolve_input_inline(
+                    sock,
+                    inline_lines,
+                    inline_emitted,
+                    fallback_entry=fallback_entry,
+                    allow_entry_fallback=allow_entry_fallback,
+                )
+            keyword = "if" if first else "elif"
+            target_lines.append(f"{indent}{keyword} {index_var} == {idx}:")
+            for line in inline_lines:
+                target_lines.append(f"{indent}    {line}")
+            target_lines.append(f"{indent}    {target_var} = {expr}")
+            first = False
+        target_lines.append(f"{indent}else:")
+        target_lines.append(f"{indent}    {target_var} = 0.0")
+
+    def emit_switch_node(
+        node: bpy.types.Node,
+        target_lines: List[str],
+        emitted_nodes: set[int],
+        *,
+        fallback_entry: Optional[str],
+        allow_entry_fallback: bool,
+    ) -> None:
+        output_vars = {
+            sock.name: f"{node.codegen_id()}_{_sanitize_identifier(sock.name)}"
+            for sock in getattr(node, "outputs", [])
+        }
+        node._set_codegen_output_vars(output_vars)
+        out_var = node.output_var("Value")
+
+        count = max(1, int(getattr(node, "input_count", 2)))
+        name_fn = getattr(node, "_value_socket_names", None)
+        if name_fn is None:
+            return
+        names = name_fn(count)
+        value_sockets = [node.inputs.get(name) for name in names]
+        switch_id = f"{node.codegen_id()}_{int(node.as_pointer())}"
+
+        mode = getattr(node, "switch_mode", "ENTRY")
+        if mode == "VALUE":
+            switch_socket = node.inputs.get("Switch ID") if hasattr(node, "inputs") else None
+            switch_expr = resolve_input(
+                switch_socket,
+                target_lines,
+                emitted_nodes,
+                fallback_entry=fallback_entry,
+                allow_entry_fallback=allow_entry_fallback,
+            )
+            target_lines.append(f"_idx_{switch_id} = int({switch_expr}) % {count}")
+            _emit_value_select(
+                f"_idx_{switch_id}",
+                f"_val_{switch_id}",
+                value_sockets,
+                target_lines,
+                fallback_entry=fallback_entry,
+                allow_entry_fallback=allow_entry_fallback,
+            )
+            target_lines.append(f"{out_var} = _val_{switch_id}")
+            return
+
+        entry_socket = node.inputs.get("Entry") if hasattr(node, "inputs") else None
+        entry_expr = resolve_input(
+            entry_socket,
+            target_lines,
+            emitted_nodes,
+            fallback_entry=fallback_entry,
+            allow_entry_fallback=allow_entry_fallback,
+        )
+        step_frames = int(getattr(node, "step_frames", 1))
+        fade_mode = getattr(node, "fade_mode", "NONE")
+        fade_frames = float(getattr(node, "fade_frames", 0.0))
+        target_lines.append(
+            f"_idx_{switch_id}, _fade_{switch_id} = "
+            f"_switch_eval_fade({entry_expr}, frame, {step_frames}, {count}, "
+            f"{fade_mode!r}, {fade_frames})"
+        )
+        _emit_value_select(
+            f"_idx_{switch_id}",
+            f"_val_{switch_id}",
+            value_sockets,
+            target_lines,
+            fallback_entry=fallback_entry,
+            allow_entry_fallback=allow_entry_fallback,
+        )
+        target_lines.append(f"{out_var} = _val_{switch_id} * _fade_{switch_id}")
+
+    def emit_value_cache_node(
+        node: bpy.types.Node,
+        target_lines: List[str],
+        emitted_nodes: set[int],
+        *,
+        fallback_entry: Optional[str],
+        allow_entry_fallback: bool,
+    ) -> None:
+        output_vars = {
+            sock.name: f"{node.codegen_id()}_{_sanitize_identifier(sock.name)}"
+            for sock in getattr(node, "outputs", [])
+        }
+        node._set_codegen_output_vars(output_vars)
+        out_var = node.output_var("Value")
+
+        cache_key = f"{node.id_data.name}::{node.name}"
+        cache_id = int(node.as_pointer())
+        cache_mode = getattr(node, "cache_mode", "SINGLE")
+        fid_expr = "_formation_id(idx)"
+
+        if cache_mode == "ENTRY":
+            entry_socket = node.inputs.get("Entry") if hasattr(node, "inputs") else None
+            entry_expr = resolve_input(
+                entry_socket,
+                target_lines,
+                emitted_nodes,
+                fallback_entry=fallback_entry,
+                allow_entry_fallback=allow_entry_fallback,
+            )
+            target_lines.append(f"_active_{cache_id} = _entry_active_count({entry_expr}, frame)")
+            target_lines.append(f"if _entry_is_empty({entry_expr}):")
+            target_lines.append(f"    _active_{cache_id} = 1")
+            target_lines.append(f"if _active_{cache_id} > 0:")
+            target_lines.append(f"    if _value_cache_has({cache_key!r}):")
+            target_lines.append(f"        _progress_{cache_id} = _entry_progress({entry_expr}, frame)")
+            target_lines.append(
+                f"        {out_var} = _value_cache_read_entry({cache_key!r}, {fid_expr}, _progress_{cache_id})"
+            )
+            target_lines.append("    else:")
+            inline_lines: List[str] = []
+            inline_emitted: set[int] = set()
+            value_socket = node.inputs.get("Value") if hasattr(node, "inputs") else None
+            value_expr = resolve_input_inline(
+                value_socket,
+                inline_lines,
+                inline_emitted,
+                fallback_entry=fallback_entry,
+                allow_entry_fallback=allow_entry_fallback,
+            )
+            for line in inline_lines:
+                target_lines.append(f"        {line}")
+            target_lines.append(f"        {out_var} = {value_expr}")
+            target_lines.append("else:")
+            target_lines.append(f"    {out_var} = 0.0")
+            return
+
+        target_lines.append(f"if _value_cache_has({cache_key!r}):")
+        target_lines.append(f"    {out_var} = _value_cache_read({cache_key!r}, {fid_expr})")
+        target_lines.append("else:")
+        inline_lines = []
+        inline_emitted = set()
+        value_socket = node.inputs.get("Value") if hasattr(node, "inputs") else None
+        value_expr = resolve_input_inline(
+            value_socket,
+            inline_lines,
+            inline_emitted,
+            fallback_entry=fallback_entry,
+            allow_entry_fallback=allow_entry_fallback,
+        )
+        for line in inline_lines:
+            target_lines.append(f"    {line}")
+        target_lines.append(f"    {out_var} = {value_expr}")
 
     output_meta_blocks: Dict[str, List[str]] = {}
     output_color_blocks: Dict[str, List[str]] = {}
