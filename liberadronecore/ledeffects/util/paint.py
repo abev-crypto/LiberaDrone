@@ -179,19 +179,28 @@ def build_screen_kdtree(
     rv3d = context.region_data
     bm = bmesh.from_edit_mesh(obj.data)
     bm.verts.ensure_lookup_table()
+    selected_idx = {int(v.index) for v in bm.verts if v.select} if only_selected else None
+
+    depsgraph = context.evaluated_depsgraph_get()
+    eval_obj = obj.evaluated_get(depsgraph)
+    eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
 
     pts2d = []
     vidx_list = []
-    mw = obj.matrix_world
-    for v in bm.verts:
-        if only_selected and (not v.select):
-            continue
-        wco = mw @ v.co
-        p2d = view3d_utils.location_3d_to_region_2d(region, rv3d, wco)
-        if p2d is None:
-            continue
-        pts2d.append((float(p2d.x), float(p2d.y), 0.0))
-        vidx_list.append(int(v.index))
+    mw = eval_obj.matrix_world
+    try:
+        for v in eval_mesh.vertices:
+            idx = int(v.index)
+            if selected_idx is not None and idx not in selected_idx:
+                continue
+            wco = mw @ v.co
+            p2d = view3d_utils.location_3d_to_region_2d(region, rv3d, wco)
+            if p2d is None:
+                continue
+            pts2d.append((float(p2d.x), float(p2d.y), 0.0))
+            vidx_list.append(idx)
+    finally:
+        eval_obj.to_mesh_clear()
 
     kd = KDTree(len(pts2d))
     for i, p in enumerate(pts2d):
