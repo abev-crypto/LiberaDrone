@@ -110,6 +110,9 @@ class LDLEDIDJoinNode(bpy.types.Node, LDLED_CodeNodeBase):
     def draw_buttons(self, context, layout):
         layout.prop(self, "mode", text="")
         layout.prop(self, "input_count")
+        op = layout.operator("ldled.select_formation_ids", text="Select IDs")
+        op.node_tree_name = self.id_data.name
+        op.node_name = self.name
 
     def build_code(self, inputs):
         count = max(2, int(self.input_count))

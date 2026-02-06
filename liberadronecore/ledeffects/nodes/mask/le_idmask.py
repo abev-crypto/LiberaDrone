@@ -95,6 +95,9 @@ class LDLEDIDMaskNode(bpy.types.Node, LDLED_CodeNodeBase):
         op = row.operator("ldled.idmask_remove_selection", text="Remove Selection")
         op.node_tree_name = self.id_data.name
         op.node_name = self.name
+        op = layout.operator("ldled.select_formation_ids", text="Select IDs")
+        op.node_tree_name = self.id_data.name
+        op.node_name = self.name
         layout.prop(self, "combine_mode", text="")
         layout.prop(self, "invert")
         layout.prop(self, "remap_rows")

@@ -13,11 +13,15 @@ from liberadronecore.ledeffects.nodes.mask import le_insidemesh
 from liberadronecore.ledeffects.nodes.mask import le_trail
 from liberadronecore.ledeffects.nodes.position import le_projectionuv
 from liberadronecore.ledeffects.nodes.sampler import le_image
+from liberadronecore.ledeffects.nodes.sampler import le_cat
+from liberadronecore.ledeffects.nodes.sampler import le_paint
 from liberadronecore.ledeffects.nodes.entry import le_frameentry
 from liberadronecore.ledeffects.nodes.util import le_catcache
 from liberadronecore.ledeffects.nodes.util import le_paintcache
+from liberadronecore.ledeffects.nodes.util import le_idjoin
 from liberadronecore.ledeffects.nodes.util import le_meshinfo
 from liberadronecore.formation import fn_parse
+from liberadronecore.formation import fn_parse_pairing
 from liberadronecore.reg.base_reg import RegisterBase
 from liberadronecore.ui import ledeffects_panel as led_panel
 from liberadronecore.ledeffects.util import collectionmask as collectionmask_util
@@ -741,6 +745,96 @@ class LDLED_OT_projectionuv_create_mesh(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class LDLED_OT_select_formation_ids(bpy.types.Operator):
+    bl_idname = "ldled.select_formation_ids"
+    bl_label = "Select Formation IDs"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        tree = bpy.data.node_groups.get(self.node_tree_name)
+        node = tree.nodes.get(self.node_name) if tree else None
+        if node is None:
+            self.report({'ERROR'}, "Node not found")
+            return {'CANCELLED'}
+
+        ids: list[int] | None = None
+        if isinstance(node, le_idmask.LDLEDIDMaskNode):
+            ids = idmask_util._node_effective_ids(node, include_legacy=True)
+        elif isinstance(node, le_idjoin.LDLEDIDJoinNode):
+            values = []
+            frame = int(context.scene.frame_current) if context.scene else 0
+            for sock in node.inputs:
+                if getattr(sock, "bl_idname", "") != "LDLEDIDSocket":
+                    continue
+                fn = le_catcache.led_codegen_runtime.compile_led_socket(
+                    tree,
+                    node,
+                    sock.name,
+                    force_inputs=True,
+                )
+                values.append(fn(0, (0.0, 0.0, 0.0), frame) if fn else None)
+            ids = le_idjoin._idjoin_apply(node.mode, values)
+        else:
+            self.report({'ERROR'}, "Unsupported node type")
+            return {'CANCELLED'}
+
+        if not ids:
+            self.report({'ERROR'}, "No IDs to select")
+            return {'CANCELLED'}
+
+        col = bpy.data.collections.get("Formation")
+        if col is None:
+            self.report({'ERROR'}, "Formation collection not found")
+            return {'CANCELLED'}
+        meshes = fn_parse_pairing._collect_mesh_objects(col)
+        if not meshes:
+            self.report({'ERROR'}, "No mesh objects in Formation collection")
+            return {'CANCELLED'}
+
+        if context.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        for obj in list(context.selected_objects):
+            obj.select_set(False)
+        for obj in meshes:
+            obj.select_set(True)
+        context.view_layer.objects.active = meshes[0]
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type='VERT')
+
+        id_set = {int(v) for v in ids}
+        depsgraph = context.evaluated_depsgraph_get()
+        selected_any = False
+        for obj in context.objects_in_mode:
+            if obj.type != 'MESH':
+                continue
+            values, error = formation_ids_util.read_mesh_formation_ids(obj.data)
+            if error:
+                eval_obj = obj.evaluated_get(depsgraph)
+                eval_mesh = eval_obj.to_mesh(preserve_all_data_layers=True, depsgraph=depsgraph)
+                try:
+                    values, error = formation_ids_util.read_mesh_formation_ids(eval_mesh)
+                finally:
+                    eval_obj.to_mesh_clear()
+            if error or len(values) != len(obj.data.vertices):
+                continue
+            bm = bmesh.from_edit_mesh(obj.data)
+            bm.verts.ensure_lookup_table()
+            for idx, vert in enumerate(bm.verts):
+                vert.select = int(values[idx]) in id_set
+            bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
+            if any(v.select for v in bm.verts):
+                selected_any = True
+
+        if not selected_any:
+            self.report({'ERROR'}, "formation_id data missing")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
 class LDLED_OT_projectionuv_toggle_preview_material(bpy.types.Operator):
     bl_idname = "ldled.projectionuv_toggle_preview_material"
     bl_label = "Toggle Preview Material"
@@ -824,6 +918,99 @@ class LDLED_OT_paint_start(bpy.types.Operator):
             )
         if 'RUNNING_MODAL' in result:
             paint_window.show_window()
+        return {'FINISHED'}
+
+
+class LDLED_OT_paint_take(bpy.types.Operator):
+    bl_idname = "ldled.paint_take"
+    bl_label = "Take Paint"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        tree = bpy.data.node_groups.get(self.node_tree_name)
+        node = tree.nodes.get(self.node_name) if tree else None
+        if node is None or not isinstance(node, le_paint.LDLEDPaintNode):
+            self.report({'ERROR'}, "Paint node not found")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        if scene is None:
+            self.report({'ERROR'}, "No active scene")
+            return {'CANCELLED'}
+
+        color_fn = le_catcache.led_codegen_runtime.compile_led_socket(
+            tree,
+            node,
+            "Color",
+            force_inputs=True,
+        )
+        if color_fn is None:
+            self.report({'ERROR'}, "Failed to compile Color input")
+            return {'CANCELLED'}
+
+        positions, pair_ids, formation_ids = ledeffects_task._collect_formation_positions(scene)
+        if positions is None or len(positions) == 0:
+            self.report({'ERROR'}, "No formation vertices")
+            return {'CANCELLED'}
+        if formation_ids is None or len(formation_ids) != len(positions):
+            self.report({'ERROR'}, "formation_id attribute not found")
+            return {'CANCELLED'}
+
+        frame = int(scene.frame_current)
+        positions_list = [tuple(float(v) for v in pos) for pos in positions]
+        positions_cache, _inv_map = led_eval.order_positions_cache_by_pair_ids(positions_list, pair_ids)
+        le_meshinfo.begin_led_frame_cache(
+            frame,
+            positions_cache,
+            formation_ids=formation_ids,
+            pair_ids=pair_ids,
+        )
+
+        colors_by_id: dict[int, tuple[float, float, float, float]] = {}
+        try:
+            for src_idx, pos in enumerate(positions_list):
+                runtime_idx = int(pair_ids[src_idx]) if pair_ids is not None else int(src_idx)
+                color = color_fn(runtime_idx, pos, frame)
+                if not color:
+                    color = (0.0, 0.0, 0.0, 1.0)
+                if len(color) < 4:
+                    color = (float(color[0]), float(color[1]), float(color[2]), 1.0)
+                else:
+                    color = (
+                        float(color[0]),
+                        float(color[1]),
+                        float(color[2]),
+                        float(color[3]),
+                    )
+                if node.remap_rows:
+                    if int(node.remap_frame) >= 0:
+                        fid = le_cat._cat_ref_fid_locked(runtime_idx, frame, int(node.remap_frame))
+                    else:
+                        fid = le_cat._cat_ref_fid(runtime_idx)
+                else:
+                    fid = int(formation_ids[src_idx])
+                if int(fid) < 0:
+                    continue
+                if fid in colors_by_id:
+                    continue
+                colors_by_id[int(fid)] = color
+        finally:
+            le_meshinfo.end_led_frame_cache()
+
+        if not colors_by_id:
+            self.report({'ERROR'}, "No colors captured")
+            return {'CANCELLED'}
+
+        node.paint_items.clear()
+        for fid, color in sorted(colors_by_id.items(), key=lambda item: item[0]):
+            item = node.paint_items.add()
+            item.index = int(fid)
+            item.color = color
+        node.id_data.update_tag()
+        paint_util.clear_paint_cache(node)
         return {'FINISHED'}
 
 
@@ -1480,12 +1667,14 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.register_class(LDLED_OT_group_selected)
         bpy.utils.register_class(LDLED_OT_cat_cache_bake)
         bpy.utils.register_class(LDLED_OT_paint_cache_bake)
+        bpy.utils.register_class(LDLED_OT_select_formation_ids)
         bpy.utils.register_class(LDLED_OT_frameentry_fill_current)
         bpy.utils.register_class(LDLED_OT_remapframe_fill_current)
         bpy.utils.register_class(LDLED_OT_insidemesh_create_mesh)
         bpy.utils.register_class(LDLED_OT_projectionuv_create_mesh)
         bpy.utils.register_class(LDLED_OT_projectionuv_toggle_preview_material)
         bpy.utils.register_class(LDLED_OT_paint_start)
+        bpy.utils.register_class(LDLED_OT_paint_take)
         bpy.utils.register_class(LDLED_OT_paint_modal)
         bpy.utils.register_class(LDLED_OT_paint_apply_selection)
         bpy.utils.register_class(LDLED_OT_paint_eyedrop_vertex)
@@ -1507,12 +1696,14 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.unregister_class(LDLED_OT_paint_eyedrop_vertex)
         bpy.utils.unregister_class(LDLED_OT_paint_apply_selection)
         bpy.utils.unregister_class(LDLED_OT_paint_modal)
+        bpy.utils.unregister_class(LDLED_OT_paint_take)
         bpy.utils.unregister_class(LDLED_OT_paint_start)
         bpy.utils.unregister_class(LDLED_OT_projectionuv_create_mesh)
         bpy.utils.unregister_class(LDLED_OT_projectionuv_toggle_preview_material)
         bpy.utils.unregister_class(LDLED_OT_insidemesh_create_mesh)
         bpy.utils.unregister_class(LDLED_OT_remapframe_fill_current)
         bpy.utils.unregister_class(LDLED_OT_frameentry_fill_current)
+        bpy.utils.unregister_class(LDLED_OT_select_formation_ids)
         bpy.utils.unregister_class(LDLED_OT_paint_cache_bake)
         bpy.utils.unregister_class(LDLED_OT_cat_cache_bake)
         bpy.utils.unregister_class(LDLED_OT_group_selected)
