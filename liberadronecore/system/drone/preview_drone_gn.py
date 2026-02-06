@@ -233,12 +233,26 @@ def geometry_nodes_002_1_node_group(node_tree_names: dict[typing.Callable, str])
     # Radius
     mesh_to_points.inputs[3].default_value = 0.05000000074505806
 
+    # Node Sample Index.003
+    sample_index_003 = gn_previewdrone_1.nodes.new("GeometryNodeSampleIndex")
+    sample_index_003.name = "Sample Index.003"
+    sample_index_003.clamp = False
+    sample_index_003.data_type = 'INT'
+    sample_index_003.domain = 'POINT'
+
+    # Node Named Attribute.003
+    named_attribute_003 = gn_previewdrone_1.nodes.new("GeometryNodeInputNamedAttribute")
+    named_attribute_003.name = "Named Attribute.003"
+    named_attribute_003.data_type = 'INT'
+    # Name
+    named_attribute_003.inputs[0].default_value = "formation_id"
+
     # Set locations
     gn_previewdrone_1.nodes["Group Input"].location = (-1126.33203125, -240.55227661132812)
     gn_previewdrone_1.nodes["Group Output"].location = (792.6171875, -150.07821655273438)
     gn_previewdrone_1.nodes["Instance on Points"].location = (449.28497314453125, -181.92042541503906)
     gn_previewdrone_1.nodes["Switch"].location = (55.83498001098633, -462.8209228515625)
-    gn_previewdrone_1.nodes["Scale Elements"].location = (-517.0735473632812, -429.4473876953125)
+    gn_previewdrone_1.nodes["Scale Elements"].location = (-519.2587280273438, -463.3736572265625)
     gn_previewdrone_1.nodes["Join Geometry"].location = (-122.07010650634766, -584.0868530273438)
     gn_previewdrone_1.nodes["Transform Geometry"].location = (262.3005676269531, -421.5835876464844)
     gn_previewdrone_1.nodes["Align Rotation to Vector"].location = (58.21506118774414, -645.13818359375)
@@ -250,14 +264,16 @@ def geometry_nodes_002_1_node_group(node_tree_names: dict[typing.Callable, str])
     gn_previewdrone_1.nodes["Sample Index.001"].location = (-140.5871124267578, 107.73624420166016)
     gn_previewdrone_1.nodes["Position.001"].location = (-326.22943115234375, -53.466949462890625)
     gn_previewdrone_1.nodes["Set Position.001"].location = (266.11163330078125, -192.95562744140625)
-    gn_previewdrone_1.nodes["Named Attribute.002"].location = (-527.2001953125, -212.91635131835938)
-    gn_previewdrone_1.nodes["Sample Index.002"].location = (-311.8916015625, -108.08781433105469)
-    gn_previewdrone_1.nodes["ID.001"].location = (-526.3309326171875, -355.38836669921875)
+    gn_previewdrone_1.nodes["Named Attribute.002"].location = (-515.181640625, -153.81900024414062)
+    gn_previewdrone_1.nodes["Sample Index.002"].location = (-149.71824645996094, -85.06473541259766)
+    gn_previewdrone_1.nodes["ID.001"].location = (-517.6096801757812, -400.0279541015625)
     gn_previewdrone_1.nodes["Object Info.002"].location = (-141.48519897460938, 327.1990051269531)
     gn_previewdrone_1.nodes["Transform Geometry.001"].location = (-500.722900390625, -639.0758056640625)
     gn_previewdrone_1.nodes["Set Material.001"].location = (-297.6289367675781, -613.995361328125)
     gn_previewdrone_1.nodes["Realize Instances.001"].location = (-694.5936279296875, -15.515670776367188)
     gn_previewdrone_1.nodes["Mesh to Points"].location = (-510.11358642578125, 21.371109008789062)
+    gn_previewdrone_1.nodes["Sample Index.003"].location = (-315.43865966796875, -252.59674072265625)
+    gn_previewdrone_1.nodes["Named Attribute.003"].location = (-509.91259765625, -277.20098876953125)
 
     # Set dimensions
     gn_previewdrone_1.nodes["Group Input"].width  = 140.0
@@ -332,6 +348,12 @@ def geometry_nodes_002_1_node_group(node_tree_names: dict[typing.Callable, str])
     gn_previewdrone_1.nodes["Mesh to Points"].width  = 140.0
     gn_previewdrone_1.nodes["Mesh to Points"].height = 100.0
 
+    gn_previewdrone_1.nodes["Sample Index.003"].width  = 140.0
+    gn_previewdrone_1.nodes["Sample Index.003"].height = 100.0
+
+    gn_previewdrone_1.nodes["Named Attribute.003"].width  = 140.0
+    gn_previewdrone_1.nodes["Named Attribute.003"].height = 100.0
+
 
     # Initialize gn_previewdrone_1 links
 
@@ -379,11 +401,6 @@ def geometry_nodes_002_1_node_group(node_tree_names: dict[typing.Callable, str])
     gn_previewdrone_1.links.new(
         gn_previewdrone_1.nodes["Named Attribute.002"].outputs[0],
         gn_previewdrone_1.nodes["Sample Index.002"].inputs[1]
-    )
-    # id_001.ID -> sample_index_002.Index
-    gn_previewdrone_1.links.new(
-        gn_previewdrone_1.nodes["ID.001"].outputs[0],
-        gn_previewdrone_1.nodes["Sample Index.002"].inputs[2]
     )
     # sample_index_002.Value -> sample_index_001.Index
     gn_previewdrone_1.links.new(
@@ -490,6 +507,26 @@ def geometry_nodes_002_1_node_group(node_tree_names: dict[typing.Callable, str])
         gn_previewdrone_1.nodes["Mesh to Points"].outputs[0],
         gn_previewdrone_1.nodes["Sample Index.002"].inputs[0]
     )
+    # id_001.ID -> sample_index_003.Index
+    gn_previewdrone_1.links.new(
+        gn_previewdrone_1.nodes["ID.001"].outputs[0],
+        gn_previewdrone_1.nodes["Sample Index.003"].inputs[2]
+    )
+    # named_attribute_003.Attribute -> sample_index_003.Value
+    gn_previewdrone_1.links.new(
+        gn_previewdrone_1.nodes["Named Attribute.003"].outputs[0],
+        gn_previewdrone_1.nodes["Sample Index.003"].inputs[1]
+    )
+    # sample_index_003.Value -> sample_index_002.Index
+    gn_previewdrone_1.links.new(
+        gn_previewdrone_1.nodes["Sample Index.003"].outputs[0],
+        gn_previewdrone_1.nodes["Sample Index.002"].inputs[2]
+    )
+    # mesh_to_points.Points -> sample_index_003.Geometry
+    gn_previewdrone_1.links.new(
+        gn_previewdrone_1.nodes["Mesh to Points"].outputs[0],
+        gn_previewdrone_1.nodes["Sample Index.003"].inputs[0]
+    )
     # set_material.Geometry -> join_geometry.Geometry
     gn_previewdrone_1.links.new(
         gn_previewdrone_1.nodes["Set Material"].outputs[0],
@@ -497,13 +534,3 @@ def geometry_nodes_002_1_node_group(node_tree_names: dict[typing.Callable, str])
     )
 
     return gn_previewdrone_1
-
-
-if __name__ == "__main__":
-    # Maps node tree creation functions to the node tree 
-    # name, such that we don't recreate node trees unnecessarily
-    node_tree_names : dict[typing.Callable, str] = {}
-
-    gn_previewdrone = gn_previewdrone_1_node_group(node_tree_names)
-    node_tree_names[gn_previewdrone_1_node_group] = gn_previewdrone.name
-

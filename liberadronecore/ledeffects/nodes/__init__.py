@@ -31,6 +31,7 @@ from .position import le_projectionuv
 from .sampler import le_cat
 from .sampler import le_colorramp
 from .sampler import le_image
+from .sampler import le_paint
 from .sampler import le_video
 from .util import le_catcache
 from .util import le_collectioninfo

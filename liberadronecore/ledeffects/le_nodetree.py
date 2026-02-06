@@ -22,8 +22,11 @@ class LD_LedEffectsTree(bpy.types.NodeTree, LDLED_Register):
         scene = getattr(bpy.context, "scene", None)
         if scene is None:
             return
+        if not ledeffects_task.use_task_update_pref():
+            ledeffects_task.update_led_effects(scene)
+            return
         scheduler = getattr(ledeffects_task, "schedule_led_effects_update", None)
         if scheduler is None:
             ledeffects_task.update_led_effects(scene)
-        else:
-            scheduler(scene)
+            return
+        scheduler(scene)

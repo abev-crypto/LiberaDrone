@@ -21,6 +21,11 @@ class LD_Preferences(bpy.types.AddonPreferences):
     last_local_version: bpy.props.StringProperty(name="Local Version", default="")
     last_remote_version: bpy.props.StringProperty(name="Remote Version", default="")
     auto_check: bpy.props.BoolProperty(name="Auto Check Update", default=True)
+    led_task_update: bpy.props.BoolProperty(
+        name="LED Task Update",
+        default=True,
+        description="Update LED effects via scheduled tasks instead of immediate updates",
+    )
 
     def draw(self, context):
         layout = self.layout
@@ -65,6 +70,9 @@ class LD_Preferences(bpy.types.AddonPreferences):
         col.separator()
         col.label(text=f"Local:  {self.last_local_version}")
         col.label(text=f"Remote: {self.last_remote_version}")
+        layout.separator()
+        layout.label(text="LED Effects")
+        layout.prop(self, "led_task_update")
 
 
 # ---- (Register core prefs/operators even when deps are missing) ----

@@ -20,6 +20,11 @@ _SUSPEND_LED_EFFECTS = 0
 _LED_UPDATE_PENDING = False
 
 
+def use_task_update_pref() -> bool:
+    prefs = bpy.context.preferences.addons["liberadronecore"].preferences
+    return bool(prefs.led_task_update)
+
+
 def _set_undo_block(active: bool) -> None:
     global _UNDO_DEPTH
     if active:

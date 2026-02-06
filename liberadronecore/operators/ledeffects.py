@@ -2,6 +2,7 @@ import json
 import os
 
 import bpy
+import bmesh
 import numpy as np
 
 from liberadronecore.ledeffects.nodes.mask import le_collectionmask
@@ -17,10 +18,13 @@ from liberadronecore.formation import fn_parse
 from liberadronecore.reg.base_reg import RegisterBase
 from liberadronecore.ui import ledeffects_panel as led_panel
 from liberadronecore.ledeffects.util import collectionmask as collectionmask_util
+from liberadronecore.ledeffects.util import formation_ids as formation_ids_util
 from liberadronecore.ledeffects.util import idmask as idmask_util
 from liberadronecore.ledeffects.util import insidemesh as insidemesh_util
+from liberadronecore.ledeffects.util import paint as paint_util
 from liberadronecore.ledeffects.util import projectionuv as projectionuv_util
 from liberadronecore.ledeffects.util import trail as trail_util
+from liberadronecore.ui.paint import paint_window
 from liberadronecore.util import led_eval
 from liberadronecore.util.modeling import delaunay
 from liberadronecore.tasks import ledeffects_task
@@ -606,6 +610,489 @@ class LDLED_OT_projectionuv_toggle_preview_material(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class LDLED_OT_paint_start(bpy.types.Operator):
+    bl_idname = "ldled.paint_start"
+    bl_label = "Start Paint"
+    bl_options = {'REGISTER'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context):
+        window = context.window
+        if window is None or window.screen is None:
+            self.report({'ERROR'}, "No active window")
+            return {'CANCELLED'}
+
+        area = next((a for a in window.screen.areas if a.type == 'VIEW_3D'), None)
+        if area is None:
+            self.report({'ERROR'}, "3D View not found")
+            return {'CANCELLED'}
+        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+        if region is None:
+            self.report({'ERROR'}, "3D View region not found")
+            return {'CANCELLED'}
+
+        override = {
+            "window": window,
+            "screen": window.screen,
+            "area": area,
+            "region": region,
+            "scene": context.scene,
+        }
+        with context.temp_override(**override):
+            result = bpy.ops.ldled.paint_modal(
+                'INVOKE_DEFAULT',
+                node_tree_name=self.node_tree_name,
+                node_name=self.node_name,
+            )
+        if 'RUNNING_MODAL' in result:
+            paint_window.show_window()
+        return {'FINISHED'}
+
+
+class LDLED_OT_paint_modal(bpy.types.Operator):
+    bl_idname = "ldled.paint_modal"
+    bl_label = "Paint"
+    bl_options = {'REGISTER'}
+
+    node_tree_name: bpy.props.StringProperty()
+    node_name: bpy.props.StringProperty()
+
+    _draw_handle = None
+    _brush_center_2d = None
+    _brush_radius_px = None
+    _kd = None
+    _vidx_list = None
+    _proj_count = 0
+    _view_sig = None
+    _obj_name = None
+    _obj_mw_sig = None
+    _sel_sig = None
+    _only_selected = False
+    _painting = False
+    _last_primary = None
+    _cursor_eyedropper = False
+    _formation_map = None
+    _formation_error = None
+
+    def invoke(self, context, event):
+        if context.area.type != 'VIEW_3D':
+            self.report({'ERROR'}, "Run in a 3D View")
+            return {'CANCELLED'}
+
+        tree = bpy.data.node_groups[self.node_tree_name]
+        node = tree.nodes[self.node_name]
+        paint_util.set_active_node(node)
+        paint_util.set_paint_modal_active(True)
+        paint_util.set_eyedrop_mode(None)
+
+        obj = context.active_object
+        if obj is None or obj.type != 'MESH':
+            paint_util.clear_active_node()
+            self.report({'ERROR'}, "Active object must be a mesh")
+            return {'CANCELLED'}
+
+        if obj.mode != 'EDIT':
+            bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type='VERT')
+
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.verts.ensure_lookup_table()
+        if not self._update_formation_map(bm):
+            paint_util.set_paint_modal_active(False)
+            paint_util.set_eyedrop_mode(None)
+            paint_util.clear_active_node()
+            self.report({'ERROR'}, self._formation_error or "formation_id attribute not found")
+            return {'CANCELLED'}
+
+        self._brush_radius_px = node.paint_radius
+        self._brush_center_2d = (event.mouse_region_x, event.mouse_region_y)
+        self._draw_handle = bpy.types.SpaceView3D.draw_handler_add(
+            paint_util.draw_callback_px, (self, context), 'WINDOW', 'POST_PIXEL'
+        )
+        self._rebuild_cache(context)
+
+        context.window_manager.modal_handler_add(self)
+        self._set_header_text(context)
+        return {'RUNNING_MODAL'}
+
+    def finish(self, context):
+        if self._draw_handle is not None:
+            bpy.types.SpaceView3D.draw_handler_remove(self._draw_handle, 'WINDOW')
+            self._draw_handle = None
+        if self._cursor_eyedropper:
+            context.window.cursor_modal_restore()
+            self._cursor_eyedropper = False
+        if context.area:
+            context.area.header_text_set(None)
+        self._kd = None
+        self._vidx_list = None
+        paint_util.set_eyedrop_mode(None)
+        paint_util.set_paint_modal_active(False)
+        paint_util.clear_active_node()
+
+    def _update_brush_draw(self, context, event):
+        self._brush_center_2d = (event.mouse_region_x, event.mouse_region_y)
+        node = paint_util.active_node()
+        self._brush_radius_px = node.paint_radius
+        if context.area:
+            context.area.tag_redraw()
+        self._set_header_text(context)
+
+    def _set_header_text(self, context) -> None:
+        if context.area is None:
+            return
+        node = paint_util.active_node()
+        if node is None:
+            return
+        mode = paint_util.eyedrop_mode()
+        if mode == "VERTEX":
+            context.area.header_text_set("Paint: LMB=sample vertex | RMB/ESC=exit | [ ] radius")
+        elif mode == "SCREEN":
+            context.area.header_text_set("Paint: LMB=sample screen | RMB/ESC=exit | [ ] radius")
+        else:
+            context.area.header_text_set("Paint: LMB drag=apply | RMB/ESC=exit | [ ] radius")
+
+    def _view_signature(self, region, rv3d):
+        vm = rv3d.view_matrix
+        pm = rv3d.perspective_matrix
+        return (
+            region.width,
+            region.height,
+            rv3d.is_perspective,
+            round(vm[0][0], 6), round(vm[0][1], 6), round(vm[0][2], 6), round(vm[0][3], 6),
+            round(vm[1][0], 6), round(vm[1][1], 6), round(vm[1][2], 6), round(vm[1][3], 6),
+            round(vm[2][0], 6), round(vm[2][1], 6), round(vm[2][2], 6), round(vm[2][3], 6),
+            round(pm[0][0], 6), round(pm[1][1], 6), round(pm[2][2], 6), round(pm[3][2], 6),
+        )
+
+    def _obj_matrix_sig(self, obj):
+        mw = obj.matrix_world
+        return tuple(round(mw[i][j], 6) for i in range(3) for j in range(4))
+
+    def _selection_sig(self, bm):
+        sel = [v.index for v in bm.verts if v.select]
+        sel_count = len(sel)
+        head = tuple(sel[:16])
+        return (sel_count, head)
+
+    def _rebuild_cache(self, context):
+        obj = context.active_object
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.verts.ensure_lookup_table()
+        selected = [v for v in bm.verts if v.select]
+        self._only_selected = bool(selected)
+        self._kd, self._vidx_list, self._proj_count = paint_util.build_screen_kdtree(
+            context,
+            obj,
+            self._only_selected,
+        )
+        self._update_formation_map(bm)
+        self._view_sig = self._view_signature(context.region, context.region_data)
+        self._obj_name = obj.name
+        self._obj_mw_sig = self._obj_matrix_sig(obj)
+        self._sel_sig = self._selection_sig(bm)
+        self._last_primary = None
+
+    def _ensure_cache_valid(self, context):
+        obj = context.active_object
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.verts.ensure_lookup_table()
+
+        need = False
+        if self._kd is None:
+            need = True
+        if obj.name != self._obj_name:
+            need = True
+        if self._obj_matrix_sig(obj) != self._obj_mw_sig:
+            need = True
+        if self._view_signature(context.region, context.region_data) != self._view_sig:
+            need = True
+        if self._selection_sig(bm) != self._sel_sig:
+            need = True
+
+        if need:
+            self._rebuild_cache(context)
+
+    def _compute_hits(self, context, event):
+        if self._kd is None or self._proj_count <= 0:
+            return []
+        node = paint_util.active_node()
+        hard = bool(node.paint_hard_brush) if node is not None else False
+        return paint_util.find_hits(
+            self._kd,
+            self._vidx_list,
+            (event.mouse_region_x, event.mouse_region_y),
+            self._brush_radius_px,
+            paint_util.DEFAULT_FALLOFF_POWER,
+            hard=hard,
+        )
+
+    def _update_formation_map(self, bm) -> bool:
+        ids, error = formation_ids_util.read_bmesh_formation_ids(bm, bm.verts)
+        if error:
+            self._formation_map = None
+            self._formation_error = error
+            return False
+        self._formation_map = {int(v.index): int(fid) for v, fid in zip(bm.verts, ids)}
+        self._formation_error = None
+        return True
+
+    def _map_hits_to_formation(self, hits):
+        if not self._formation_map:
+            return []
+        mapped = []
+        for vidx, weight in hits:
+            fid = self._formation_map.get(int(vidx))
+            if fid is None or int(fid) < 0:
+                continue
+            mapped.append((int(fid), float(weight)))
+        return mapped
+
+    def _sync_cursor(self, context) -> None:
+        mode = paint_util.eyedrop_mode()
+        if mode and not self._cursor_eyedropper:
+            context.window.cursor_modal_set('EYEDROPPER')
+            self._cursor_eyedropper = True
+        if mode is None and self._cursor_eyedropper:
+            context.window.cursor_modal_restore()
+            self._cursor_eyedropper = False
+
+    def _apply_eyedrop(self, context, event) -> None:
+        node = paint_util.active_node()
+        if node is None:
+            return
+        mode = paint_util.eyedrop_mode()
+        if mode == "SCREEN":
+            color = paint_util.sample_screen_color(
+                context,
+                (event.mouse_region_x, event.mouse_region_y),
+            )
+            if color is None:
+                print("[Paint] eyedrop: no screen color")
+                return
+            node.paint_color = (color[0], color[1], color[2])
+            node.paint_alpha = float(color[3])
+            return
+
+        self._ensure_cache_valid(context)
+        hits = self._compute_hits(context, event)
+        hits = self._map_hits_to_formation(hits)
+        if not hits:
+            print("[Paint] eyedrop: no hit")
+            return
+        if mode == "VERTEX":
+            hits = [max(hits, key=lambda item: item[1])]
+        color = paint_util.average_color(node, hits)
+        if color is None:
+            print("[Paint] eyedrop: no painted color")
+            return
+        node.paint_color = (color[0], color[1], color[2])
+        node.paint_alpha = float(color[3])
+
+    def modal(self, context, event):
+        if event.type in {
+            'MIDDLEMOUSE', 'WHEELUPMOUSE', 'WHEELDOWNMOUSE', 'WHEELINMOUSE', 'WHEELOUTMOUSE'
+        } or event.alt:
+            return {'PASS_THROUGH'}
+
+        if event.type == 'RIGHTMOUSE' and event.value == 'PRESS':
+            self.finish(context)
+            return {'CANCELLED'}
+        if event.type == 'ESC':
+            self.finish(context)
+            return {'CANCELLED'}
+
+        if event.type == 'LEFT_BRACKET' and event.value == 'PRESS':
+            node = paint_util.active_node()
+            radius = max(1.0, float(node.paint_radius) / 1.1)
+            node.paint_radius = radius
+            self._brush_radius_px = radius
+            if context.area:
+                context.area.tag_redraw()
+            print(f"[Paint] radius={radius:.1f}px")
+            self._set_header_text(context)
+            return {'RUNNING_MODAL'}
+        if event.type == 'RIGHT_BRACKET' and event.value == 'PRESS':
+            node = paint_util.active_node()
+            radius = min(5000.0, float(node.paint_radius) * 1.1)
+            node.paint_radius = radius
+            self._brush_radius_px = radius
+            if context.area:
+                context.area.tag_redraw()
+            print(f"[Paint] radius={radius:.1f}px")
+            self._set_header_text(context)
+            return {'RUNNING_MODAL'}
+
+        self._sync_cursor(context)
+        if event.type in {'MOUSEMOVE', 'LEFTMOUSE'}:
+            paint_util.set_last_mouse(event.mouse_region_x, event.mouse_region_y)
+            self._update_brush_draw(context, event)
+
+        if paint_util.eyedrop_mode() is not None:
+            if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+                self._apply_eyedrop(context, event)
+                paint_util.set_eyedrop_mode(None)
+                self._sync_cursor(context)
+                self._set_header_text(context)
+            return {'RUNNING_MODAL'}
+
+        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            self._ensure_cache_valid(context)
+            self._painting = True
+            hits = self._compute_hits(context, event)
+            hits = self._map_hits_to_formation(hits)
+            if hits:
+                node = paint_util.active_node()
+                color = node.paint_color
+                paint_util.apply_paint(node, hits, color, node.paint_alpha, node.blend_mode)
+                node.id_data.update_tag()
+                primary = hits[0][0]
+                if primary != self._last_primary:
+                    self._last_primary = primary
+                    print(f"[Paint] primary_vert={primary} hits={len(hits)}")
+            return {'RUNNING_MODAL'}
+
+        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+            self._painting = False
+            return {'RUNNING_MODAL'}
+
+        if event.type == 'MOUSEMOVE' and self._painting:
+            self._ensure_cache_valid(context)
+            hits = self._compute_hits(context, event)
+            hits = self._map_hits_to_formation(hits)
+            if hits:
+                node = paint_util.active_node()
+                color = node.paint_color
+                paint_util.apply_paint(node, hits, color, node.paint_alpha, node.blend_mode)
+                node.id_data.update_tag()
+                primary = hits[0][0]
+                if primary != self._last_primary:
+                    self._last_primary = primary
+                    print(f"[Paint] primary_vert={primary} hits={len(hits)}")
+            return {'RUNNING_MODAL'}
+
+        return {'RUNNING_MODAL'}
+
+
+class LDLED_OT_paint_apply_selection(bpy.types.Operator):
+    bl_idname = "ldled.paint_apply_selection"
+    bl_label = "Apply Paint"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        node = paint_util.active_node()
+        if node is None:
+            self.report({'ERROR'}, "Paint node not active")
+            return {'CANCELLED'}
+        obj = context.active_object
+        if obj is None or obj.type != 'MESH':
+            self.report({'ERROR'}, "Active object must be a mesh")
+            return {'CANCELLED'}
+        if obj.mode != 'EDIT':
+            bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type='VERT')
+
+        indices = paint_util.selected_vertex_indices(obj)
+        if not indices:
+            self.report({'ERROR'}, "No selected vertices")
+            return {'CANCELLED'}
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.verts.ensure_lookup_table()
+        verts = [bm.verts[idx] for idx in indices if idx < len(bm.verts)]
+        ids, error = formation_ids_util.read_bmesh_formation_ids(bm, verts)
+        if error:
+            self.report({'ERROR'}, error)
+            return {'CANCELLED'}
+        hits = [(int(fid), 1.0) for fid in ids if int(fid) >= 0]
+        if not hits:
+            self.report({'ERROR'}, "No valid formation_id")
+            return {'CANCELLED'}
+        paint_util.apply_paint(node, hits, node.paint_color, node.paint_alpha, node.blend_mode)
+        node.id_data.update_tag()
+        return {'FINISHED'}
+
+
+class LDLED_OT_paint_eyedrop_vertex(bpy.types.Operator):
+    bl_idname = "ldled.paint_eyedrop_vertex"
+    bl_label = "Eyedrop Vertex"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        node = paint_util.active_node()
+        if node is None:
+            self.report({'ERROR'}, "Paint node not active")
+            return {'CANCELLED'}
+        if paint_util.is_paint_modal_active():
+            paint_util.set_eyedrop_mode("VERTEX")
+            return {'FINISHED'}
+        obj = context.active_object
+        if obj is None or obj.type != 'MESH':
+            self.report({'ERROR'}, "Active object must be a mesh")
+            return {'CANCELLED'}
+        if obj.mode != 'EDIT':
+            bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type='VERT')
+
+        indices = paint_util.selected_vertex_indices(obj)
+        if not indices:
+            self.report({'ERROR'}, "No selected vertices")
+            return {'CANCELLED'}
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.verts.ensure_lookup_table()
+        verts = [bm.verts[idx] for idx in indices if idx < len(bm.verts)]
+        ids, error = formation_ids_util.read_bmesh_formation_ids(bm, verts)
+        if error:
+            self.report({'ERROR'}, error)
+            return {'CANCELLED'}
+        hits = [(int(fid), 1.0) for fid in ids if int(fid) >= 0]
+        if not hits:
+            self.report({'ERROR'}, "No valid formation_id")
+            return {'CANCELLED'}
+        color = paint_util.average_color(node, hits)
+        if color is None:
+            self.report({'ERROR'}, "No painted color to sample")
+            return {'CANCELLED'}
+        node.paint_color = (color[0], color[1], color[2])
+        node.paint_alpha = float(color[3])
+        return {'FINISHED'}
+
+
+class LDLED_OT_paint_eyedrop_screen(bpy.types.Operator):
+    bl_idname = "ldled.paint_eyedrop_screen"
+    bl_label = "Eyedrop Screen"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        node = paint_util.active_node()
+        if node is None:
+            self.report({'ERROR'}, "Paint node not active")
+            return {'CANCELLED'}
+        if paint_util.is_paint_modal_active():
+            paint_util.set_eyedrop_mode("SCREEN")
+            return {'FINISHED'}
+        obj = context.active_object
+        if obj is None or obj.type != 'MESH':
+            self.report({'ERROR'}, "Active object must be a mesh")
+            return {'CANCELLED'}
+        if obj.mode != 'EDIT':
+            bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type='VERT')
+
+        mouse = paint_util.last_mouse()
+        if mouse is None:
+            self.report({'ERROR'}, "Cursor position not available")
+            return {'CANCELLED'}
+        color = paint_util.sample_screen_color(context, mouse)
+        if color is None:
+            self.report({'ERROR'}, "Screen color not available")
+            return {'CANCELLED'}
+        node.paint_color = (color[0], color[1], color[2])
+        node.paint_alpha = float(color[3])
+        return {'FINISHED'}
+
+
 class LDLED_OT_collectionmask_create_collection(bpy.types.Operator):
     bl_idname = "ldled.collectionmask_create_collection"
     bl_label = "Create Mask Collection"
@@ -769,6 +1256,11 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.register_class(LDLED_OT_insidemesh_create_mesh)
         bpy.utils.register_class(LDLED_OT_projectionuv_create_mesh)
         bpy.utils.register_class(LDLED_OT_projectionuv_toggle_preview_material)
+        bpy.utils.register_class(LDLED_OT_paint_start)
+        bpy.utils.register_class(LDLED_OT_paint_modal)
+        bpy.utils.register_class(LDLED_OT_paint_apply_selection)
+        bpy.utils.register_class(LDLED_OT_paint_eyedrop_vertex)
+        bpy.utils.register_class(LDLED_OT_paint_eyedrop_screen)
         bpy.utils.register_class(LDLED_OT_collectionmask_create_collection)
         bpy.utils.register_class(LDLED_OT_idmask_add_selection)
         bpy.utils.register_class(LDLED_OT_idmask_remove_selection)
@@ -782,6 +1274,11 @@ class LDLEDEffectsOps(RegisterBase):
         bpy.utils.unregister_class(LDLED_OT_idmask_remove_selection)
         bpy.utils.unregister_class(LDLED_OT_idmask_add_selection)
         bpy.utils.unregister_class(LDLED_OT_collectionmask_create_collection)
+        bpy.utils.unregister_class(LDLED_OT_paint_eyedrop_screen)
+        bpy.utils.unregister_class(LDLED_OT_paint_eyedrop_vertex)
+        bpy.utils.unregister_class(LDLED_OT_paint_apply_selection)
+        bpy.utils.unregister_class(LDLED_OT_paint_modal)
+        bpy.utils.unregister_class(LDLED_OT_paint_start)
         bpy.utils.unregister_class(LDLED_OT_projectionuv_create_mesh)
         bpy.utils.unregister_class(LDLED_OT_projectionuv_toggle_preview_material)
         bpy.utils.unregister_class(LDLED_OT_insidemesh_create_mesh)
